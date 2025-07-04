@@ -1,4 +1,5 @@
-from flask import Flask, request, render_template, send_from_directory, jsonify, redirect, url_for
+# app.py
+from flask import Flask, request, render_template, redirect, url_for, jsonify, send_from_directory
 import os
 import time
 import requests
@@ -8,9 +9,11 @@ import datetime
 import random
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
-from sheets_util import add_used_ip, get_all_used_ips, delete_used_ip, log_good_proxy, get_good_proxies
 import logging
 import sys
+import json
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
 # Configure logging
 logging.basicConfig(
@@ -22,12 +25,12 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Reduced limits for Vercel compatibility
-MAX_WORKERS = 5  # Reduced concurrency for Vercel timeout limits
-REQUEST_TIMEOUT = 5  # Reduced timeout for Vercel
-PROXY_CHECK_HARD_LIMIT = 25  # Reduced limit for Vercel
-MIN_DELAY = 0.5  # Minimum delay between requests in seconds
-MAX_DELAY = 2.5  # Maximum delay between requests in seconds
+# Configuration for Vercel compatibility
+MAX_WORKERS = 5
+REQUEST_TIMEOUT = 5
+PROXY_CHECK_HARD_LIMIT = 25
+MIN_DELAY = 0.5
+MAX_DELAY = 2.5
 
 # User agents to rotate
 USER_AGENTS = [
@@ -38,6 +41,103 @@ USER_AGENTS = [
     "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"
 ]
 
+# Google Sheets setup
+SCOPE = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive"
+]
+
+SHEET_NAME_VARIANTS = {
+    "used_ips": ["Used IPs", "Used IP List", "Used_IPs"],
+    "good_proxies": ["Good Proxies", "Good_Proxies", "GoodProxies"]
+}
+
+def get_sheet(sheet_type):
+    """Get a sheet by type (used_ips or good_proxies) with fallback"""
+    try:
+        creds_json = os.environ.get("GOOGLE_CREDENTIALS")
+        if not creds_json:
+            raise ValueError("GOOGLE_CREDENTIALS environment variable not set")
+            
+        creds_dict = json.loads(creds_json)
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
+        client = gspread.authorize(creds)
+        client.timeout = 10
+
+        variants = SHEET_NAME_VARIANTS[sheet_type]
+        
+        for name in variants:
+            try:
+                return client.open(name).sheet1
+            except gspread.SpreadsheetNotFound:
+                continue
+                
+        return client.create(variants[0]).sheet1
+
+    except Exception as e:
+        logger.error(f"Error accessing Google Sheet: {str(e)}")
+        return None
+
+def add_used_ip(ip, proxy):
+    try:
+        sheet = get_sheet("used_ips")
+        if sheet:
+            sheet.append_row([ip, proxy, str(datetime.datetime.utcnow())])
+    except Exception as e:
+        logger.error(f"Error adding used IP: {e}")
+
+def delete_used_ip(ip):
+    try:
+        sheet = get_sheet("used_ips")
+        if not sheet: 
+            return False
+        
+        data = sheet.get_all_values()
+        for i, row in enumerate(data):
+            if row and row[0] == ip:
+                sheet.delete_row(i + 1)
+                return True
+        return False
+    except Exception as e:
+        logger.error(f"Error deleting used IP: {e}")
+        return False
+
+def get_all_used_ips():
+    try:
+        sheet = get_sheet("used_ips")
+        if not sheet:
+            return []
+            
+        headers = sheet.row_values(1)
+        records = sheet.get_all_records()
+        
+        if not headers or len(headers) < 3:
+            return [{"IP": row[0], "Proxy": row[1], "Date": row[2]} for row in sheet.get_all_values()[1:] if row]
+            
+        return records
+    except Exception as e:
+        logger.error(f"Error getting used IPs: {e}")
+        return []
+
+def log_good_proxy(proxy, ip):
+    try:
+        sheet = get_sheet("good_proxies")
+        if sheet:
+            sheet.append_row([proxy, ip, str(datetime.datetime.utcnow())])
+    except Exception as e:
+        logger.error(f"Error logging good proxy: {e}")
+
+def get_good_proxies():
+    try:
+        sheet = get_sheet("good_proxies")
+        if not sheet:
+            return []
+            
+        return [row[0] for row in sheet.get_all_values()[1:] if row]
+    except Exception as e:
+        logger.error(f"Error getting good proxies: {e}")
+        return []
+
 def get_ip_from_proxy(proxy):
     try:
         host, port, user, pw = proxy.strip().split(":")
@@ -46,10 +146,9 @@ def get_ip_from_proxy(proxy):
             "https": f"http://{user}:{pw}@{host}:{port}",
         }
         
-        # Create session with retries
         session = requests.Session()
         retries = Retry(
-            total=2,  # Reduced for Vercel timeout
+            total=2,
             backoff_factor=0.3,
             status_forcelist=[500, 502, 503, 504]
         )
@@ -69,7 +168,6 @@ def get_ip_from_proxy(proxy):
 
 def get_fraud_score(ip, proxy_line):
     try:
-        # Parse proxy details
         host, port, user, pw = proxy_line.strip().split(":")
         proxy_url = f"http://{user}:{pw}@{host}:{port}"
         proxies = {
@@ -77,10 +175,9 @@ def get_fraud_score(ip, proxy_line):
             "https": proxy_url,
         }
         
-        # Create session with retries
         session = requests.Session()
         retries = Retry(
-            total=2,  # Reduced for Vercel timeout
+            total=2,
             backoff_factor=0.5,
             status_forcelist=[429, 500, 502, 503, 504]
         )
@@ -115,7 +212,6 @@ def get_fraud_score(ip, proxy_line):
     return None
 
 def single_check_proxy(proxy_line):
-    # Random delay to space out requests
     time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
     
     ip = get_ip_from_proxy(proxy_line)
@@ -165,7 +261,8 @@ def index():
                     result = future.result()
                     if result:
                         try:
-                            used = result["ip"] in get_all_used_ips()
+                            used_ips = [ip['IP'] for ip in get_all_used_ips()]
+                            used = result["ip"] in used_ips
                         except Exception as e:
                             logger.error(f"Error checking used IPs: {e}")
                             used = False
@@ -226,16 +323,7 @@ def admin():
             "total_good": len(get_good_proxies())
         }
         
-        # Get used IPs from sheet
-        used_ips = []
-        try:
-            # This function should return a list of dictionaries
-            # with keys: "IP", "Proxy", "Date"
-            # If not, adjust accordingly
-            used_ips = get_all_used_ips()
-        except Exception as e:
-            logger.error(f"Error getting used IPs: {e}")
-        
+        used_ips = get_all_used_ips()
         good_proxies = get_good_proxies()
         
         return render_template(
@@ -254,15 +342,5 @@ def admin():
 def send_static(path):
     return send_from_directory('static', path)
 
-@app.route('/debug')
-def debug():
-    debug_info = {
-        "env_creds_set": "GOOGLE_CREDENTIALS" in os.environ,
-        "used_sheet_access": bool(get_all_used_ips()),
-        "good_sheet_access": bool(get_good_proxies()),
-        "python_version": sys.version.split()[0]
-    }
-    return jsonify(debug_info)
-
 if __name__ == "__main__":
-    app.run()
+    app.run(host="0.0.0.0", port=5000, debug=True)
