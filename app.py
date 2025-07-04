@@ -296,8 +296,8 @@ def admin_settings():
         
         try:
             max_workers = int(max_workers)
-            if max_workers < 1 or max_workers > 30:
-                message = "Max workers must be between 1 and 30"
+            if max_workers < 1 or max_workers > 50:
+                message = "Max workers must be between 1 and 50"
                 raise ValueError(message)
         except ValueError:
             max_workers = DEFAULT_SETTINGS["MAX_WORKERS"]
