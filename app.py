@@ -9,12 +9,23 @@ import random
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 from sheets_util import add_used_ip, get_all_used_ips, delete_used_ip, log_good_proxy, get_good_proxies
+import logging
+import sys
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    stream=sys.stdout
+)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-MAX_WORKERS = 6  # Reduced concurrency for Vercel timeout limits
-REQUEST_TIMEOUT = 6  # Reduced timeout for Vercel
-PROXY_CHECK_HARD_LIMIT = 30  # Reduced limit for Vercel
+# Reduced limits for Vercel compatibility
+MAX_WORKERS = 5  # Reduced concurrency for Vercel timeout limits
+REQUEST_TIMEOUT = 5  # Reduced timeout for Vercel
+PROXY_CHECK_HARD_LIMIT = 25  # Reduced limit for Vercel
 MIN_DELAY = 0.5  # Minimum delay between requests in seconds
 MAX_DELAY = 2.5  # Maximum delay between requests in seconds
 
@@ -53,7 +64,7 @@ def get_ip_from_proxy(proxy):
         ).text
         return ip
     except Exception as e:
-        print(f"❌ Failed to get IP from proxy {proxy}: {e}")
+        logger.error(f"❌ Failed to get IP from proxy {proxy}: {e}")
         return None
 
 def get_fraud_score(ip, proxy_line):
@@ -100,7 +111,7 @@ def get_fraud_score(ip, proxy_line):
                 score_text = score_div.text.strip().split(":")[1].strip()
                 return int(score_text)
     except Exception as e:
-        print(f"⚠️ Error checking Scamalytics for {ip}: {e}")
+        logger.error(f"⚠️ Error checking Scamalytics for {ip}: {e}")
     return None
 
 def single_check_proxy(proxy_line):
@@ -153,7 +164,12 @@ def index():
                 for future in as_completed(futures):
                     result = future.result()
                     if result:
-                        used = result["ip"] in get_all_used_ips()
+                        try:
+                            used = result["ip"] in get_all_used_ips()
+                        except Exception as e:
+                            logger.error(f"Error checking used IPs: {e}")
+                            used = False
+                            
                         results.append({
                             "proxy": result["proxy"],
                             "used": used
@@ -162,7 +178,12 @@ def index():
             if results:
                 for item in results:
                     if not item["used"]:
-                        log_good_proxy(item["proxy"], get_ip_from_proxy(item["proxy"]))
+                        try:
+                            ip = get_ip_from_proxy(item["proxy"])
+                            if ip:
+                                log_good_proxy(item["proxy"], ip)
+                        except Exception as e:
+                            logger.error(f"Error logging good proxy: {e}")
 
                 good_count = len([r for r in results if not r['used']])
                 used_count = len([r for r in results if r['used']])
@@ -179,46 +200,69 @@ def index():
 def track_used():
     data = request.get_json()
     if data and "proxy" in data:
-        ip = get_ip_from_proxy(data["proxy"])
-        if ip:
-            add_used_ip(ip, data["proxy"])
-        return jsonify({"status": "success"})
-    return jsonify({"status": "error"}), 400
+        try:
+            ip = get_ip_from_proxy(data["proxy"])
+            if ip:
+                add_used_ip(ip, data["proxy"])
+            return jsonify({"status": "success"})
+        except Exception as e:
+            logger.error(f"Error tracking used proxy: {e}")
+            return jsonify({"status": "error", "message": str(e)}), 500
+    return jsonify({"status": "error", "message": "Invalid request"}), 400
 
 @app.route("/delete-used-ip/<ip>")
 def delete_used_ip_route(ip):
-    delete_used_ip(ip)
+    try:
+        delete_used_ip(ip)
+    except Exception as e:
+        logger.error(f"Error deleting used IP: {e}")
     return redirect(url_for("admin"))
 
 @app.route("/admin")
 def admin():
-    stats = {
-        "total_checks": "N/A (Vercel)",
-        "total_good": len(get_good_proxies())
-    }
-    
-    used_ips = []
     try:
-        sheet = get_sheet("Used IPs")
-        records = sheet.get_all_records()
-        used_ips = [{"IP": row["IP"], "Proxy": row["Proxy"], "Date": row["Date"]} for row in records]
+        stats = {
+            "total_checks": "N/A (Vercel)",
+            "total_good": len(get_good_proxies())
+        }
+        
+        # Get used IPs from sheet
+        used_ips = []
+        try:
+            # This function should return a list of dictionaries
+            # with keys: "IP", "Proxy", "Date"
+            # If not, adjust accordingly
+            used_ips = get_all_used_ips()
+        except Exception as e:
+            logger.error(f"Error getting used IPs: {e}")
+        
+        good_proxies = get_good_proxies()
+        
+        return render_template(
+            "admin.html", 
+            logs=[],
+            stats=stats,
+            graph_url=None,
+            used_ips=used_ips,
+            good_proxies=good_proxies
+        )
     except Exception as e:
-        print(f"Error getting used IPs: {e}")
-    
-    good_proxies = get_good_proxies()
-    
-    return render_template(
-        "admin.html", 
-        logs=[],
-        stats=stats,
-        graph_url=None,
-        used_ips=used_ips,
-        good_proxies=good_proxies
-    )
+        logger.error(f"Admin panel error: {e}")
+        return f"Admin Error: {str(e)}", 500
 
 @app.route('/static/<path:path>')
 def send_static(path):
     return send_from_directory('static', path)
+
+@app.route('/debug')
+def debug():
+    debug_info = {
+        "env_creds_set": "GOOGLE_CREDENTIALS" in os.environ,
+        "used_sheet_access": bool(get_all_used_ips()),
+        "good_sheet_access": bool(get_good_proxies()),
+        "python_version": sys.version.split()[0]
+    }
+    return jsonify(debug_info)
 
 if __name__ == "__main__":
     app.run()
