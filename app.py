@@ -14,7 +14,9 @@ import sys
 import json
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-from sheets_util import get_settings, update_setting
+#
+# --- CHANGE 1: Corrected the import statement to include all necessary functions ---
+from sheets_util import get_settings, update_setting, add_used_ip, delete_used_ip, get_all_used_ips, log_good_proxy, get_good_proxies
 
 # Configure logging
 logging.basicConfig(
@@ -212,8 +214,9 @@ def index():
                 message = f"⚠️ Processed {processed_count} proxies ({input_count} submitted). No good proxies found.{truncation_warning}"
         else:
             message = f"⚠️ No valid proxies provided. Submitted {input_count} lines, but none were valid proxy formats."
-
-    return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE)
+    
+    # --- CHANGE 2: Added 'settings=settings' to the render_template call ---
+    return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings)
 
 @app.route("/track-used", methods=["POST"])
 def track_used():
