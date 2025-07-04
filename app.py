@@ -14,6 +14,7 @@ import sys
 import json
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+from sheets_util import get_settings, update_setting
 
 # Configure logging
 logging.basicConfig(
@@ -25,12 +26,12 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Configuration for Vercel compatibility
-MAX_WORKERS = 5
-REQUEST_TIMEOUT = 5
-PROXY_CHECK_HARD_LIMIT = 25
-MIN_DELAY = 0.5
-MAX_DELAY = 2.5
+# Default configuration values
+DEFAULT_SETTINGS = {
+    "MAX_PASTE": 30,
+    "FRAUD_SCORE_LEVEL": 0,
+    "MAX_WORKERS": 5
+}
 
 # User agents to rotate
 USER_AGENTS = [
@@ -41,102 +42,18 @@ USER_AGENTS = [
     "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"
 ]
 
-# Google Sheets setup
-SCOPE = [
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive"
-]
+# Request timeout
+REQUEST_TIMEOUT = 5
+MIN_DELAY = 0.5
+MAX_DELAY = 2.5
 
-SHEET_NAME_VARIANTS = {
-    "used_ips": ["Used IPs", "Used IP List", "Used_IPs"],
-    "good_proxies": ["Good Proxies", "Good_Proxies", "GoodProxies"]
-}
-
-def get_sheet(sheet_type):
-    """Get a sheet by type (used_ips or good_proxies) with fallback"""
-    try:
-        creds_json = os.environ.get("GOOGLE_CREDENTIALS")
-        if not creds_json:
-            raise ValueError("GOOGLE_CREDENTIALS environment variable not set")
-            
-        creds_dict = json.loads(creds_json)
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
-        client = gspread.authorize(creds)
-        client.timeout = 10
-
-        variants = SHEET_NAME_VARIANTS[sheet_type]
-        
-        for name in variants:
-            try:
-                return client.open(name).sheet1
-            except gspread.SpreadsheetNotFound:
-                continue
-                
-        return client.create(variants[0]).sheet1
-
-    except Exception as e:
-        logger.error(f"Error accessing Google Sheet: {str(e)}")
-        return None
-
-def add_used_ip(ip, proxy):
-    try:
-        sheet = get_sheet("used_ips")
-        if sheet:
-            sheet.append_row([ip, proxy, str(datetime.datetime.utcnow())])
-    except Exception as e:
-        logger.error(f"Error adding used IP: {e}")
-
-def delete_used_ip(ip):
-    try:
-        sheet = get_sheet("used_ips")
-        if not sheet: 
-            return False
-        
-        data = sheet.get_all_values()
-        for i, row in enumerate(data):
-            if row and row[0] == ip:
-                sheet.delete_row(i + 1)
-                return True
-        return False
-    except Exception as e:
-        logger.error(f"Error deleting used IP: {e}")
-        return False
-
-def get_all_used_ips():
-    try:
-        sheet = get_sheet("used_ips")
-        if not sheet:
-            return []
-            
-        headers = sheet.row_values(1)
-        records = sheet.get_all_records()
-        
-        if not headers or len(headers) < 3:
-            return [{"IP": row[0], "Proxy": row[1], "Date": row[2]} for row in sheet.get_all_values()[1:] if row]
-            
-        return records
-    except Exception as e:
-        logger.error(f"Error getting used IPs: {e}")
-        return []
-
-def log_good_proxy(proxy, ip):
-    try:
-        sheet = get_sheet("good_proxies")
-        if sheet:
-            sheet.append_row([proxy, ip, str(datetime.datetime.utcnow())])
-    except Exception as e:
-        logger.error(f"Error logging good proxy: {e}")
-
-def get_good_proxies():
-    try:
-        sheet = get_sheet("good_proxies")
-        if not sheet:
-            return []
-            
-        return [row[0] for row in sheet.get_all_values()[1:] if row]
-    except Exception as e:
-        logger.error(f"Error getting good proxies: {e}")
-        return []
+def get_app_settings():
+    settings = get_settings()
+    return {
+        "MAX_PASTE": int(settings.get("MAX_PASTE", DEFAULT_SETTINGS["MAX_PASTE"])),
+        "FRAUD_SCORE_LEVEL": int(settings.get("FRAUD_SCORE_LEVEL", DEFAULT_SETTINGS["FRAUD_SCORE_LEVEL"])),
+        "MAX_WORKERS": int(settings.get("MAX_WORKERS", DEFAULT_SETTINGS["MAX_WORKERS"]))
+    }
 
 def get_ip_from_proxy(proxy):
     try:
@@ -211,7 +128,7 @@ def get_fraud_score(ip, proxy_line):
         logger.error(f"⚠️ Error checking Scamalytics for {ip}: {e}")
     return None
 
-def single_check_proxy(proxy_line):
+def single_check_proxy(proxy_line, fraud_score_level):
     time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
     
     ip = get_ip_from_proxy(proxy_line)
@@ -219,12 +136,17 @@ def single_check_proxy(proxy_line):
         return None
 
     score = get_fraud_score(ip, proxy_line)
-    if score == 0:
+    if score is not None and score <= fraud_score_level:
         return {"proxy": proxy_line, "ip": ip}
     return None
 
 @app.route("/", methods=["GET", "POST"])
 def index():
+    settings = get_app_settings()
+    MAX_PASTE = settings["MAX_PASTE"]
+    FRAUD_SCORE_LEVEL = settings["FRAUD_SCORE_LEVEL"]
+    MAX_WORKERS = settings["MAX_WORKERS"]
+    
     results = []
     message = ""
 
@@ -238,17 +160,17 @@ def index():
             file = request.files['proxyfile']
             all_lines = file.read().decode("utf-8").strip().splitlines()
             input_count = len(all_lines)
-            if input_count > PROXY_CHECK_HARD_LIMIT:
-                truncation_warning = f" Only the first {PROXY_CHECK_HARD_LIMIT} proxies were processed."
-                all_lines = all_lines[:PROXY_CHECK_HARD_LIMIT]
+            if input_count > MAX_PASTE:
+                truncation_warning = f" Only the first {MAX_PASTE} proxies were processed."
+                all_lines = all_lines[:MAX_PASTE]
             proxies = all_lines
         elif 'proxytext' in request.form:
             proxytext = request.form.get("proxytext", "")
             all_lines = proxytext.strip().splitlines()
             input_count = len(all_lines)
-            if input_count > PROXY_CHECK_HARD_LIMIT:
-                truncation_warning = f" Only the first {PROXY_CHECK_HARD_LIMIT} proxies were processed."
-                all_lines = all_lines[:PROXY_CHECK_HARD_LIMIT]
+            if input_count > MAX_PASTE:
+                truncation_warning = f" Only the first {MAX_PASTE} proxies were processed."
+                all_lines = all_lines[:MAX_PASTE]
             proxies = all_lines
 
         proxies = list(set(p.strip() for p in proxies if p.strip()))
@@ -256,7 +178,7 @@ def index():
 
         if proxies:
             with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                futures = [executor.submit(single_check_proxy, proxy) for proxy in proxies]
+                futures = [executor.submit(single_check_proxy, proxy, FRAUD_SCORE_LEVEL) for proxy in proxies]
                 for future in as_completed(futures):
                     result = future.result()
                     if result:
@@ -291,7 +213,7 @@ def index():
         else:
             message = f"⚠️ No valid proxies provided. Submitted {input_count} lines, but none were valid proxy formats."
 
-    return render_template("index.html", results=results, message=message)
+    return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE)
 
 @app.route("/track-used", methods=["POST"])
 def track_used():
@@ -318,9 +240,13 @@ def delete_used_ip_route(ip):
 @app.route("/admin")
 def admin():
     try:
+        settings = get_app_settings()
         stats = {
             "total_checks": "N/A (Vercel)",
-            "total_good": len(get_good_proxies())
+            "total_good": len(get_good_proxies()),
+            "max_paste": settings["MAX_PASTE"],
+            "fraud_score_level": settings["FRAUD_SCORE_LEVEL"],
+            "max_workers": settings["MAX_WORKERS"]
         }
         
         used_ips = get_all_used_ips()
@@ -337,6 +263,51 @@ def admin():
     except Exception as e:
         logger.error(f"Admin panel error: {e}")
         return f"Admin Error: {str(e)}", 500
+
+@app.route("/admin/settings", methods=["GET", "POST"])
+def admin_settings():
+    settings = get_app_settings()
+    message = None
+    
+    if request.method == "POST":
+        max_paste = request.form.get("max_paste")
+        fraud_score_level = request.form.get("fraud_score_level")
+        max_workers = request.form.get("max_workers")
+        
+        # Validate inputs
+        try:
+            max_paste = int(max_paste)
+            if max_paste < 5 or max_paste > 100:
+                message = "Max proxies must be between 5 and 100"
+                raise ValueError(message)
+        except ValueError:
+            max_paste = DEFAULT_SETTINGS["MAX_PASTE"]
+        
+        try:
+            fraud_score_level = int(fraud_score_level)
+            if fraud_score_level < 0 or fraud_score_level > 100:
+                message = "Fraud score must be between 0 and 100"
+                raise ValueError(message)
+        except ValueError:
+            fraud_score_level = DEFAULT_SETTINGS["FRAUD_SCORE_LEVEL"]
+        
+        try:
+            max_workers = int(max_workers)
+            if max_workers < 1 or max_workers > 30:
+                message = "Max workers must be between 1 and 30"
+                raise ValueError(message)
+        except ValueError:
+            max_workers = DEFAULT_SETTINGS["MAX_WORKERS"]
+        
+        # Only update if no validation errors
+        if not message:
+            update_setting("MAX_PASTE", str(max_paste))
+            update_setting("FRAUD_SCORE_LEVEL", str(fraud_score_level))
+            update_setting("MAX_WORKERS", str(max_workers))
+            settings = get_app_settings()  # Refresh settings
+            message = "Settings updated successfully"
+    
+    return render_template("admin_settings.html", settings=settings, message=message)
 
 @app.route('/static/<path:path>')
 def send_static(path):

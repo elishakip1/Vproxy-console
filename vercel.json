@@ -11,6 +11,10 @@
       "dest": "static/$1"
     },
     {
+      "src": "/admin/settings",
+      "dest": "app.py"
+    },
+    {
       "src": "/(.*)",
       "dest": "app.py"
     }

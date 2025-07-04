@@ -15,7 +15,8 @@ SCOPE = [
 # Allow name variations
 SHEET_NAME_VARIANTS = {
     "used_ips": ["Used IPs", "Used IP List", "Used_IPs"],
-    "good_proxies": ["Good Proxies", "Good_Proxies", "GoodProxies"]
+    "good_proxies": ["Good Proxies", "Good_Proxies", "GoodProxies"],
+    "settings": ["Settings", "App Settings", "Settings_Sheet"]
 }
 
 def get_sheet(sheet_type):
@@ -108,3 +109,46 @@ def get_good_proxies():
     except Exception as e:
         logger.error(f"Error getting good proxies: {e}")
         return []
+
+def get_settings():
+    try:
+        sheet = get_sheet("settings")
+        if not sheet:
+            return {}
+        records = sheet.get_all_records()
+        settings = {}
+        for row in records:
+            if 'Setting' in row and 'Value' in row:
+                settings[row['Setting']] = row['Value']
+        return settings
+    except Exception as e:
+        logger.error(f"Error getting settings: {e}")
+        return {}
+
+def update_setting(setting_name, value):
+    try:
+        sheet = get_sheet("settings")
+        if not sheet:
+            return False
+            
+        data = sheet.get_all_values()
+        headers = data[0] if data else []
+        if not headers or headers[0] != 'Setting' or headers[1] != 'Value':
+            sheet.clear()
+            sheet.append_row(['Setting', 'Value'])
+            data = []
+            
+        found = False
+        for i, row in enumerate(data[1:], start=2):
+            if row and row[0] == setting_name:
+                sheet.update_cell(i, 2, value)
+                found = True
+                break
+                
+        if not found:
+            sheet.append_row([setting_name, value])
+            
+        return True
+    except Exception as e:
+        logger.error(f"Error updating setting: {e}")
+        return False
