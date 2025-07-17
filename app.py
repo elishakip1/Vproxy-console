@@ -14,7 +14,9 @@ import sys
 import json
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-from sheets_util import get_settings, update_setting, add_used_ip, delete_used_ip, get_all_used_ips, log_good_proxy, get_good_proxies, log_user_access, get_blocked_ips, add_blocked_ip, remove_blocked_ip
+#
+# --- CHANGE 1: Corrected the import statement to include all necessary functions ---
+from sheets_util import get_settings, update_setting, add_used_ip, delete_used_ip, get_all_used_ips, log_good_proxy, get_good_proxies
 
 # Configure logging
 logging.basicConfig(
@@ -46,9 +48,6 @@ USER_AGENTS = [
 REQUEST_TIMEOUT = 5
 MIN_DELAY = 0.5
 MAX_DELAY = 2.5
-
-# IP restriction for admin
-ADMIN_IP = "41.90.210.128"
 
 def get_app_settings():
     settings = get_settings()
@@ -143,27 +142,6 @@ def single_check_proxy(proxy_line, fraud_score_level):
         return {"proxy": proxy_line, "ip": ip}
     return None
 
-@app.before_request
-def track_and_block():
-    # Get client IP (handling proxy headers)
-    if request.headers.getlist("X-Forwarded-For"):
-        ip = request.headers.getlist("X-Forwarded-For")[0]
-    else:
-        ip = request.remote_addr
-    
-    # Log access to AccessLogs
-    user_agent = request.headers.get('User-Agent', 'Unknown')
-    log_user_access(ip, user_agent)
-    
-    # Check if IP is blocked
-    blocked_ips = [item["IP"] for item in get_blocked_ips()]
-    if ip in blocked_ips:
-        return "Your IP has been blocked from accessing this service", 403
-    
-    # Restrict admin routes to specific IP
-    if request.path.startswith('/admin') and ip != ADMIN_IP:
-        return "Admin access restricted", 403
-
 @app.route("/", methods=["GET", "POST"])
 def index():
     settings = get_app_settings()
@@ -237,6 +215,7 @@ def index():
         else:
             message = f"⚠️ No valid proxies provided. Submitted {input_count} lines, but none were valid proxy formats."
     
+    # --- CHANGE 2: Added 'settings=settings' to the render_template call ---
     return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings)
 
 @app.route("/track-used", methods=["POST"])
@@ -275,7 +254,6 @@ def admin():
         
         used_ips = get_all_used_ips()
         good_proxies = get_good_proxies()
-        blocked_ips = get_blocked_ips()
         
         return render_template(
             "admin.html", 
@@ -283,8 +261,7 @@ def admin():
             stats=stats,
             graph_url=None,
             used_ips=used_ips,
-            good_proxies=good_proxies,
-            blocked_ips=blocked_ips
+            good_proxies=good_proxies
         )
     except Exception as e:
         logger.error(f"Admin panel error: {e}")
@@ -334,22 +311,6 @@ def admin_settings():
             message = "Settings updated successfully"
     
     return render_template("admin_settings.html", settings=settings, message=message)
-
-@app.route("/admin/block-ip", methods=["POST"])
-def block_ip():
-    ip = request.form.get("ip")
-    reason = request.form.get("reason", "Abuse")
-    if ip:
-        if add_blocked_ip(ip, reason):
-            return redirect(url_for("admin"))
-        else:
-            return "Error blocking IP", 500
-    return "Invalid IP", 400
-
-@app.route("/admin/unblock-ip/<ip>")
-def unblock_ip(ip):
-    remove_blocked_ip(ip)
-    return redirect(url_for("admin"))
 
 @app.route('/static/<path:path>')
 def send_static(path):
