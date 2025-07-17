@@ -1,4 +1,3 @@
-# app.py
 from flask import Flask, request, render_template, redirect, url_for, jsonify, send_from_directory
 import os
 import time
@@ -11,10 +10,12 @@ from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 import logging
 import sys
-import json
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-from sheets_util import get_settings, update_setting, add_used_ip, delete_used_ip, get_all_used_ips, log_good_proxy, get_good_proxies, log_user_access, get_blocked_ips, add_blocked_ip, remove_blocked_ip
+from sheets_util import (
+    get_settings, update_setting, add_used_ip, delete_used_ip, 
+    get_all_used_ips, log_good_proxy, get_good_proxies,
+    log_user_access, get_blocked_ips, add_blocked_ip, 
+    remove_blocked_ip, is_ip_blocked
+)
 
 # Configure logging
 logging.basicConfig(
@@ -145,6 +146,10 @@ def single_check_proxy(proxy_line, fraud_score_level):
 
 @app.before_request
 def track_and_block():
+    # Skip static files
+    if request.path.startswith('/static'):
+        return
+    
     # Get client IP (handling proxy headers)
     if request.headers.getlist("X-Forwarded-For"):
         ip = request.headers.getlist("X-Forwarded-For")[0]
@@ -155,14 +160,13 @@ def track_and_block():
     user_agent = request.headers.get('User-Agent', 'Unknown')
     log_user_access(ip, user_agent)
     
-    # Check if IP is blocked
-    blocked_ips = [item["IP"] for item in get_blocked_ips()]
-    if ip in blocked_ips:
-        return "Your IP has been blocked from accessing this service", 403
+    # Check if IP is blocked (except for admin routes)
+    if not request.path.startswith('/admin') and is_ip_blocked(ip):
+        return render_template("blocked.html"), 403
     
     # Restrict admin routes to specific IP
     if request.path.startswith('/admin') and ip != ADMIN_IP:
-        return "Admin access restricted", 403
+        return render_template("admin_blocked.html"), 403
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -215,6 +219,7 @@ def index():
                             
                         results.append({
                             "proxy": result["proxy"],
+                            "ip": result["ip"],
                             "used": used
                         })
 
@@ -222,9 +227,7 @@ def index():
                 for item in results:
                     if not item["used"]:
                         try:
-                            ip = get_ip_from_proxy(item["proxy"])
-                            if ip:
-                                log_good_proxy(item["proxy"], ip)
+                            log_good_proxy(item["proxy"], item["ip"])
                         except Exception as e:
                             logger.error(f"Error logging good proxy: {e}")
 
@@ -279,16 +282,14 @@ def admin():
         
         return render_template(
             "admin.html", 
-            logs=[],
             stats=stats,
-            graph_url=None,
             used_ips=used_ips,
             good_proxies=good_proxies,
             blocked_ips=blocked_ips
         )
     except Exception as e:
         logger.error(f"Admin panel error: {e}")
-        return f"Admin Error: {str(e)}", 500
+        return render_template("error.html", error=str(e)), 500
 
 @app.route("/admin/settings", methods=["GET", "POST"])
 def admin_settings():
@@ -343,13 +344,19 @@ def block_ip():
         if add_blocked_ip(ip, reason):
             return redirect(url_for("admin"))
         else:
-            return "Error blocking IP", 500
-    return "Invalid IP", 400
+            return render_template("error.html", error="Failed to block IP"), 500
+    return render_template("error.html", error="Invalid IP address"), 400
 
 @app.route("/admin/unblock-ip/<ip>")
 def unblock_ip(ip):
-    remove_blocked_ip(ip)
-    return redirect(url_for("admin"))
+    try:
+        if remove_blocked_ip(ip):
+            return redirect(url_for("admin"))
+        else:
+            return render_template("error.html", error="IP not found"), 404
+    except Exception as e:
+        logger.error(f"Error unblocking IP: {e}")
+        return render_template("error.html", error=str(e)), 500
 
 @app.route('/static/<path:path>')
 def send_static(path):
