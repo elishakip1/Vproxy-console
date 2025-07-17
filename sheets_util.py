@@ -13,11 +13,43 @@ SCOPE = [
     "https://www.googleapis.com/auth/drive"
 ]
 
-# Allow name variations
-SHEET_NAME_VARIANTS = {
-    "used_ips": ["Used IPs", "Used IP List", "Used_IPs"],
-    "good_proxies": ["Good Proxies", "Good_Proxies", "GoodProxies"],
-    "settings": ["Settings", "App Settings", "Settings_Sheet"]
+# Sheet configuration
+SHEET_CONFIG = {
+    "used_ips": {
+        "name": "Used IPs",
+        "worksheets": {
+            "proxies": {
+                "name": "UsedProxies",
+                "headers": ["IP", "Proxy", "Date"]
+            },
+            "access": {
+                "name": "AccessLogs",
+                "headers": ["IP", "Type", "UserAgent", "Timestamp"]
+            },
+            "blocked": {
+                "name": "BlockedIPs",
+                "headers": ["IP", "Reason", "Timestamp"]
+            }
+        }
+    },
+    "good_proxies": {
+        "name": "Good Proxies",
+        "worksheets": {
+            "main": {
+                "name": "GoodProxies",
+                "headers": ["Proxy", "IP", "Timestamp"]
+            }
+        }
+    },
+    "settings": {
+        "name": "Settings",
+        "worksheets": {
+            "main": {
+                "name": "Settings",
+                "headers": ["Setting", "Value"]
+            }
+        }
+    }
 }
 
 def get_eat_time():
@@ -39,172 +71,197 @@ def get_spreadsheet(sheet_type):
         client = gspread.authorize(creds)
         client.timeout = 10  # seconds
 
-        variants = SHEET_NAME_VARIANTS[sheet_type]
+        config = SHEET_CONFIG[sheet_type]
         
-        for name in variants:
-            try:
-                return client.open(name)
-            except gspread.SpreadsheetNotFound:
-                continue
-                
-        # If none found, create first variant
-        logger.warning(f"Creating new sheet: {variants[0]}")
-        return client.create(variants[0])
+        try:
+            return client.open(config["name"])
+        except gspread.SpreadsheetNotFound:
+            logger.warning(f"Creating new spreadsheet: {config['name']}")
+            spreadsheet = client.create(config["name"])
+            # Initialize worksheets
+            for ws_config in config["worksheets"].values():
+                worksheet = spreadsheet.add_worksheet(
+                    title=ws_config["name"], 
+                    rows=100, 
+                    cols=len(ws_config["headers"])
+                )
+                worksheet.append_row(ws_config["headers"])
+            return spreadsheet
 
     except Exception as e:
         logger.error(f"Error accessing Google Sheet: {str(e)}")
         return None
 
-def get_worksheet(sheet_type, worksheet_name):
-    """Get a specific worksheet by name within a spreadsheet"""
+def get_worksheet(sheet_type, worksheet_key):
+    """Get a specific worksheet by key within a spreadsheet"""
     spreadsheet = get_spreadsheet(sheet_type)
     if not spreadsheet:
         return None
         
+    config = SHEET_CONFIG[sheet_type]["worksheets"][worksheet_key]
+    
     try:
-        return spreadsheet.worksheet(worksheet_name)
+        worksheet = spreadsheet.worksheet(config["name"])
+        # Ensure headers exist
+        existing_headers = worksheet.row_values(1)
+        if existing_headers != config["headers"]:
+            worksheet.clear()
+            worksheet.append_row(config["headers"])
+        return worksheet
     except gspread.WorksheetNotFound:
         try:
-            return spreadsheet.add_worksheet(title=worksheet_name, rows=100, cols=10)
+            worksheet = spreadsheet.add_worksheet(
+                title=config["name"], 
+                rows=100, 
+                cols=len(config["headers"])
+            )
+            worksheet.append_row(config["headers"])
+            return worksheet
         except Exception as e:
             logger.error(f"Error creating worksheet: {e}")
             return None
 
 def add_used_ip(ip, proxy):
+    """Add a used proxy IP to the UsedProxies worksheet"""
     try:
-        sheet = get_worksheet("used_ips", "UsedProxies")
+        sheet = get_worksheet("used_ips", "proxies")
         if sheet:
+            # Check if IP already exists
+            records = sheet.get_all_records()
+            for record in records:
+                if record["IP"] == ip:
+                    return True
+            
             sheet.append_row([ip, proxy, get_eat_time()])
+            return True
+        return False
     except Exception as e:
         logger.error(f"Error adding used IP: {e}")
+        return False
 
 def delete_used_ip(ip):
+    """Delete a used IP from the UsedProxies worksheet"""
     try:
-        sheet = get_worksheet("used_ips", "UsedProxies")
+        sheet = get_worksheet("used_ips", "proxies")
         if not sheet: 
             return False
         
-        data = sheet.get_all_values()
-        for i, row in enumerate(data):
-            if row and row[0] == ip:
-                sheet.delete_row(i + 1)
-                return True
+        cell = sheet.find(ip, in_column=1)  # Column 1 is IP
+        if cell:
+            sheet.delete_row(cell.row)
+            return True
         return False
     except Exception as e:
         logger.error(f"Error deleting used IP: {e}")
         return False
 
 def get_all_used_ips():
+    """Get all used IPs from UsedProxies worksheet"""
     try:
-        sheet = get_worksheet("used_ips", "UsedProxies")
+        sheet = get_worksheet("used_ips", "proxies")
         if not sheet:
             return []
-            
-        # Return as list of dicts for admin panel
-        headers = sheet.row_values(1)
-        records = sheet.get_all_records()
-        
-        # If no headers, create default structure
-        if not headers or len(headers) < 3:
-            return [{"IP": row[0], "Proxy": row[1], "Date": row[2]} for row in sheet.get_all_values()[1:] if row]
-            
-        return records
+        return sheet.get_all_records()
     except Exception as e:
         logger.error(f"Error getting used IPs: {e}")
         return []
 
 def log_good_proxy(proxy, ip):
+    """Log a working proxy to GoodProxies worksheet"""
     try:
-        sheet = get_worksheet("good_proxies", "GoodProxies")
+        sheet = get_worksheet("good_proxies", "main")
         if sheet:
+            # Check if proxy already exists
+            records = sheet.get_all_records()
+            for record in records:
+                if record["Proxy"] == proxy:
+                    return True
+            
             sheet.append_row([proxy, ip, get_eat_time()])
+            return True
+        return False
     except Exception as e:
         logger.error(f"Error logging good proxy: {e}")
+        return False
 
 def get_good_proxies():
+    """Get all good proxies from GoodProxies worksheet"""
     try:
-        sheet = get_worksheet("good_proxies", "GoodProxies")
+        sheet = get_worksheet("good_proxies", "main")
         if not sheet:
             return []
-            
-        # Return just the proxy strings for display
-        return [row[0] for row in sheet.get_all_values()[1:] if row]
+        return [row["Proxy"] for row in sheet.get_all_records()]
     except Exception as e:
         logger.error(f"Error getting good proxies: {e}")
         return []
 
 def get_settings():
+    """Get application settings from Settings worksheet"""
     try:
-        sheet = get_worksheet("settings", "Settings")
+        sheet = get_worksheet("settings", "main")
         if not sheet:
             return {}
-        records = sheet.get_all_records()
         settings = {}
-        for row in records:
-            if 'Setting' in row and 'Value' in row:
-                settings[row['Setting']] = row['Value']
+        for row in sheet.get_all_records():
+            settings[row["Setting"]] = row["Value"]
         return settings
     except Exception as e:
         logger.error(f"Error getting settings: {e}")
         return {}
 
 def update_setting(setting_name, value):
+    """Update a setting in Settings worksheet"""
     try:
-        sheet = get_worksheet("settings", "Settings")
+        sheet = get_worksheet("settings", "main")
         if not sheet:
             return False
             
-        data = sheet.get_all_values()
-        headers = data[0] if data else []
-        if not headers or headers[0] != 'Setting' or headers[1] != 'Value':
-            sheet.clear()
-            sheet.append_row(['Setting', 'Value'])
-            data = []
-            
-        found = False
-        for i, row in enumerate(data[1:], start=2):
-            if row and row[0] == setting_name:
-                sheet.update_cell(i, 2, value)
-                found = True
-                break
-                
-        if not found:
+        # Find the setting if it exists
+        cell = sheet.find(setting_name, in_column=1)  # Column 1 is Setting
+        if cell:
+            sheet.update_cell(cell.row, 2, value)  # Column 2 is Value
+        else:
             sheet.append_row([setting_name, value])
-            
         return True
     except Exception as e:
         logger.error(f"Error updating setting: {e}")
         return False
 
-# New functions for IP management
+# IP Management Functions
 def log_user_access(ip, user_agent):
     """Log user access to AccessLogs worksheet"""
     try:
-        sheet = get_worksheet("used_ips", "AccessLogs")
+        sheet = get_worksheet("used_ips", "access")
         if sheet:
             sheet.append_row([ip, "ACCESS", user_agent, get_eat_time()])
+            return True
+        return False
     except Exception as e:
         logger.error(f"Error logging user access: {e}")
+        return False
 
 def get_blocked_ips():
-    """Get blocked IPs from BlockedIPs worksheet"""
+    """Get all blocked IPs from BlockedIPs worksheet"""
     try:
-        sheet = get_worksheet("used_ips", "BlockedIPs")
+        sheet = get_worksheet("used_ips", "blocked")
         if not sheet:
             return []
-        # Return as list of dicts
-        return [{"IP": row[0], "Reason": row[1], "Date": row[2]} 
-                for row in sheet.get_all_values()[1:] 
-                if row]
+        return sheet.get_all_records()
     except Exception as e:
         logger.error(f"Error getting blocked IPs: {e}")
         return []
 
 def add_blocked_ip(ip, reason):
-    """Add blocked IP to BlockedIPs worksheet"""
+    """Add a blocked IP to BlockedIPs worksheet"""
     try:
-        sheet = get_worksheet("used_ips", "BlockedIPs")
+        sheet = get_worksheet("used_ips", "blocked")
         if sheet:
+            # Check if IP is already blocked
+            records = sheet.get_all_records()
+            for record in records:
+                if record["IP"] == ip:
+                    return True
+            
             sheet.append_row([ip, reason, get_eat_time()])
             return True
         return False
@@ -213,17 +270,29 @@ def add_blocked_ip(ip, reason):
         return False
 
 def remove_blocked_ip(ip):
-    """Remove blocked IP from BlockedIPs worksheet"""
+    """Remove a blocked IP from BlockedIPs worksheet"""
     try:
-        sheet = get_worksheet("used_ips", "BlockedIPs")
+        sheet = get_worksheet("used_ips", "blocked")
         if not sheet: 
             return False
-        data = sheet.get_all_values()
-        for i, row in enumerate(data):
-            if row and row[0] == ip:
-                sheet.delete_row(i + 1)
-                return True
+        
+        cell = sheet.find(ip, in_column=1)  # Column 1 is IP
+        if cell:
+            sheet.delete_row(cell.row)
+            return True
         return False
     except Exception as e:
         logger.error(f"Error removing blocked IP: {e}")
+        return False
+
+def is_ip_blocked(ip):
+    """Check if an IP is blocked"""
+    try:
+        sheet = get_worksheet("used_ips", "blocked")
+        if not sheet:
+            return False
+        cell = sheet.find(ip, in_column=1)  # Column 1 is IP
+        return bool(cell)
+    except Exception as e:
+        logger.error(f"Error checking blocked IP: {e}")
         return False
