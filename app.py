@@ -49,7 +49,7 @@ MIN_DELAY = 0.5
 MAX_DELAY = 2.5
 
 # IP restriction for admin
-ADMIN_IP = "41.90.211.34"
+ADMIN_IP = "41.90.210.147"
 
 def get_app_settings():
     settings = get_settings()
