@@ -282,7 +282,7 @@ def index():
             logger.warning(f"Found {len(invalid_format_proxies)} invalid format proxies")
 
         if invalid_password_proxies:
-            logger.warning(f"Found {len(invalid_password_proxies)} invalid password proxies")
+            logger.warning(f"Found {len(invalid_password_proxies)} error  proxies")
 
         # Only show failed.html if ALL proxies have invalid passwords AND there are no valid format proxies
         if len(valid_password_proxies) == 0 and len(valid_format_proxies) > 0:
