@@ -251,8 +251,8 @@ def index():
             proxies = all_lines
 
         # Filter out empty lines and validate format
-        valid_proxies = []
-        invalid_proxies = []
+        valid_format_proxies = []
+        invalid_format_proxies = []
         
         for proxy in proxies:
             proxy = proxy.strip()
@@ -260,25 +260,38 @@ def index():
                 continue
                 
             if validate_proxy_format(proxy):
-                valid_proxies.append(proxy)
+                valid_format_proxies.append(proxy)
             else:
-                invalid_proxies.append(proxy)
+                invalid_format_proxies.append(proxy)
                 logger.warning(f"Invalid proxy format: {proxy}")
 
-        processed_count = len(valid_proxies)
+        # Separate valid format proxies by password validation
+        valid_password_proxies = []
+        invalid_password_proxies = []
+        
+        for proxy in valid_format_proxies:
+            if validate_proxy_password(proxy, ALLOWED_PASSWORDS):
+                valid_password_proxies.append(proxy)
+            else:
+                invalid_password_proxies.append(proxy)
+                logger.warning(f"Invalid proxy password: {proxy}")
 
-        if invalid_proxies:
-            logger.warning(f"Found {len(invalid_proxies)} invalid proxies: {invalid_proxies}")
+        processed_count = len(valid_password_proxies)
 
-        if valid_proxies:
-            # Check if any valid proxy has invalid password
-            invalid_password_proxies = [p for p in valid_proxies if not validate_proxy_password(p, ALLOWED_PASSWORDS)]
-            if invalid_password_proxies:
-                logger.warning(f"Invalid password detected in {len(invalid_password_proxies)} proxies")
-                return render_template("failed.html"), 403
+        if invalid_format_proxies:
+            logger.warning(f"Found {len(invalid_format_proxies)} invalid format proxies")
 
+        if invalid_password_proxies:
+            logger.warning(f"Found {len(invalid_password_proxies)} invalid password proxies")
+
+        # Only show failed.html if ALL proxies have invalid passwords AND there are no valid format proxies
+        if len(valid_password_proxies) == 0 and len(valid_format_proxies) > 0:
+            logger.warning("All proxies have invalid passwords")
+            return render_template("failed.html"), 403
+
+        if valid_password_proxies:
             with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                futures = [executor.submit(single_check_proxy, proxy, FRAUD_SCORE_LEVEL, ALLOWED_PASSWORDS) for proxy in valid_proxies]
+                futures = [executor.submit(single_check_proxy, proxy, FRAUD_SCORE_LEVEL, ALLOWED_PASSWORDS) for proxy in valid_password_proxies]
                 for future in as_completed(futures):
                     result = future.result()
                     if result:
@@ -306,16 +319,24 @@ def index():
                 good_count = len([r for r in results if not r['used']])
                 used_count = len([r for r in results if r['used']])
                 
-                invalid_count = len(invalid_proxies)
-                format_warning = f" ({invalid_count} invalid format)" if invalid_count > 0 else ""
+                invalid_format_count = len(invalid_format_proxies)
+                invalid_password_count = len(invalid_password_proxies)
                 
-                message = f"✅ Processed {processed_count} proxies ({input_count} submitted{format_warning}). Found {good_count} good proxies ({used_count} used).{truncation_warning}"
+                format_warning = f" ({invalid_format_count} invalid format)" if invalid_format_count > 0 else ""
+                password_warning = f" ({invalid_password_count} invalid password)" if invalid_password_count > 0 else ""
+                
+                message = f"✅ Processed {processed_count} proxies ({input_count} submitted{format_warning}{password_warning}). Found {good_count} good proxies ({used_count} used).{truncation_warning}"
             else:
-                invalid_count = len(invalid_proxies)
-                format_warning = f" ({invalid_count} invalid format)" if invalid_count > 0 else ""
-                message = f"⚠️ Processed {processed_count} proxies ({input_count} submitted{format_warning}). No good proxies found.{truncation_warning}"
+                invalid_format_count = len(invalid_format_proxies)
+                invalid_password_count = len(invalid_password_proxies)
+                
+                format_warning = f" ({invalid_format_count} invalid format)" if invalid_format_count > 0 else ""
+                password_warning = f" ({invalid_password_count} invalid password)" if invalid_password_count > 0 else ""
+                
+                message = f"⚠️ Processed {processed_count} proxies ({input_count} submitted{format_warning}{password_warning}). No good proxies found.{truncation_warning}"
         else:
-            message = f"⚠️ No valid proxies provided. Submitted {input_count} lines, but none were valid proxy formats (host:port:username:password)."
+            # No valid proxies at all (either format or password)
+            message = f"⚠️ No valid proxies provided. Submitted {input_count} lines, but none were valid proxy formats (host:port:username:password) with correct password."
     
     return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings)
 
