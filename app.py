@@ -34,6 +34,9 @@ DEFAULT_SETTINGS = {
     "MAX_WORKERS": 5
 }
 
+# REQUIRED_PASSWORD - Add this constant
+REQUIRED_PASSWORD = "YzCoO3h2M4XSTjM5"
+
 # User agents to rotate
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
@@ -59,9 +62,26 @@ def get_app_settings():
         "MAX_WORKERS": int(settings.get("MAX_WORKERS", DEFAULT_SETTINGS["MAX_WORKERS"]))
     }
 
-def get_ip_from_proxy(proxy):
+def validate_proxy_password(proxy_line):
+    """Validate that proxy password matches the required password"""
     try:
-        host, port, user, pw = proxy.strip().split(":")
+        parts = proxy_line.strip().split(":")
+        if len(parts) == 4:  # host:port:user:password
+            host, port, user, password = parts
+            if password == REQUIRED_PASSWORD:
+                return True
+        return False
+    except Exception as e:
+        logger.error(f"Error validating proxy password: {e}")
+        return False
+
+def get_ip_from_proxy(proxy_line):
+    """Extract IP from proxy - with password validation"""
+    if not validate_proxy_password(proxy_line):
+        return None
+        
+    try:
+        host, port, user, pw = proxy_line.strip().split(":")
         proxies = {
             "http": f"http://{user}:{pw}@{host}:{port}",
             "https": f"http://{user}:{pw}@{host}:{port}",
@@ -84,10 +104,14 @@ def get_ip_from_proxy(proxy):
         ).text
         return ip
     except Exception as e:
-        logger.error(f"❌ Failed to get IP from proxy {proxy}: {e}")
+        logger.error(f"❌ Failed to get IP from proxy {proxy_line}: {e}")
         return None
 
 def get_fraud_score(ip, proxy_line):
+    """Get fraud score for IP using proxy - with password validation"""
+    if not validate_proxy_password(proxy_line):
+        return None
+        
     try:
         host, port, user, pw = proxy_line.strip().split(":")
         proxy_url = f"http://{user}:{pw}@{host}:{port}"
@@ -133,7 +157,13 @@ def get_fraud_score(ip, proxy_line):
     return None
 
 def single_check_proxy(proxy_line, fraud_score_level):
+    """Check single proxy - with password validation"""
     time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
+    
+    # Validate password first
+    if not validate_proxy_password(proxy_line):
+        logger.warning(f"❌ Proxy rejected - invalid password: {proxy_line}")
+        return None
     
     ip = get_ip_from_proxy(proxy_line)
     if not ip:
@@ -205,6 +235,12 @@ def index():
         processed_count = len(proxies)
 
         if proxies:
+            # Check if any proxy has invalid password
+            invalid_proxies = [p for p in proxies if not validate_proxy_password(p)]
+            if invalid_proxies:
+                logger.warning(f"Invalid password detected in {len(invalid_proxies)} proxies")
+                return render_template("failed.html"), 403
+
             with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
                 futures = [executor.submit(single_check_proxy, proxy, FRAUD_SCORE_LEVEL) for proxy in proxies]
                 for future in as_completed(futures):
@@ -247,6 +283,10 @@ def track_used():
     data = request.get_json()
     if data and "proxy" in data:
         try:
+            # Validate password before tracking
+            if not validate_proxy_password(data["proxy"]):
+                return jsonify({"status": "error", "message": "Invalid password"}), 403
+                
             ip = get_ip_from_proxy(data["proxy"])
             if ip:
                 add_used_ip(ip, data["proxy"])
