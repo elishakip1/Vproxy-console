@@ -49,12 +49,12 @@
           </div>
 
           <div class="mb-3">
-            <label for="required_password" class="form-label">
-              Required Proxy Password
+            <label for="allowed_passwords" class="form-label">
+              Allowed Proxy Passwords
             </label>
-            <input type="text" class="form-control" id="required_password" 
-                   name="required_password" value="{{ settings.REQUIRED_PASSWORD }}" required>
-            <div class="form-text">All proxies must have this exact password to be processed</div>
+            <textarea class="form-control" id="allowed_passwords" 
+                      name="allowed_passwords" rows="3" required>{{ settings.ALLOWED_PASSWORDS | join(', ') }}</textarea>
+            <div class="form-text">Comma-separated list of allowed passwords. Proxies with any of these passwords will be accepted.</div>
           </div>
           
           <button type="submit" class="btn btn-primary">Save Settings</button>
