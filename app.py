@@ -322,7 +322,7 @@ def index():
                 invalid_format_count = len(invalid_format_proxies)
                 invalid_password_count = len(invalid_password_proxies)
                 
-                format_warning = f" ({invalid_format_count} invalid format)" if invalid_format_count > 0 else ""
+                format_warning = f" ({invalid_format_count}  error)" if invalid_format_count > 0 else ""
                 password_warning = f" ({invalid_password_count} invalid password)" if invalid_password_count > 0 else ""
                 
                 message = f"✅ Processed {processed_count} proxies ({input_count} submitted{format_warning}{password_warning}). Found {good_count} good proxies ({used_count} used).{truncation_warning}"
