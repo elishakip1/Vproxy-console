@@ -64,16 +64,17 @@
         </div>
       </div>
       <div class="col-md-6">
-        <div class="card p-3 mb-4">
-          <h4>⚙️ Current Settings</h4>
-          <ul class="list-group">
+    <div class="card p-3 mb-4">
+        <h4>⚙️ Current Settings</h4>
+        <ul class="list-group">
             <li class="list-group-item">Max Proxies: <strong>{{ stats.max_paste }}</strong></li>
             <li class="list-group-item">Max Fraud Score: <strong>{{ stats.fraud_score_level }}</strong></li>
             <li class="list-group-item">Max Workers: <strong>{{ stats.max_workers }}</strong></li>
-          </ul>
-          <a href="/admin/settings" class="btn btn-outline-primary mt-2">Edit Settings</a>
-        </div>
-      </div>
+            <li class="list-group-item">Allowed Passwords: <strong>{{ stats.allowed_passwords }}</strong></li>
+        </ul>
+        <a href="/admin/settings" class="btn btn-outline-primary mt-2">Edit Settings</a>
+    </div>
+</div>
     </div>
 
     <div class="row mt-4">
