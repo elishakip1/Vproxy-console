@@ -47,6 +47,15 @@
                    name="max_workers" value="{{ settings.MAX_WORKERS }}" min="1" max="100">
             <div class="form-text">Number of parallel proxy checks (1-100)</div>
           </div>
+
+          <div class="mb-3">
+            <label for="required_password" class="form-label">
+              Required Proxy Password
+            </label>
+            <input type="text" class="form-control" id="required_password" 
+                   name="required_password" value="{{ settings.REQUIRED_PASSWORD }}" required>
+            <div class="form-text">All proxies must have this exact password to be processed</div>
+          </div>
           
           <button type="submit" class="btn btn-primary">Save Settings</button>
           <a href="/admin" class="btn btn-outline-secondary">Back to Admin</a>
