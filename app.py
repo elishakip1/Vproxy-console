@@ -32,7 +32,7 @@ DEFAULT_SETTINGS = {
     "MAX_PASTE": 30,
     "FRAUD_SCORE_LEVEL": 0,
     "MAX_WORKERS": 5,
-    "REQUIRED_PASSWORD": "YzCoO3h2M4XSTjM5"  # Add default password to settings
+    "ALLOWED_PASSWORDS": "YzCoO3h2M4XSTjM5,JBZAeWoqvF1XqOuw,54937335"  # Comma-separated list
 }
 
 # User agents to rotate
@@ -54,11 +54,15 @@ ADMIN_IP = "41.90.211.111"
 
 def get_app_settings():
     settings = get_settings()
+    allowed_passwords_str = settings.get("ALLOWED_PASSWORDS", DEFAULT_SETTINGS["ALLOWED_PASSWORDS"])
+    # Convert comma-separated string to list and strip whitespace
+    allowed_passwords = [pwd.strip() for pwd in allowed_passwords_str.split(",") if pwd.strip()]
+    
     return {
         "MAX_PASTE": int(settings.get("MAX_PASTE", DEFAULT_SETTINGS["MAX_PASTE"])),
         "FRAUD_SCORE_LEVEL": int(settings.get("FRAUD_SCORE_LEVEL", DEFAULT_SETTINGS["FRAUD_SCORE_LEVEL"])),
         "MAX_WORKERS": int(settings.get("MAX_WORKERS", DEFAULT_SETTINGS["MAX_WORKERS"])),
-        "REQUIRED_PASSWORD": settings.get("REQUIRED_PASSWORD", DEFAULT_SETTINGS["REQUIRED_PASSWORD"])
+        "ALLOWED_PASSWORDS": allowed_passwords
     }
 
 def validate_proxy_format(proxy_line):
@@ -75,23 +79,23 @@ def validate_proxy_format(proxy_line):
         logger.error(f"Error validating proxy format: {e}")
         return False
 
-def validate_proxy_password(proxy_line, required_password):
-    """Validate that proxy password matches the required password"""
+def validate_proxy_password(proxy_line, allowed_passwords):
+    """Validate that proxy password matches any of the allowed passwords"""
     try:
         parts = proxy_line.strip().split(":")
         if len(parts) == 4:  # host:port:user:password
             host, port, user, password = parts
-            # Check that all parts are non-empty AND password matches
-            if host and port and user and password and password == required_password:
+            # Check that all parts are non-empty AND password matches any allowed password
+            if host and port and user and password and password in allowed_passwords:
                 return True
         return False
     except Exception as e:
         logger.error(f"Error validating proxy password: {e}")
         return False
 
-def get_ip_from_proxy(proxy_line, required_password):
+def get_ip_from_proxy(proxy_line, allowed_passwords):
     """Extract IP from proxy - with password validation"""
-    if not validate_proxy_password(proxy_line, required_password):
+    if not validate_proxy_password(proxy_line, allowed_passwords):
         return None
         
     try:
@@ -121,9 +125,9 @@ def get_ip_from_proxy(proxy_line, required_password):
         logger.error(f"❌ Failed to get IP from proxy {proxy_line}: {e}")
         return None
 
-def get_fraud_score(ip, proxy_line, required_password):
+def get_fraud_score(ip, proxy_line, allowed_passwords):
     """Get fraud score for IP using proxy - with password validation"""
-    if not validate_proxy_password(proxy_line, required_password):
+    if not validate_proxy_password(proxy_line, allowed_passwords):
         return None
         
     try:
@@ -170,20 +174,20 @@ def get_fraud_score(ip, proxy_line, required_password):
         logger.error(f"⚠️ Error checking Scamalytics for {ip}: {e}")
     return None
 
-def single_check_proxy(proxy_line, fraud_score_level, required_password):
+def single_check_proxy(proxy_line, fraud_score_level, allowed_passwords):
     """Check single proxy - with password validation"""
     time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
     
     # Validate password first
-    if not validate_proxy_password(proxy_line, required_password):
+    if not validate_proxy_password(proxy_line, allowed_passwords):
         logger.warning(f"❌ Proxy rejected - invalid password or format: {proxy_line}")
         return None
     
-    ip = get_ip_from_proxy(proxy_line, required_password)
+    ip = get_ip_from_proxy(proxy_line, allowed_passwords)
     if not ip:
         return None
 
-    score = get_fraud_score(ip, proxy_line, required_password)
+    score = get_fraud_score(ip, proxy_line, allowed_passwords)
     if score is not None and score <= fraud_score_level:
         return {"proxy": proxy_line, "ip": ip}
     return None
@@ -218,7 +222,7 @@ def index():
     MAX_PASTE = settings["MAX_PASTE"]
     FRAUD_SCORE_LEVEL = settings["FRAUD_SCORE_LEVEL"]
     MAX_WORKERS = settings["MAX_WORKERS"]
-    REQUIRED_PASSWORD = settings["REQUIRED_PASSWORD"]
+    ALLOWED_PASSWORDS = settings["ALLOWED_PASSWORDS"]
     
     results = []
     message = ""
@@ -268,13 +272,13 @@ def index():
 
         if valid_proxies:
             # Check if any valid proxy has invalid password
-            invalid_password_proxies = [p for p in valid_proxies if not validate_proxy_password(p, REQUIRED_PASSWORD)]
+            invalid_password_proxies = [p for p in valid_proxies if not validate_proxy_password(p, ALLOWED_PASSWORDS)]
             if invalid_password_proxies:
                 logger.warning(f"Invalid password detected in {len(invalid_password_proxies)} proxies")
                 return render_template("failed.html"), 403
 
             with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                futures = [executor.submit(single_check_proxy, proxy, FRAUD_SCORE_LEVEL, REQUIRED_PASSWORD) for proxy in valid_proxies]
+                futures = [executor.submit(single_check_proxy, proxy, FRAUD_SCORE_LEVEL, ALLOWED_PASSWORDS) for proxy in valid_proxies]
                 for future in as_completed(futures):
                     result = future.result()
                     if result:
@@ -320,15 +324,15 @@ def track_used():
     data = request.get_json()
     if data and "proxy" in data:
         try:
-            # Get current required password
+            # Get current allowed passwords
             settings = get_app_settings()
-            required_password = settings["REQUIRED_PASSWORD"]
+            allowed_passwords = settings["ALLOWED_PASSWORDS"]
             
             # Validate password before tracking
-            if not validate_proxy_password(data["proxy"], required_password):
+            if not validate_proxy_password(data["proxy"], allowed_passwords):
                 return jsonify({"status": "error", "message": "Invalid password"}), 403
                 
-            ip = get_ip_from_proxy(data["proxy"], required_password)
+            ip = get_ip_from_proxy(data["proxy"], allowed_passwords)
             if ip:
                 add_used_ip(ip, data["proxy"])
             return jsonify({"status": "success"})
@@ -355,7 +359,7 @@ def admin():
             "max_paste": settings["MAX_PASTE"],
             "fraud_score_level": settings["FRAUD_SCORE_LEVEL"],
             "max_workers": settings["MAX_WORKERS"],
-            "required_password": settings["REQUIRED_PASSWORD"]
+            "allowed_passwords": ", ".join(settings["ALLOWED_PASSWORDS"])
         }
         
         used_ips = get_all_used_ips()
@@ -382,7 +386,7 @@ def admin_settings():
         max_paste = request.form.get("max_paste")
         fraud_score_level = request.form.get("fraud_score_level")
         max_workers = request.form.get("max_workers")
-        required_password = request.form.get("required_password")
+        allowed_passwords = request.form.get("allowed_passwords")
         
         # Validate inputs
         try:
@@ -409,17 +413,23 @@ def admin_settings():
         except ValueError:
             max_workers = DEFAULT_SETTINGS["MAX_WORKERS"]
         
-        # Validate required password
-        if not required_password or len(required_password.strip()) == 0:
-            message = "Required password cannot be empty"
-            required_password = DEFAULT_SETTINGS["REQUIRED_PASSWORD"]
+        # Validate allowed passwords
+        if not allowed_passwords or len(allowed_passwords.strip()) == 0:
+            message = "Allowed passwords cannot be empty"
+            allowed_passwords = DEFAULT_SETTINGS["ALLOWED_PASSWORDS"]
+        else:
+            # Validate that we have at least one valid password
+            passwords_list = [pwd.strip() for pwd in allowed_passwords.split(",") if pwd.strip()]
+            if len(passwords_list) == 0:
+                message = "At least one valid password is required"
+                allowed_passwords = DEFAULT_SETTINGS["ALLOWED_PASSWORDS"]
         
         # Only update if no validation errors
         if not message:
             update_setting("MAX_PASTE", str(max_paste))
             update_setting("FRAUD_SCORE_LEVEL", str(fraud_score_level))
             update_setting("MAX_WORKERS", str(max_workers))
-            update_setting("REQUIRED_PASSWORD", required_password.strip())
+            update_setting("ALLOWED_PASSWORDS", allowed_passwords.strip())
             settings = get_app_settings()  # Refresh settings
             message = "Settings updated successfully"
     
