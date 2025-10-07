@@ -1,298 +1,486 @@
+from flask import Flask, request, render_template, redirect, url_for, jsonify, send_from_directory
 import os
-import json
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-from datetime import datetime
+import time
+import requests
+from bs4 import BeautifulSoup
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import datetime
+import random
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
 import logging
-import pytz
+import sys
+from sheets_util import (
+    get_settings, update_setting, add_used_ip, delete_used_ip, 
+    get_all_used_ips, log_good_proxy, get_good_proxies,
+    log_user_access, get_blocked_ips, add_blocked_ip, 
+    remove_blocked_ip, is_ip_blocked
+)
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    stream=sys.stdout
+)
 logger = logging.getLogger(__name__)
 
-SCOPE = [
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive"
-]
+app = Flask(__name__)
 
-# Sheet configuration
-SHEET_CONFIG = {
-    "used_ips": {
-        "name": "Used IPs",
-        "worksheets": {
-            "proxies": {
-                "name": "UsedProxies",
-                "headers": ["IP", "Proxy", "Date"]
-            },
-            "access": {
-                "name": "AccessLogs",
-                "headers": ["IP", "Type", "UserAgent", "Timestamp"]
-            },
-            "blocked": {
-                "name": "BlockedIPs",
-                "headers": ["IP", "Reason", "Timestamp"]
-            }
-        }
-    },
-    "good_proxies": {
-        "name": "Good Proxies",
-        "worksheets": {
-            "main": {
-                "name": "GoodProxies",
-                "headers": ["Proxy", "IP", "Timestamp"]
-            }
-        }
-    },
-    "settings": {
-        "name": "Settings",
-        "worksheets": {
-            "main": {
-                "name": "Settings",
-                "headers": ["Setting", "Value"]
-            }
-        }
-    }
+# Default configuration values
+DEFAULT_SETTINGS = {
+    "MAX_PASTE": 30,
+    "FRAUD_SCORE_LEVEL": 0,
+    "MAX_WORKERS": 5,
+    "ALLOWED_PASSWORDS": "YzCoO3h2M4XSTjM5,JBZAeWoqvF1XqOuw,54937335"  # Comma-separated list
 }
 
-def get_eat_time():
-    """Get current time in EAT (East Africa Time) and format as YYYY-MM-DD HH:MM"""
-    utc_now = datetime.utcnow()
-    eat_timezone = pytz.timezone('Africa/Nairobi')
-    eat_now = utc_now.replace(tzinfo=pytz.utc).astimezone(eat_timezone)
-    return eat_now.strftime("%Y-%m-%d %H:%M")
+# User agents to rotate
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/118.0",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"
+]
 
-def get_spreadsheet(sheet_type):
-    """Get the entire spreadsheet by type"""
-    try:
-        creds_json = os.environ.get("GOOGLE_CREDENTIALS")
-        if not creds_json:
-            raise ValueError("GOOGLE_CREDENTIALS environment variable not set")
-            
-        creds_dict = json.loads(creds_json)
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
-        client = gspread.authorize(creds)
-        client.timeout = 10  # seconds
+# Request timeout
+REQUEST_TIMEOUT = 5
+MIN_DELAY = 0.5
+MAX_DELAY = 2.5
 
-        config = SHEET_CONFIG[sheet_type]
-        
-        try:
-            return client.open(config["name"])
-        except gspread.SpreadsheetNotFound:
-            logger.warning(f"Creating new spreadsheet: {config['name']}")
-            spreadsheet = client.create(config["name"])
-            # Initialize worksheets
-            for ws_config in config["worksheets"].values():
-                worksheet = spreadsheet.add_worksheet(
-                    title=ws_config["name"], 
-                    rows=100, 
-                    cols=len(ws_config["headers"])
-                )
-                worksheet.append_row(ws_config["headers"])
-            return spreadsheet
+# IP restriction for admin
+ADMIN_IP = "41.90.211.111"
 
-    except Exception as e:
-        logger.error(f"Error accessing Google Sheet: {str(e)}")
-        return None
-
-def get_worksheet(sheet_type, worksheet_key):
-    """Get a specific worksheet by key within a spreadsheet"""
-    spreadsheet = get_spreadsheet(sheet_type)
-    if not spreadsheet:
-        return None
-        
-    config = SHEET_CONFIG[sheet_type]["worksheets"][worksheet_key]
+def get_app_settings():
+    settings = get_settings()
+    allowed_passwords_str = settings.get("ALLOWED_PASSWORDS", DEFAULT_SETTINGS["ALLOWED_PASSWORDS"])
+    # Convert comma-separated string to list and strip whitespace
+    allowed_passwords = [pwd.strip() for pwd in allowed_passwords_str.split(",") if pwd.strip()]
     
-    try:
-        worksheet = spreadsheet.worksheet(config["name"])
-        # Ensure headers exist
-        existing_headers = worksheet.row_values(1)
-        if existing_headers != config["headers"]:
-            worksheet.clear()
-            worksheet.append_row(config["headers"])
-        return worksheet
-    except gspread.WorksheetNotFound:
-        try:
-            worksheet = spreadsheet.add_worksheet(
-                title=config["name"], 
-                rows=100, 
-                cols=len(config["headers"])
-            )
-            worksheet.append_row(config["headers"])
-            return worksheet
-        except Exception as e:
-            logger.error(f"Error creating worksheet: {e}")
-            return None
+    return {
+        "MAX_PASTE": int(settings.get("MAX_PASTE", DEFAULT_SETTINGS["MAX_PASTE"])),
+        "FRAUD_SCORE_LEVEL": int(settings.get("FRAUD_SCORE_LEVEL", DEFAULT_SETTINGS["FRAUD_SCORE_LEVEL"])),
+        "MAX_WORKERS": int(settings.get("MAX_WORKERS", DEFAULT_SETTINGS["MAX_WORKERS"])),
+        "ALLOWED_PASSWORDS": allowed_passwords
+    }
 
-def add_used_ip(ip, proxy):
-    """Add a used proxy IP to the UsedProxies worksheet"""
+def validate_proxy_format(proxy_line):
+    """Validate that proxy has complete format: host:port:username:password"""
     try:
-        sheet = get_worksheet("used_ips", "proxies")
-        if sheet:
-            # Check if IP already exists
-            records = sheet.get_all_records()
-            for record in records:
-                if record["IP"] == ip:
-                    return True
-            
-            sheet.append_row([ip, proxy, get_eat_time()])
-            return True
+        parts = proxy_line.strip().split(":")
+        if len(parts) == 4:  # host:port:user:password
+            host, port, user, password = parts
+            # Check that all parts are non-empty
+            if host and port and user and password:
+                return True
         return False
     except Exception as e:
-        logger.error(f"Error adding used IP: {e}")
+        logger.error(f"Error validating proxy format: {e}")
         return False
 
-def delete_used_ip(ip):
-    """Delete a used IP from the UsedProxies worksheet"""
+def validate_proxy_password(proxy_line, allowed_passwords):
+    """Validate that proxy password matches any of the allowed passwords"""
     try:
-        sheet = get_worksheet("used_ips", "proxies")
-        if not sheet: 
-            return False
-        
-        cell = sheet.find(ip, in_column=1)  # Column 1 is IP
-        if cell:
-            sheet.delete_row(cell.row)
-            return True
+        parts = proxy_line.strip().split(":")
+        if len(parts) == 4:  # host:port:user:password
+            host, port, user, password = parts
+            # Check that all parts are non-empty AND password matches any allowed password
+            if host and port and user and password and password in allowed_passwords:
+                return True
         return False
+    except Exception as e:
+        logger.error(f"Error validating proxy password: {e}")
+        return False
+
+def get_ip_from_proxy(proxy_line, allowed_passwords):
+    """Extract IP from proxy - with password validation"""
+    if not validate_proxy_password(proxy_line, allowed_passwords):
+        return None
+        
+    try:
+        host, port, user, pw = proxy_line.strip().split(":")
+        proxies = {
+            "http": f"http://{user}:{pw}@{host}:{port}",
+            "https": f"http://{user}:{pw}@{host}:{port}",
+        }
+        
+        session = requests.Session()
+        retries = Retry(
+            total=2,
+            backoff_factor=0.3,
+            status_forcelist=[500, 502, 503, 504]
+        )
+        session.mount('http://', HTTPAdapter(max_retries=retries))
+        session.mount('https://', HTTPAdapter(max_retries=retries))
+        
+        ip = session.get(
+            "https://api.ipify.org", 
+            proxies=proxies, 
+            timeout=REQUEST_TIMEOUT,
+            headers={"User-Agent": random.choice(USER_AGENTS)}
+        ).text
+        return ip
+    except Exception as e:
+        logger.error(f"❌ Failed to get IP from proxy {proxy_line}: {e}")
+        return None
+
+def get_fraud_score(ip, proxy_line, allowed_passwords):
+    """Get fraud score for IP using proxy - with password validation"""
+    if not validate_proxy_password(proxy_line, allowed_passwords):
+        return None
+        
+    try:
+        host, port, user, pw = proxy_line.strip().split(":")
+        proxy_url = f"http://{user}:{pw}@{host}:{port}"
+        proxies = {
+            "http": proxy_url,
+            "https": proxy_url,
+        }
+        
+        session = requests.Session()
+        retries = Retry(
+            total=2,
+            backoff_factor=0.5,
+            status_forcelist=[429, 500, 502, 503, 504]
+        )
+        session.mount('http://', HTTPAdapter(max_retries=retries))
+        session.mount('https://', HTTPAdapter(max_retries=retries))
+        
+        url = f"https://scamalytics.com/ip/{ip}"
+        headers = {
+            "User-Agent": random.choice(USER_AGENTS),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+            "Cache-Control": "max-age=0"
+        }
+        
+        response = session.get(
+            url,
+            headers=headers,
+            proxies=proxies,
+            timeout=REQUEST_TIMEOUT
+        )
+        
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, 'html.parser')
+            score_div = soup.find('div', class_='score')
+            if score_div and "Fraud Score:" in score_div.text:
+                score_text = score_div.text.strip().split(":")[1].strip()
+                return int(score_text)
+    except Exception as e:
+        logger.error(f"⚠️ Error checking Scamalytics for {ip}: {e}")
+    return None
+
+def single_check_proxy(proxy_line, fraud_score_level, allowed_passwords):
+    """Check single proxy - with password validation"""
+    time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
+    
+    # Validate password first
+    if not validate_proxy_password(proxy_line, allowed_passwords):
+        logger.warning(f"❌ Proxy rejected - invalid password or format: {proxy_line}")
+        return None
+    
+    ip = get_ip_from_proxy(proxy_line, allowed_passwords)
+    if not ip:
+        return None
+
+    score = get_fraud_score(ip, proxy_line, allowed_passwords)
+    if score is not None and score <= fraud_score_level:
+        return {"proxy": proxy_line, "ip": ip}
+    return None
+
+@app.before_request
+def track_and_block():
+    # Skip static files
+    if request.path.startswith('/static'):
+        return
+    
+    # Get client IP (handling proxy headers)
+    if request.headers.getlist("X-Forwarded-For"):
+        ip = request.headers.getlist("X-Forwarded-For")[0]
+    else:
+        ip = request.remote_addr
+    
+    # Log access to AccessLogs
+    user_agent = request.headers.get('User-Agent', 'Unknown')
+    log_user_access(ip, user_agent)
+    
+    # Check if IP is blocked (except for admin routes)
+    if not request.path.startswith('/admin') and is_ip_blocked(ip):
+        return render_template("blocked.html"), 403
+    
+    # Restrict admin routes to specific IP
+    if request.path.startswith('/admin') and ip != ADMIN_IP:
+        return render_template("admin_blocked.html"), 403
+
+@app.route("/", methods=["GET", "POST"])
+def index():
+    settings = get_app_settings()
+    MAX_PASTE = settings["MAX_PASTE"]
+    FRAUD_SCORE_LEVEL = settings["FRAUD_SCORE_LEVEL"]
+    MAX_WORKERS = settings["MAX_WORKERS"]
+    ALLOWED_PASSWORDS = settings["ALLOWED_PASSWORDS"]
+    
+    results = []
+    message = ""
+
+    if request.method == "POST":
+        proxies = []
+        all_lines = []
+        input_count = 0
+        truncation_warning = ""
+
+        if 'proxyfile' in request.files and request.files['proxyfile'].filename:
+            file = request.files['proxyfile']
+            all_lines = file.read().decode("utf-8").strip().splitlines()
+            input_count = len(all_lines)
+            if input_count > MAX_PASTE:
+                truncation_warning = f" Only the first {MAX_PASTE} proxies were processed."
+                all_lines = all_lines[:MAX_PASTE]
+            proxies = all_lines
+        elif 'proxytext' in request.form:
+            proxytext = request.form.get("proxytext", "")
+            all_lines = proxytext.strip().splitlines()
+            input_count = len(all_lines)
+            if input_count > MAX_PASTE:
+                truncation_warning = f" Only the first {MAX_PASTE} proxies were processed."
+                all_lines = all_lines[:MAX_PASTE]
+            proxies = all_lines
+
+        # Filter out empty lines and validate format
+        valid_format_proxies = []
+        invalid_format_proxies = []
+        
+        for proxy in proxies:
+            proxy = proxy.strip()
+            if not proxy:
+                continue
+                
+            if validate_proxy_format(proxy):
+                valid_format_proxies.append(proxy)
+            else:
+                invalid_format_proxies.append(proxy)
+                logger.warning(f"Invalid proxy format: {proxy}")
+
+        # Separate valid format proxies by password validation
+        valid_password_proxies = []
+        invalid_password_proxies = []
+        
+        for proxy in valid_format_proxies:
+            if validate_proxy_password(proxy, ALLOWED_PASSWORDS):
+                valid_password_proxies.append(proxy)
+            else:
+                invalid_password_proxies.append(proxy)
+                logger.warning(f"Invalid proxy password: {proxy}")
+
+        processed_count = len(valid_password_proxies)
+
+        if invalid_format_proxies:
+            logger.warning(f"Found {len(invalid_format_proxies)} invalid format proxies")
+
+        if invalid_password_proxies:
+            logger.warning(f"Found {len(invalid_password_proxies)} error  proxies")
+
+        # Only show failed.html if ALL proxies have invalid passwords AND there are no valid format proxies
+        if len(valid_password_proxies) == 0 and len(valid_format_proxies) > 0:
+            logger.warning("All proxies have invalid passwords")
+            return render_template("failed.html"), 403
+
+        if valid_password_proxies:
+            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                futures = [executor.submit(single_check_proxy, proxy, FRAUD_SCORE_LEVEL, ALLOWED_PASSWORDS) for proxy in valid_password_proxies]
+                for future in as_completed(futures):
+                    result = future.result()
+                    if result:
+                        try:
+                            used_ips = [ip['IP'] for ip in get_all_used_ips()]
+                            used = result["ip"] in used_ips
+                        except Exception as e:
+                            logger.error(f"Error checking used IPs: {e}")
+                            used = False
+                            
+                        results.append({
+                            "proxy": result["proxy"],
+                            "ip": result["ip"],
+                            "used": used
+                        })
+
+            if results:
+                for item in results:
+                    if not item["used"]:
+                        try:
+                            log_good_proxy(item["proxy"], item["ip"])
+                        except Exception as e:
+                            logger.error(f"Error logging good proxy: {e}")
+
+                good_count = len([r for r in results if not r['used']])
+                used_count = len([r for r in results if r['used']])
+                
+                invalid_format_count = len(invalid_format_proxies)
+                invalid_password_count = len(invalid_password_proxies)
+                
+                format_warning = f" ({invalid_format_count}  error)" if invalid_format_count > 0 else ""
+                password_warning = f" ({invalid_password_count} invalid password)" if invalid_password_count > 0 else ""
+                
+                message = f"✅ Processed {processed_count} proxies ({input_count} submitted{format_warning}{password_warning}). Found {good_count} good proxies ({used_count} used).{truncation_warning}"
+            else:
+                invalid_format_count = len(invalid_format_proxies)
+                invalid_password_count = len(invalid_password_proxies)
+                
+                format_warning = f" ({invalid_format_count} invalid format)" if invalid_format_count > 0 else ""
+                password_warning = f" ({invalid_password_count} invalid password)" if invalid_password_count > 0 else ""
+                
+                message = f"⚠️ Processed {processed_count} proxies ({input_count} submitted{format_warning}{password_warning}). No good proxies found.{truncation_warning}"
+        else:
+            # No valid proxies at all (either format or password)
+            message = f"⚠️ No valid proxies provided. Submitted {input_count} lines, but none were valid proxy formats (host:port:username:password) with correct password."
+    
+    return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings)
+
+@app.route("/track-used", methods=["POST"])
+def track_used():
+    data = request.get_json()
+    if data and "proxy" in data:
+        try:
+            # Get current allowed passwords
+            settings = get_app_settings()
+            allowed_passwords = settings["ALLOWED_PASSWORDS"]
+            
+            # Validate password before tracking
+            if not validate_proxy_password(data["proxy"], allowed_passwords):
+                return jsonify({"status": "error", "message": "Invalid password"}), 403
+                
+            ip = get_ip_from_proxy(data["proxy"], allowed_passwords)
+            if ip:
+                add_used_ip(ip, data["proxy"])
+            return jsonify({"status": "success"})
+        except Exception as e:
+            logger.error(f"Error tracking used proxy: {e}")
+            return jsonify({"status": "error", "message": str(e)}), 500
+    return jsonify({"status": "error", "message": "Invalid request"}), 400
+
+@app.route("/delete-used-ip/<ip>")
+def delete_used_ip_route(ip):
+    try:
+        delete_used_ip(ip)
     except Exception as e:
         logger.error(f"Error deleting used IP: {e}")
-        return False
+    return redirect(url_for("admin"))
 
-def get_all_used_ips():
-    """Get all used IPs from UsedProxies worksheet"""
+@app.route("/admin")
+def admin():
     try:
-        sheet = get_worksheet("used_ips", "proxies")
-        if not sheet:
-            return []
-        return sheet.get_all_records()
-    except Exception as e:
-        logger.error(f"Error getting used IPs: {e}")
-        return []
-
-def log_good_proxy(proxy, ip):
-    """Log a working proxy to GoodProxies worksheet"""
-    try:
-        sheet = get_worksheet("good_proxies", "main")
-        if sheet:
-            # Check if proxy already exists
-            records = sheet.get_all_records()
-            for record in records:
-                if record["Proxy"] == proxy:
-                    return True
-            
-            sheet.append_row([proxy, ip, get_eat_time()])
-            return True
-        return False
-    except Exception as e:
-        logger.error(f"Error logging good proxy: {e}")
-        return False
-
-def get_good_proxies():
-    """Get all good proxies from GoodProxies worksheet"""
-    try:
-        sheet = get_worksheet("good_proxies", "main")
-        if not sheet:
-            return []
-        return [row["Proxy"] for row in sheet.get_all_records()]
-    except Exception as e:
-        logger.error(f"Error getting good proxies: {e}")
-        return []
-
-def get_settings():
-    """Get application settings from Settings worksheet"""
-    try:
-        sheet = get_worksheet("settings", "main")
-        if not sheet:
-            return {}
-        settings = {}
-        for row in sheet.get_all_records():
-            settings[row["Setting"]] = row["Value"]
-        return settings
-    except Exception as e:
-        logger.error(f"Error getting settings: {e}")
-        return {}
-
-def update_setting(setting_name, value):
-    """Update a setting in Settings worksheet"""
-    try:
-        sheet = get_worksheet("settings", "main")
-        if not sheet:
-            return False
-            
-        # Find the setting if it exists
-        cell = sheet.find(setting_name, in_column=1)  # Column 1 is Setting
-        if cell:
-            sheet.update_cell(cell.row, 2, value)  # Column 2 is Value
-        else:
-            sheet.append_row([setting_name, value])
-        return True
-    except Exception as e:
-        logger.error(f"Error updating setting: {e}")
-        return False
-
-# IP Management Functions
-def log_user_access(ip, user_agent):
-    """Log user access to AccessLogs worksheet"""
-    try:
-        sheet = get_worksheet("used_ips", "access")
-        if sheet:
-            sheet.append_row([ip, "ACCESS", user_agent, get_eat_time()])
-            return True
-        return False
-    except Exception as e:
-        logger.error(f"Error logging user access: {e}")
-        return False
-
-def get_blocked_ips():
-    """Get all blocked IPs from BlockedIPs worksheet"""
-    try:
-        sheet = get_worksheet("used_ips", "blocked")
-        if not sheet:
-            return []
-        return sheet.get_all_records()
-    except Exception as e:
-        logger.error(f"Error getting blocked IPs: {e}")
-        return []
-
-def add_blocked_ip(ip, reason):
-    """Add a blocked IP to BlockedIPs worksheet"""
-    try:
-        sheet = get_worksheet("used_ips", "blocked")
-        if sheet:
-            # Check if IP is already blocked
-            records = sheet.get_all_records()
-            for record in records:
-                if record["IP"] == ip:
-                    return True
-            
-            sheet.append_row([ip, reason, get_eat_time()])
-            return True
-        return False
-    except Exception as e:
-        logger.error(f"Error adding blocked IP: {e}")
-        return False
-
-def remove_blocked_ip(ip):
-    """Remove a blocked IP from BlockedIPs worksheet"""
-    try:
-        sheet = get_worksheet("used_ips", "blocked")
-        if not sheet: 
-            return False
+        settings = get_app_settings()
+        stats = {
+            "total_checks": "N/A (Vercel)",
+            "total_good": len(get_good_proxies()),
+            "max_paste": settings["MAX_PASTE"],
+            "fraud_score_level": settings["FRAUD_SCORE_LEVEL"],
+            "max_workers": settings["MAX_WORKERS"],
+            "allowed_passwords": ", ".join(settings["ALLOWED_PASSWORDS"])
+        }
         
-        cell = sheet.find(ip, in_column=1)  # Column 1 is IP
-        if cell:
-            sheet.delete_row(cell.row)
-            return True
-        return False
+        used_ips = get_all_used_ips()
+        good_proxies = get_good_proxies()
+        blocked_ips = get_blocked_ips()
+        
+        return render_template(
+            "admin.html", 
+            stats=stats,
+            used_ips=used_ips,
+            good_proxies=good_proxies,
+            blocked_ips=blocked_ips
+        )
     except Exception as e:
-        logger.error(f"Error removing blocked IP: {e}")
-        return False
+        logger.error(f"Admin panel error: {e}")
+        return render_template("error.html", error=str(e)), 500
 
-def is_ip_blocked(ip):
-    """Check if an IP is blocked"""
+@app.route("/admin/settings", methods=["GET", "POST"])
+def admin_settings():
+    settings = get_app_settings()
+    message = None
+    
+    if request.method == "POST":
+        max_paste = request.form.get("max_paste")
+        fraud_score_level = request.form.get("fraud_score_level")
+        max_workers = request.form.get("max_workers")
+        allowed_passwords = request.form.get("allowed_passwords")
+        
+        # Validate inputs
+        try:
+            max_paste = int(max_paste)
+            if max_paste < 5 or max_paste > 100:
+                message = "Max proxies must be between 5 and 100"
+                raise ValueError(message)
+        except ValueError:
+            max_paste = DEFAULT_SETTINGS["MAX_PASTE"]
+        
+        try:
+            fraud_score_level = int(fraud_score_level)
+            if fraud_score_level < 0 or fraud_score_level > 100:
+                message = "Fraud score must be between 0 and 100"
+                raise ValueError(message)
+        except ValueError:
+            fraud_score_level = DEFAULT_SETTINGS["FRAUD_SCORE_LEVEL"]
+        
+        try:
+            max_workers = int(max_workers)
+            if max_workers < 1 or max_workers > 100:
+                message = "Max workers must be between 1 and 100"
+                raise ValueError(message)
+        except ValueError:
+            max_workers = DEFAULT_SETTINGS["MAX_WORKERS"]
+        
+        # Validate allowed passwords
+        if not allowed_passwords or len(allowed_passwords.strip()) == 0:
+            message = "Allowed passwords cannot be empty"
+            allowed_passwords = DEFAULT_SETTINGS["ALLOWED_PASSWORDS"]
+        else:
+            # Validate that we have at least one valid password
+            passwords_list = [pwd.strip() for pwd in allowed_passwords.split(",") if pwd.strip()]
+            if len(passwords_list) == 0:
+                message = "At least one valid password is required"
+                allowed_passwords = DEFAULT_SETTINGS["ALLOWED_PASSWORDS"]
+        
+        # Only update if no validation errors
+        if not message:
+            update_setting("MAX_PASTE", str(max_paste))
+            update_setting("FRAUD_SCORE_LEVEL", str(fraud_score_level))
+            update_setting("MAX_WORKERS", str(max_workers))
+            update_setting("ALLOWED_PASSWORDS", allowed_passwords.strip())
+            settings = get_app_settings()  # Refresh settings
+            message = "Settings updated successfully"
+    
+    return render_template("admin_settings.html", settings=settings, message=message)
+
+@app.route("/admin/block-ip", methods=["POST"])
+def block_ip():
+    ip = request.form.get("ip")
+    reason = request.form.get("reason", "Abuse")
+    if ip:
+        if add_blocked_ip(ip, reason):
+            return redirect(url_for("admin"))
+        else:
+            return render_template("error.html", error="Failed to block IP"), 500
+    return render_template("error.html", error="Invalid IP address"), 400
+
+@app.route("/admin/unblock-ip/<ip>")
+def unblock_ip(ip):
     try:
-        sheet = get_worksheet("used_ips", "blocked")
-        if not sheet:
-            return False
-        cell = sheet.find(ip, in_column=1)  # Column 1 is IP
-        return bool(cell)
+        if remove_blocked_ip(ip):
+            return redirect(url_for("admin"))
+        else:
+            return render_template("error.html", error="IP not found"), 404
     except Exception as e:
-        logger.error(f"Error checking blocked IP: {e}")
-        return False
+        logger.error(f"Error unblocking IP: {e}")
+        return render_template("error.html", error=str(e)), 500
+
+@app.route('/static/<path:path>')
+def send_static(path):
+    return send_from_directory('static', path)
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)
