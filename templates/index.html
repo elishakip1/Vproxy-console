@@ -1,3 +1,32 @@
+Of course\! To make the admin button clickable, you just need to remove the `disabled` class and the `tabindex="-1"` attribute from the `<a>` tag.
+
+I've also changed the `href="#"` to `href="/admin"` to make it a functional link to a potential admin page.
+
+-----
+
+### Updated Code Snippet
+
+Here’s the specific line that needs to be changed:
+
+**From this:**
+
+```html
+<a href="#" class="btn btn-outline-primary btn-sm disabled" tabindex="-1" aria-disabled="false">Admin</a>
+```
+
+**To this:**
+
+```html
+<a href="/admin" class="btn btn-outline-primary btn-sm">Admin</a>
+```
+
+-----
+
+### Full Corrected HTML
+
+Here is the complete HTML file with the corrected, clickable button.
+
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -14,7 +43,7 @@
         a.disabled { pointer-events: none; color: #6c757d !important; border-color: #6c757d !important; opacity: 0.7; }
         .copy-btn.disabled { opacity: 0.5; cursor: not-allowed; }
         .proxy-counter { position: absolute; right: 20px; bottom: 10px; font-size: 0.85rem; 
-                        color: #6c757d; background: rgba(255, 255, 255, 0.8); padding: 2px 5px; border-radius: 3px; }
+                         color: #6c757d; background: rgba(255, 255, 255, 0.8); padding: 2px 5px; border-radius: 3px; }
         .counter-error { color: #dc3545; font-weight: bold; }
         .counter-warning { color: #ffc107; font-weight: bold; }
         .counter-ok { color: #198754; }
@@ -25,7 +54,8 @@
     <div class="container bg-white p-4 rounded shadow-sm">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h2 class="mb-0">Proxy Checker</h2>
-<a href="#" class="btn btn-outline-primary btn-sm disabled" tabindex="-1" aria-disabled="false">Admin</a>        </div>
+            <a href="/admin" class="btn btn-outline-primary btn-sm">Admin</a>
+        </div>
 
         {% if message %}
         <div class="alert alert-info">{{ message }}</div>
@@ -215,3 +245,4 @@
     </script>
     </body>
 </html>
+```
