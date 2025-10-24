@@ -32,7 +32,7 @@ DEFAULT_SETTINGS = {
     "MAX_PASTE": 30,
     "FRAUD_SCORE_LEVEL": 0,
     "MAX_WORKERS": 5,
-    "ALLOWED_PASSWORDS": "8soFs0QqNJivObgW,JBZAeWoqvF1XqOuw,68166538"  # Comma-separated list
+    "ALLOWED_PASSWORDS": "123456_country-us_state-washington_session-ddMJlZq3_lifetime-168h,JBZAeWoqvF1XqOuw,68166538"  # Comma-separated list
 }
 
 # User agents to rotate
