@@ -17,6 +17,14 @@ from sheets_util import (
     remove_blocked_ip, is_ip_blocked
 )
 
+# Vercel-specific setup
+if os.environ.get('VERCEL'):
+    print("Running on Vercel environment")
+    # Create static directory if it doesn't exist
+    static_dir = 'static'
+    if not os.path.exists(static_dir):
+        os.makedirs(static_dir)
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -481,6 +489,15 @@ def unblock_ip(ip):
 @app.route('/static/<path:path>')
 def send_static(path):
     return send_from_directory('static', path)
+
+# Error handlers for better debugging
+@app.errorhandler(500)
+def internal_error(error):
+    return f"Internal Server Error: {str(error)}", 500
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    return f"Exception: {str(e)}", 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
