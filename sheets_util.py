@@ -224,7 +224,11 @@ if _use_google_sheets():
                 return {}
             settings = {}
             for row in sheet.get_all_records():
-                settings[row["Setting"]] = row["Value"]
+                # Ensure ALLOWED_PASSWORDS is always a string
+                if row["Setting"] == "ALLOWED_PASSWORDS":
+                    settings[row["Setting"]] = str(row["Value"])
+                else:
+                    settings[row["Setting"]] = row["Value"]
             return settings
         except Exception as e:
             logger.error(f"Error getting settings: {e}")
@@ -232,7 +236,7 @@ if _use_google_sheets():
 
     def update_setting(setting_name, value):
         if not _use_google_sheets():
-            _memory_storage["settings"][setting_name] = value
+            _memory_storage["settings"][setting_name] = str(value)
             return True
             
         try:
@@ -243,9 +247,9 @@ if _use_google_sheets():
             # Find the setting if it exists
             cell = sheet.find(setting_name, in_column=1)
             if cell:
-                sheet.update_cell(cell.row, 2, value)
+                sheet.update_cell(cell.row, 2, str(value))
             else:
-                sheet.append_row([setting_name, value])
+                sheet.append_row([setting_name, str(value)])
             return True
         except Exception as e:
             logger.error(f"Error updating setting: {e}")
@@ -365,10 +369,14 @@ else:
         return [item["Proxy"] for item in _memory_storage["good_proxies"]]
 
     def get_settings():
-        return _memory_storage["settings"]
+        # Ensure ALLOWED_PASSWORDS is always a string
+        settings = _memory_storage["settings"].copy()
+        if "ALLOWED_PASSWORDS" in settings:
+            settings["ALLOWED_PASSWORDS"] = str(settings["ALLOWED_PASSWORDS"])
+        return settings
 
     def update_setting(setting_name, value):
-        _memory_storage["settings"][setting_name] = value
+        _memory_storage["settings"][setting_name] = str(value)
         return True
 
     def log_user_access(ip, user_agent):
