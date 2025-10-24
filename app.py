@@ -7,23 +7,61 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import datetime
 import random
 from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
+from urllib3.util.retry import Retry
 import logging
 import sys
-from sheets_util import (
-    get_settings, update_setting, add_used_ip, delete_used_ip, 
-    get_all_used_ips, log_good_proxy, get_good_proxies,
-    log_user_access, get_blocked_ips, add_blocked_ip, 
-    remove_blocked_ip, is_ip_blocked
-)
 
-# Vercel-specific setup
-if os.environ.get('VERCEL'):
-    print("Running on Vercel environment")
-    # Create static directory if it doesn't exist
-    static_dir = 'static'
-    if not os.path.exists(static_dir):
-        os.makedirs(static_dir)
+# Import the simplified sheets_util
+try:
+    from sheets_util import (
+        get_settings, update_setting, add_used_ip, delete_used_ip, 
+        get_all_used_ips, log_good_proxy, get_good_proxies,
+        log_user_access, get_blocked_ips, add_blocked_ip, 
+        remove_blocked_ip, is_ip_blocked
+    )
+except Exception as e:
+    print(f"Error importing sheets_util: {e}")
+    # Create fallback functions
+    def get_settings():
+        return {
+            "MAX_PASTE": "30",
+            "FRAUD_SCORE_LEVEL": "0", 
+            "MAX_WORKERS": "5",
+            "ALLOWED_PASSWORDS": "8soFs0QqNJivObgW,JBZAeWoqvF1XqOuw,68166538"
+        }
+    
+    def update_setting(*args, **kwargs):
+        return True
+        
+    def add_used_ip(*args, **kwargs):
+        return True
+        
+    def delete_used_ip(*args, **kwargs):
+        return True
+        
+    def get_all_used_ips():
+        return []
+        
+    def log_good_proxy(*args, **kwargs):
+        return True
+        
+    def get_good_proxies():
+        return []
+        
+    def log_user_access(*args, **kwargs):
+        return True
+        
+    def get_blocked_ips():
+        return []
+        
+    def add_blocked_ip(*args, **kwargs):
+        return True
+        
+    def remove_blocked_ip(*args, **kwargs):
+        return True
+        
+    def is_ip_blocked(ip):
+        return False
 
 # Configure logging
 logging.basicConfig(
@@ -40,7 +78,7 @@ DEFAULT_SETTINGS = {
     "MAX_PASTE": 30,
     "FRAUD_SCORE_LEVEL": 0,
     "MAX_WORKERS": 5,
-    "ALLOWED_PASSWORDS": "8soFs0QqNJivObgW,JBZAeWoqvF1XqOuw,68166538"  # Comma-separated list
+    "ALLOWED_PASSWORDS": "8soFs0QqNJivObgW,JBZAeWoqvF1XqOuw,68166538"
 }
 
 # User agents to rotate
@@ -48,8 +86,6 @@ USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/118.0",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"
 ]
 
 # Request timeout
@@ -61,21 +97,37 @@ MAX_DELAY = 2.5
 ADMIN_IP = "40.67.137.199"
 
 def get_app_settings():
-    settings = get_settings()
-    allowed_passwords_str = settings.get("ALLOWED_PASSWORDS", DEFAULT_SETTINGS["ALLOWED_PASSWORDS"])
-    # Convert comma-separated string to list and strip whitespace
-    allowed_passwords = [pwd.strip() for pwd in allowed_passwords_str.split(",") if pwd.strip()]
-    
-    return {
-        "MAX_PASTE": int(settings.get("MAX_PASTE", DEFAULT_SETTINGS["MAX_PASTE"])),
-        "FRAUD_SCORE_LEVEL": int(settings.get("FRAUD_SCORE_LEVEL", DEFAULT_SETTINGS["FRAUD_SCORE_LEVEL"])),
-        "MAX_WORKERS": int(settings.get("MAX_WORKERS", DEFAULT_SETTINGS["MAX_WORKERS"])),
-        "ALLOWED_PASSWORDS": allowed_passwords
-    }
+    try:
+        settings = get_settings()
+        
+        # Safely get and convert settings
+        max_paste = int(settings.get("MAX_PASTE", DEFAULT_SETTINGS["MAX_PASTE"]))
+        fraud_score_level = int(settings.get("FRAUD_SCORE_LEVEL", DEFAULT_SETTINGS["FRAUD_SCORE_LEVEL"]))
+        max_workers = int(settings.get("MAX_WORKERS", DEFAULT_SETTINGS["MAX_WORKERS"]))
+        
+        # Handle ALLOWED_PASSWORDS safely
+        allowed_passwords_str = settings.get("ALLOWED_PASSWORDS", DEFAULT_SETTINGS["ALLOWED_PASSWORDS"])
+        if not isinstance(allowed_passwords_str, str):
+            allowed_passwords_str = str(allowed_passwords_str)
+        
+        allowed_passwords = [pwd.strip() for pwd in allowed_passwords_str.split(",") if pwd.strip()]
+        
+        return {
+            "MAX_PASTE": max_paste,
+            "FRAUD_SCORE_LEVEL": fraud_score_level,
+            "MAX_WORKERS": max_workers,
+            "ALLOWED_PASSWORDS": allowed_passwords
+        }
+    except Exception as e:
+        logger.error(f"Error getting app settings: {e}")
+        return DEFAULT_SETTINGS
 
 def validate_proxy_format(proxy_line):
     """Validate that proxy has complete format: host:port:username:password"""
     try:
+        if not proxy_line or not isinstance(proxy_line, str):
+            return False
+            
         parts = proxy_line.strip().split(":")
         if len(parts) == 4:  # host:port:user:password
             host, port, user, password = parts
@@ -90,6 +142,9 @@ def validate_proxy_format(proxy_line):
 def validate_proxy_password(proxy_line, allowed_passwords):
     """Validate that proxy password matches any of the allowed passwords"""
     try:
+        if not validate_proxy_format(proxy_line):
+            return False
+            
         parts = proxy_line.strip().split(":")
         if len(parts) == 4:  # host:port:user:password
             host, port, user, password = parts
@@ -122,13 +177,13 @@ def get_ip_from_proxy(proxy_line, allowed_passwords):
         session.mount('http://', HTTPAdapter(max_retries=retries))
         session.mount('https://', HTTPAdapter(max_retries=retries))
         
-        ip = session.get(
+        response = session.get(
             "https://api.ipify.org", 
             proxies=proxies, 
             timeout=REQUEST_TIMEOUT,
             headers={"User-Agent": random.choice(USER_AGENTS)}
-        ).text
-        return ip
+        )
+        return response.text
     except Exception as e:
         logger.error(f"❌ Failed to get IP from proxy {proxy_line}: {e}")
         return None
@@ -159,10 +214,6 @@ def get_fraud_score(ip, proxy_line, allowed_passwords):
         headers = {
             "User-Agent": random.choice(USER_AGENTS),
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
-            "Connection": "keep-alive",
-            "Upgrade-Insecure-Requests": "1",
-            "Cache-Control": "max-age=0"
         }
         
         response = session.get(
@@ -226,138 +277,128 @@ def track_and_block():
 
 @app.route("/", methods=["GET", "POST"])
 def index():
-    settings = get_app_settings()
-    MAX_PASTE = settings["MAX_PASTE"]
-    FRAUD_SCORE_LEVEL = settings["FRAUD_SCORE_LEVEL"]
-    MAX_WORKERS = settings["MAX_WORKERS"]
-    ALLOWED_PASSWORDS = settings["ALLOWED_PASSWORDS"]
-    
-    results = []
-    message = ""
-
-    if request.method == "POST":
-        proxies = []
-        all_lines = []
-        input_count = 0
-        truncation_warning = ""
-
-        if 'proxyfile' in request.files and request.files['proxyfile'].filename:
-            file = request.files['proxyfile']
-            all_lines = file.read().decode("utf-8").strip().splitlines()
-            input_count = len(all_lines)
-            if input_count > MAX_PASTE:
-                truncation_warning = f" Only the first {MAX_PASTE} proxies were processed."
-                all_lines = all_lines[:MAX_PASTE]
-            proxies = all_lines
-        elif 'proxytext' in request.form:
-            proxytext = request.form.get("proxytext", "")
-            all_lines = proxytext.strip().splitlines()
-            input_count = len(all_lines)
-            if input_count > MAX_PASTE:
-                truncation_warning = f" Only the first {MAX_PASTE} proxies were processed."
-                all_lines = all_lines[:MAX_PASTE]
-            proxies = all_lines
-
-        # Filter out empty lines and validate format
-        valid_format_proxies = []
-        invalid_format_proxies = []
+    try:
+        settings = get_app_settings()
+        MAX_PASTE = settings["MAX_PASTE"]
+        FRAUD_SCORE_LEVEL = settings["FRAUD_SCORE_LEVEL"]
+        MAX_WORKERS = settings["MAX_WORKERS"]
+        ALLOWED_PASSWORDS = settings["ALLOWED_PASSWORDS"]
         
-        for proxy in proxies:
-            proxy = proxy.strip()
-            if not proxy:
-                continue
-                
-            if validate_proxy_format(proxy):
-                valid_format_proxies.append(proxy)
-            else:
-                invalid_format_proxies.append(proxy)
-                logger.warning(f"Invalid proxy format: {proxy}")
+        results = []
+        message = ""
 
-        # Separate valid format proxies by password validation
-        valid_password_proxies = []
-        invalid_password_proxies = []
-        
-        for proxy in valid_format_proxies:
-            if validate_proxy_password(proxy, ALLOWED_PASSWORDS):
-                valid_password_proxies.append(proxy)
-            else:
-                invalid_password_proxies.append(proxy)
-                logger.warning(f"Invalid proxy password: {proxy}")
+        if request.method == "POST":
+            proxies = []
+            all_lines = []
+            input_count = 0
+            truncation_warning = ""
 
-        processed_count = len(valid_password_proxies)
+            if 'proxyfile' in request.files and request.files['proxyfile'].filename:
+                file = request.files['proxyfile']
+                all_lines = file.read().decode("utf-8").strip().splitlines()
+                input_count = len(all_lines)
+                if input_count > MAX_PASTE:
+                    truncation_warning = f" Only the first {MAX_PASTE} proxies were processed."
+                    all_lines = all_lines[:MAX_PASTE]
+                proxies = all_lines
+            elif 'proxytext' in request.form:
+                proxytext = request.form.get("proxytext", "")
+                all_lines = proxytext.strip().splitlines()
+                input_count = len(all_lines)
+                if input_count > MAX_PASTE:
+                    truncation_warning = f" Only the first {MAX_PASTE} proxies were processed."
+                    all_lines = all_lines[:MAX_PASTE]
+                proxies = all_lines
 
-        if invalid_format_proxies:
-            logger.warning(f"Found {len(invalid_format_proxies)} invalid format proxies")
+            # Filter out empty lines and validate format
+            valid_format_proxies = []
+            invalid_format_proxies = []
+            
+            for proxy in proxies:
+                proxy = proxy.strip()
+                if not proxy:
+                    continue
+                    
+                if validate_proxy_format(proxy):
+                    valid_format_proxies.append(proxy)
+                else:
+                    invalid_format_proxies.append(proxy)
 
-        if invalid_password_proxies:
-            logger.warning(f"Found {len(invalid_password_proxies)} error  proxies")
+            # Separate valid format proxies by password validation
+            valid_password_proxies = []
+            invalid_password_proxies = []
+            
+            for proxy in valid_format_proxies:
+                if validate_proxy_password(proxy, ALLOWED_PASSWORDS):
+                    valid_password_proxies.append(proxy)
+                else:
+                    invalid_password_proxies.append(proxy)
 
-        # Only show failed.html if ALL proxies have invalid passwords AND there are no valid format proxies
-        if len(valid_password_proxies) == 0 and len(valid_format_proxies) > 0:
-            logger.warning("All proxies have invalid passwords")
-            return render_template("failed.html"), 403
+            processed_count = len(valid_password_proxies)
 
-        if valid_password_proxies:
-            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                futures = [executor.submit(single_check_proxy, proxy, FRAUD_SCORE_LEVEL, ALLOWED_PASSWORDS) for proxy in valid_password_proxies]
-                for future in as_completed(futures):
-                    result = future.result()
-                    if result:
-                        try:
-                            used_ips = [ip['IP'] for ip in get_all_used_ips()]
-                            used = result["ip"] in used_ips
-                        except Exception as e:
-                            logger.error(f"Error checking used IPs: {e}")
-                            used = False
-                            
-                        results.append({
-                            "proxy": result["proxy"],
-                            "ip": result["ip"],
-                            "used": used
-                        })
+            # Only show failed.html if ALL proxies have invalid passwords AND there are no valid format proxies
+            if len(valid_password_proxies) == 0 and len(valid_format_proxies) > 0:
+                return render_template("failed.html"), 403
 
-            if results:
-                for item in results:
-                    if not item["used"]:
-                        try:
+            if valid_password_proxies:
+                with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                    futures = [executor.submit(single_check_proxy, proxy, FRAUD_SCORE_LEVEL, ALLOWED_PASSWORDS) for proxy in valid_password_proxies]
+                    for future in as_completed(futures):
+                        result = future.result()
+                        if result:
+                            try:
+                                used_ips = [ip['IP'] for ip in get_all_used_ips()]
+                                used = result["ip"] in used_ips
+                            except Exception as e:
+                                used = False
+                                
+                            results.append({
+                                "proxy": result["proxy"],
+                                "ip": result["ip"],
+                                "used": used
+                            })
+
+                if results:
+                    for item in results:
+                        if not item["used"]:
                             log_good_proxy(item["proxy"], item["ip"])
-                        except Exception as e:
-                            logger.error(f"Error logging good proxy: {e}")
 
-                good_count = len([r for r in results if not r['used']])
-                used_count = len([r for r in results if r['used']])
-                
-                invalid_format_count = len(invalid_format_proxies)
-                invalid_password_count = len(invalid_password_proxies)
-                
-                format_warning = f" ({invalid_format_count}  error)" if invalid_format_count > 0 else ""
-                password_warning = f" ({invalid_password_count} invalid password)" if invalid_password_count > 0 else ""
-                
-                message = f"✅ Processed {processed_count} proxies ({input_count} submitted{format_warning}{password_warning}). Found {good_count} good proxies ({used_count} used).{truncation_warning}"
+                    good_count = len([r for r in results if not r['used']])
+                    used_count = len([r for r in results if r['used']])
+                    
+                    invalid_format_count = len(invalid_format_proxies)
+                    invalid_password_count = len(invalid_password_proxies)
+                    
+                    format_warning = f" ({invalid_format_count} error)" if invalid_format_count > 0 else ""
+                    password_warning = f" ({invalid_password_count} invalid password)" if invalid_password_count > 0 else ""
+                    
+                    message = f"✅ Processed {processed_count} proxies ({input_count} submitted{format_warning}{password_warning}). Found {good_count} good proxies ({used_count} used).{truncation_warning}"
+                else:
+                    invalid_format_count = len(invalid_format_proxies)
+                    invalid_password_count = len(invalid_password_proxies)
+                    
+                    format_warning = f" ({invalid_format_count} invalid format)" if invalid_format_count > 0 else ""
+                    password_warning = f" ({invalid_password_count} invalid password)" if invalid_password_count > 0 else ""
+                    
+                    message = f"⚠️ Processed {processed_count} proxies ({input_count} submitted{format_warning}{password_warning}). No good proxies found.{truncation_warning}"
             else:
-                invalid_format_count = len(invalid_format_proxies)
-                invalid_password_count = len(invalid_password_proxies)
-                
-                format_warning = f" ({invalid_format_count} invalid format)" if invalid_format_count > 0 else ""
-                password_warning = f" ({invalid_password_count} invalid password)" if invalid_password_count > 0 else ""
-                
-                message = f"⚠️ Processed {processed_count} proxies ({input_count} submitted{format_warning}{password_warning}). No good proxies found.{truncation_warning}"
-        else:
-            # No valid proxies at all (either format or password)
-            message = f"⚠️ No valid proxies provided. Submitted {input_count} lines, but none were valid proxy formats (host:port:username:password) with correct password."
+                # No valid proxies at all (either format or password)
+                message = f"⚠️ No valid proxies provided. Submitted {input_count} lines, but none were valid proxy formats (host:port:username:password) with correct password."
+        
+        return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings)
     
-    return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings)
+    except Exception as e:
+        logger.error(f"Error in index route: {e}")
+        return render_template("error.html", error=str(e)), 500
 
 @app.route("/track-used", methods=["POST"])
 def track_used():
-    data = request.get_json()
-    if data and "proxy" in data:
-        try:
-            # Get current allowed passwords
+    try:
+        data = request.get_json()
+        if data and "proxy" in data:
             settings = get_app_settings()
             allowed_passwords = settings["ALLOWED_PASSWORDS"]
             
-            # Validate password before tracking
             if not validate_proxy_password(data["proxy"], allowed_passwords):
                 return jsonify({"status": "error", "message": "Invalid password"}), 403
                 
@@ -365,10 +406,10 @@ def track_used():
             if ip:
                 add_used_ip(ip, data["proxy"])
             return jsonify({"status": "success"})
-        except Exception as e:
-            logger.error(f"Error tracking used proxy: {e}")
-            return jsonify({"status": "error", "message": str(e)}), 500
-    return jsonify({"status": "error", "message": "Invalid request"}), 400
+        return jsonify({"status": "error", "message": "Invalid request"}), 400
+    except Exception as e:
+        logger.error(f"Error tracking used proxy: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/delete-used-ip/<ip>")
 def delete_used_ip_route(ip):
@@ -383,7 +424,7 @@ def admin():
     try:
         settings = get_app_settings()
         stats = {
-            "total_checks": "N/A (Vercel)",
+            "total_checks": "N/A (Memory Mode)",
             "total_good": len(get_good_proxies()),
             "max_paste": settings["MAX_PASTE"],
             "fraud_score_level": settings["FRAUD_SCORE_LEVEL"],
@@ -408,72 +449,80 @@ def admin():
 
 @app.route("/admin/settings", methods=["GET", "POST"])
 def admin_settings():
-    settings = get_app_settings()
-    message = None
-    
-    if request.method == "POST":
-        max_paste = request.form.get("max_paste")
-        fraud_score_level = request.form.get("fraud_score_level")
-        max_workers = request.form.get("max_workers")
-        allowed_passwords = request.form.get("allowed_passwords")
+    try:
+        settings = get_app_settings()
+        message = None
         
-        # Validate inputs
-        try:
-            max_paste = int(max_paste)
-            if max_paste < 5 or max_paste > 100:
-                message = "Max proxies must be between 5 and 100"
-                raise ValueError(message)
-        except ValueError:
-            max_paste = DEFAULT_SETTINGS["MAX_PASTE"]
-        
-        try:
-            fraud_score_level = int(fraud_score_level)
-            if fraud_score_level < 0 or fraud_score_level > 100:
-                message = "Fraud score must be between 0 and 100"
-                raise ValueError(message)
-        except ValueError:
-            fraud_score_level = DEFAULT_SETTINGS["FRAUD_SCORE_LEVEL"]
-        
-        try:
-            max_workers = int(max_workers)
-            if max_workers < 1 or max_workers > 100:
-                message = "Max workers must be between 1 and 100"
-                raise ValueError(message)
-        except ValueError:
-            max_workers = DEFAULT_SETTINGS["MAX_WORKERS"]
-        
-        # Validate allowed passwords
-        if not allowed_passwords or len(allowed_passwords.strip()) == 0:
-            message = "Allowed passwords cannot be empty"
-            allowed_passwords = DEFAULT_SETTINGS["ALLOWED_PASSWORDS"]
-        else:
-            # Validate that we have at least one valid password
-            passwords_list = [pwd.strip() for pwd in allowed_passwords.split(",") if pwd.strip()]
-            if len(passwords_list) == 0:
-                message = "At least one valid password is required"
+        if request.method == "POST":
+            max_paste = request.form.get("max_paste", "30")
+            fraud_score_level = request.form.get("fraud_score_level", "0")
+            max_workers = request.form.get("max_workers", "5")
+            allowed_passwords = request.form.get("allowed_passwords", "8soFs0QqNJivObgW,JBZAeWoqvF1XqOuw,68166538")
+            
+            # Validate inputs
+            try:
+                max_paste = int(max_paste)
+                if max_paste < 5 or max_paste > 100:
+                    message = "Max proxies must be between 5 and 100"
+                    raise ValueError(message)
+            except ValueError:
+                max_paste = DEFAULT_SETTINGS["MAX_PASTE"]
+            
+            try:
+                fraud_score_level = int(fraud_score_level)
+                if fraud_score_level < 0 or fraud_score_level > 100:
+                    message = "Fraud score must be between 0 and 100"
+                    raise ValueError(message)
+            except ValueError:
+                fraud_score_level = DEFAULT_SETTINGS["FRAUD_SCORE_LEVEL"]
+            
+            try:
+                max_workers = int(max_workers)
+                if max_workers < 1 or max_workers > 100:
+                    message = "Max workers must be between 1 and 100"
+                    raise ValueError(message)
+            except ValueError:
+                max_workers = DEFAULT_SETTINGS["MAX_WORKERS"]
+            
+            # Validate allowed passwords
+            if not allowed_passwords or len(allowed_passwords.strip()) == 0:
+                message = "Allowed passwords cannot be empty"
                 allowed_passwords = DEFAULT_SETTINGS["ALLOWED_PASSWORDS"]
+            else:
+                # Validate that we have at least one valid password
+                passwords_list = [pwd.strip() for pwd in allowed_passwords.split(",") if pwd.strip()]
+                if len(passwords_list) == 0:
+                    message = "At least one valid password is required"
+                    allowed_passwords = DEFAULT_SETTINGS["ALLOWED_PASSWORDS"]
+            
+            # Only update if no validation errors
+            if not message:
+                update_setting("MAX_PASTE", str(max_paste))
+                update_setting("FRAUD_SCORE_LEVEL", str(fraud_score_level))
+                update_setting("MAX_WORKERS", str(max_workers))
+                update_setting("ALLOWED_PASSWORDS", allowed_passwords.strip())
+                settings = get_app_settings()  # Refresh settings
+                message = "Settings updated successfully"
         
-        # Only update if no validation errors
-        if not message:
-            update_setting("MAX_PASTE", str(max_paste))
-            update_setting("FRAUD_SCORE_LEVEL", str(fraud_score_level))
-            update_setting("MAX_WORKERS", str(max_workers))
-            update_setting("ALLOWED_PASSWORDS", allowed_passwords.strip())
-            settings = get_app_settings()  # Refresh settings
-            message = "Settings updated successfully"
-    
-    return render_template("admin_settings.html", settings=settings, message=message)
+        return render_template("admin_settings.html", settings=settings, message=message)
+    except Exception as e:
+        logger.error(f"Error in admin settings: {e}")
+        return render_template("error.html", error=str(e)), 500
 
 @app.route("/admin/block-ip", methods=["POST"])
 def block_ip():
-    ip = request.form.get("ip")
-    reason = request.form.get("reason", "Abuse")
-    if ip:
-        if add_blocked_ip(ip, reason):
-            return redirect(url_for("admin"))
-        else:
-            return render_template("error.html", error="Failed to block IP"), 500
-    return render_template("error.html", error="Invalid IP address"), 400
+    try:
+        ip = request.form.get("ip")
+        reason = request.form.get("reason", "Abuse")
+        if ip:
+            if add_blocked_ip(ip, reason):
+                return redirect(url_for("admin"))
+            else:
+                return render_template("error.html", error="Failed to block IP"), 500
+        return render_template("error.html", error="Invalid IP address"), 400
+    except Exception as e:
+        logger.error(f"Error blocking IP: {e}")
+        return render_template("error.html", error=str(e)), 500
 
 @app.route("/admin/unblock-ip/<ip>")
 def unblock_ip(ip):
@@ -490,14 +539,14 @@ def unblock_ip(ip):
 def send_static(path):
     return send_from_directory('static', path)
 
-# Error handlers for better debugging
+# Error handlers
 @app.errorhandler(500)
 def internal_error(error):
-    return f"Internal Server Error: {str(error)}", 500
+    return render_template("error.html", error=str(error)), 500
 
 @app.errorhandler(Exception)
 def handle_exception(e):
-    return f"Exception: {str(e)}", 500
+    return render_template("error.html", error=str(e)), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
