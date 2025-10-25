@@ -39,13 +39,7 @@
     .card {
       margin-bottom: 20px;
     }
-    .blocked-badge {
-      background-color: #dc3545;
-      color: white;
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-size: 0.8rem;
-    }
+    /* --- REMOVED blocked-badge --- */
   </style>
 </head>
 <body>
@@ -59,8 +53,7 @@
           <h4>📊 Stats</h4>
           <ul class="list-group">
             <li class="list-group-item">Total Checks: <strong>{{ stats.total_checks }}</strong></li>
-            <li class="list-group-item">Good Proxies Found: <strong>{{ stats.total_good }}</strong></li>
-          </ul>
+            </ul>
         </div>
       </div>
       <div class="col-md-6">
@@ -70,7 +63,6 @@
             <li class="list-group-item">Max Proxies: <strong>{{ stats.max_paste }}</strong></li>
             <li class="list-group-item">Max Fraud Score: <strong>{{ stats.fraud_score_level }}</strong></li>
             <li class="list-group-item">Max Workers: <strong>{{ stats.max_workers }}</strong></li>
-            <li class="list-group-item">Allowed Passwords: <strong>{{ stats.allowed_passwords }}</strong></li>
             <li class="list-group-item">Scamalytics Key: <strong>{{ stats.scamalytics_api_key[:4] }}...</strong></li>
             <li class="list-group-item">Scamalytics URL: <strong>{{ stats.scamalytics_api_url }}</strong></li>
         </ul>
@@ -128,77 +120,6 @@
       </div>
     </div>
 
-    <div class="card p-3 mb-4">
-      <h4>✅ Good Proxies</h4>
-      <div class="table-wrapper">
-        <table class="table table-striped table-bordered">
-          <thead>
-            <tr>
-              <th>Proxy</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for proxy in good_proxies %}
-            <tr>
-              <td><code>{{ proxy }}</code></td>
-            </tr>
-            {% endfor %}
-            {% if good_proxies|length == 0 %}
-            <tr>
-              <td class="text-center text-muted">No good proxies found</td>
-            </tr>
-            {% endif %}
-          </tbody>
-        </table>
-      </div>
     </div>
-
-    <div class="card p-3">
-      <h4>🚫 Blocked IPs</h4>
-      <form method="POST" action="/admin/block-ip" class="mb-3">
-        <div class="row g-2">
-          <div class="col-md-8">
-            <input type="text" name="ip" class="form-control" placeholder="IP Address" required>
-          </div>
-          <div class="col-md-4">
-            <button type="submit" class="btn btn-danger w-100">Block IP</button>
-          </div>
-        </div>
-        <div class="mt-2">
-          <input type="text" name="reason" class="form-control" placeholder="Reason (optional)">
-        </div>
-      </form>
-      
-      <div class="table-wrapper">
-        <table class="table table-hover table-bordered">
-          <thead>
-            <tr>
-              <th>IP Address</th>
-              <th>Reason</th>
-              <th>Blocked At</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for row in blocked_ips %}
-            <tr>
-              <td>{{ row["IP"] }}</td>
-              <td>{{ row["Reason"] }}</td>
-              <td>{{ row["Date"] }}</td>
-              <td>
-                <a href="/admin/unblock-ip/{{ row['IP'] }}" class="btn btn-sm btn-success">Unblock</a>
-              </td>
-            </tr>
-            {% endfor %}
-            {% if blocked_ips|length == 0 %}
-            <tr>
-              <td colspan="4" class="text-center text-muted">No blocked IPs</td>
-            </tr>
-            {% endif %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
 </body>
 </html>

@@ -22,30 +22,14 @@ SHEET_CONFIG = {
                 "name": "UsedProxies",
                 "headers": ["IP", "Proxy", "Date"]
             },
-            "access": {
-                "name": "AccessLogs",
-                "headers": ["IP", "Type", "UserAgent", "Timestamp"]
-            },
-            "blocked": {
-                "name": "BlockedIPs",
-                "headers": ["IP", "Reason", "Timestamp"]
-            },
-            # --- NEW WORKSHEET FOR BAD PROXIES ---
+            # --- REMOVED "access" and "blocked" worksheets ---
             "bad_proxies": {
                 "name": "BAD",
                 "headers": ["Proxy", "IP", "Score", "Timestamp"]
             }
         }
     },
-    "good_proxies": {
-        "name": "Good Proxies",
-        "worksheets": {
-            "main": {
-                "name": "GoodProxies",
-                "headers": ["Proxy", "IP", "Timestamp"]
-            }
-        }
-    },
+    # --- REMOVED "good_proxies" sheet ---
     "settings": {
         "name": "Settings",
         "worksheets": {
@@ -171,36 +155,9 @@ def get_all_used_ips():
         logger.error(f"Error getting used IPs: {e}")
         return []
 
-def log_good_proxy(proxy, ip):
-    """Log a working proxy to GoodProxies worksheet"""
-    try:
-        sheet = get_worksheet("good_proxies", "main")
-        if sheet:
-            # Check if proxy already exists
-            records = sheet.get_all_records()
-            for record in records:
-                if record["Proxy"] == proxy:
-                    return True
-            
-            sheet.append_row([proxy, ip, get_eat_time()])
-            return True
-        return False
-    except Exception as e:
-        logger.error(f"Error logging good proxy: {e}")
-        return False
+# --- REMOVED log_good_proxy ---
+# --- REMOVED get_good_proxies ---
 
-def get_good_proxies():
-    """Get all good proxies from GoodProxies worksheet"""
-    try:
-        sheet = get_worksheet("good_proxies", "main")
-        if not sheet:
-            return []
-        return [row["Proxy"] for row in sheet.get_all_records()]
-    except Exception as e:
-        logger.error(f"Error getting good proxies: {e}")
-        return []
-
-# --- NEW FUNCTION to log bad proxies ---
 def log_bad_proxy(proxy, ip, score):
     """Log a bad proxy to the BAD worksheet"""
     try:
@@ -219,7 +176,6 @@ def log_bad_proxy(proxy, ip, score):
         logger.error(f"Error logging bad proxy: {e}")
         return False
 
-# --- NEW FUNCTION to get bad proxy cache ---
 def get_bad_proxies_list():
     """Get all bad proxy strings from BAD worksheet"""
     try:
@@ -264,72 +220,5 @@ def update_setting(setting_name, value):
         logger.error(f"Error updating setting: {e}")
         return False
 
-# IP Management Functions
-def log_user_access(ip, user_agent):
-    """Log user access to AccessLogs worksheet"""
-    try:
-        sheet = get_worksheet("used_ips", "access")
-        if sheet:
-            sheet.append_row([ip, "ACCESS", user_agent, get_eat_time()])
-            return True
-        return False
-    except Exception as e:
-        logger.error(f"Error logging user access: {e}")
-        return False
-
-def get_blocked_ips():
-    """Get all blocked IPs from BlockedIPs worksheet"""
-    try:
-        sheet = get_worksheet("used_ips", "blocked")
-        if not sheet:
-            return []
-        return sheet.get_all_records()
-    except Exception as e:
-        logger.error(f"Error getting blocked IPs: {e}")
-        return []
-
-def add_blocked_ip(ip, reason):
-    """Add a blocked IP to BlockedIPs worksheet"""
-    try:
-        sheet = get_worksheet("used_ips", "blocked")
-        if sheet:
-            # Check if IP is already blocked
-            records = sheet.get_all_records()
-            for record in records:
-                if record["IP"] == ip:
-                    return True
-            
-            sheet.append_row([ip, reason, get_eat_time()])
-            return True
-        return False
-    except Exception as e:
-        logger.error(f"Error adding blocked IP: {e}")
-        return False
-
-def remove_blocked_ip(ip):
-    """Remove a blocked IP from BlockedIPs worksheet"""
-    try:
-        sheet = get_worksheet("used_ips", "blocked")
-        if not sheet: 
-            return False
-        
-        cell = sheet.find(ip, in_column=1)  # Column 1 is IP
-        if cell:
-            sheet.delete_row(cell.row)
-            return True
-        return False
-    except Exception as e:
-        logger.error(f"Error removing blocked IP: {e}")
-        return False
-
-def is_ip_blocked(ip):
-    """Check if an IP is blocked"""
-    try:
-        sheet = get_worksheet("used_ips", "blocked")
-        if not sheet:
-            return False
-        cell = sheet.find(ip, in_column=1)  # Column 1 is IP
-        return bool(cell)
-    except Exception as e:
-        logger.error(f"Error checking blocked IP: {e}")
-        return False
+# --- REMOVED ALL IP MANAGEMENT FUNCTIONS ---
+# (log_user_access, get_blocked_ips, add_blocked_ip, remove_blocked_ip, is_ip_blocked)
