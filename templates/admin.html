@@ -39,13 +39,7 @@
     .card {
       margin-bottom: 20px;
     }
-    .blocked-badge {
-      background-color: #dc3545;
-      color: white;
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-size: 0.8rem;
-    }
+    /* Removed blocked-badge style as it's no longer used */
   </style>
 </head>
 <body>
@@ -154,52 +148,6 @@
       </div>
     </div>
 
-    <div class="card p-3">
-      <h4>🚫 Blocked IPs</h4>
-      <form method="POST" action="/admin/block-ip" class="mb-3">
-        <div class="row g-2">
-          <div class="col-md-8">
-            <input type="text" name="ip" class="form-control" placeholder="IP Address" required>
-          </div>
-          <div class="col-md-4">
-            <button type="submit" class="btn btn-danger w-100">Block IP</button>
-          </div>
-        </div>
-        <div class="mt-2">
-          <input type="text" name="reason" class="form-control" placeholder="Reason (optional)">
-        </div>
-      </form>
-      
-      <div class="table-wrapper">
-        <table class="table table-hover table-bordered">
-          <thead>
-            <tr>
-              <th>IP Address</th>
-              <th>Reason</th>
-              <th>Blocked At</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for row in blocked_ips %}
-            <tr>
-              <td>{{ row["IP"] }}</td>
-              <td>{{ row["Reason"] }}</td>
-              <td>{{ row["Date"] }}</td>
-              <td>
-                <a href="/admin/unblock-ip/{{ row['IP'] }}" class="btn btn-sm btn-success">Unblock</a>
-              </td>
-            </tr>
-            {% endfor %}
-            {% if blocked_ips|length == 0 %}
-            <tr>
-              <td colspan="4" class="text-center text-muted">No blocked IPs</td>
-            </tr>
-            {% endif %}
-          </tbody>
-        </table>
-      </div>
     </div>
-  </div>
 </body>
 </html>
