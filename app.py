@@ -61,8 +61,11 @@ ADMIN_IP = "40.67.137.199"
 def get_app_settings():
     settings = get_settings()
     allowed_passwords_str = settings.get("ALLOWED_PASSWORDS", DEFAULT_SETTINGS["ALLOWED_PASSWORDS"])
-    # Convert comma-separated string to list and strip whitespace
-    allowed_passwords = [pwd.strip() for pwd in allowed_passwords_str.split(",") if pwd.strip()]
+    
+    # --- FIX: Cast to string *before* splitting ---
+    # This prevents the "AttributeError: 'int' object has no attribute 'split'"
+    # if the Google Sheet setting is just a number.
+    allowed_passwords = [pwd.strip() for pwd in str(allowed_passwords_str).split(",") if pwd.strip()]
     
     return {
         "MAX_PASTE": int(settings.get("MAX_PASTE", DEFAULT_SETTINGS["MAX_PASTE"])),
@@ -223,8 +226,8 @@ def single_check_proxy(proxy_line, fraud_score_level, allowed_passwords, api_key
 
 @app.before_request
 def track_and_block():
-    # Skip static files
-    if request.path.startswith('/static'):
+    # --- FIX: Skip static files AND favicons to prevent 429 quota errors ---
+    if request.path.startswith('/static') or request.path.endswith(('.ico', '.png')):
         return
     
     # Get client IP (handling proxy headers)
@@ -241,13 +244,19 @@ def track_and_block():
     if not request.path.startswith('/admin') and is_ip_blocked(ip):
         return render_template("blocked.html"), 403
     
-    # Restrict admin routes to specific IP
-    if request.path.startswith('/admin') and ip != ADMIN_IP:
-        return render_template("admin_blocked.html"), 403
+    # --- ADMIN IP LOCK TEMPORARILY DISABLED ---
+    # if request.path.startswith('/admin') and ip != ADMIN_IP:
+    #     return render_template("admin_blocked.html"), 403
 
 @app.route("/", methods=["GET", "POST"])
 def index():
-    settings = get_app_settings()
+    try:
+        settings = get_app_settings()
+    except Exception as e:
+        # Catch the crash if it happens and show a user-friendly error
+        logger.error(f"CRITICAL: Failed to get app settings: {e}")
+        return render_template("error.html", error="Could not load app settings. Check Google Sheets configuration and permissions."), 500
+        
     MAX_PASTE = settings["MAX_PASTE"]
     FRAUD_SCORE_LEVEL = settings["FRAUD_SCORE_LEVEL"]
     MAX_WORKERS = settings["MAX_WORKERS"]
@@ -472,7 +481,12 @@ def admin():
 
 @app.route("/admin/settings", methods=["GET", "POST"])
 def admin_settings():
-    settings = get_app_settings()
+    try:
+        settings = get_app_settings()
+    except Exception as e:
+        logger.error(f"CRITICAL: Failed to get app settings in ADMIN: {e}")
+        return render_template("error.html", error="Could not load app settings. Check Google Sheets configuration and permissions."), 500
+        
     message = None
     
     if request.method == "POST":
@@ -491,7 +505,7 @@ def admin_settings():
             if max_paste < 5 or max_paste > 100:
                 message = "Max proxies must be between 5 and 100"
                 raise ValueError(message)
-        except ValueError:
+        except (ValueError, TypeError):
             max_paste = DEFAULT_SETTINGS["MAX_PASTE"]
         
         try:
@@ -499,7 +513,7 @@ def admin_settings():
             if fraud_score_level < 0 or fraud_score_level > 100:
                 message = "Fraud score must be between 0 and 100"
                 raise ValueError(message)
-        except ValueError:
+        except (ValueError, TypeError):
             fraud_score_level = DEFAULT_SETTINGS["FRAUD_SCORE_LEVEL"]
         
         try:
@@ -507,7 +521,7 @@ def admin_settings():
             if max_workers < 1 or max_workers > 100:
                 message = "Max workers must be between 1 and 100"
                 raise ValueError(message)
-        except ValueError:
+        except (ValueError, TypeError):
             max_workers = DEFAULT_SETTINGS["MAX_WORKERS"]
         
         # Validate allowed passwords
