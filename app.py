@@ -34,8 +34,7 @@ DEFAULT_SETTINGS = {
     "MAX_PASTE": 30,
     "FRAUD_SCORE_LEVEL": 0,
     "MAX_WORKERS": 5,
-    "ALLOWED_PASSWORDS": "123456_country-us_state-washington_session-ddMJlZq3_lifetime-168h,JBZAeWoqvF1XqOuw,68166538",  # Comma-separated list
-    # --- NEW SETTINGS ---
+    # --- REMOVED ALLOWED_PASSWORDS ---
     "SCAMALYTICS_API_KEY": "YOUR_API_KEY_HERE", # Add your key to Google Sheets
     "SCAMALYTICS_API_URL": "https://api11.scamalytics.com/v3/", # US Node
     "SCAMALYTICS_USERNAME": "YOUR_USERNAME_HERE" # e.g., keishamartell329
@@ -60,17 +59,13 @@ ADMIN_IP = "40.67.137.199" # This is currently disabled in before_request
 
 def get_app_settings():
     settings = get_settings()
-    allowed_passwords_str = settings.get("ALLOWED_PASSWORDS", DEFAULT_SETTINGS["ALLOWED_PASSWORDS"])
-
-    # --- FIX: Cast to string *before* splitting ---
-    allowed_passwords = [pwd.strip() for pwd in str(allowed_passwords_str).split(",") if pwd.strip()]
+    # --- REMOVED ALLOWED_PASSWORDS LOGIC ---
 
     return {
         "MAX_PASTE": int(settings.get("MAX_PASTE", DEFAULT_SETTINGS["MAX_PASTE"])),
         "FRAUD_SCORE_LEVEL": int(settings.get("FRAUD_SCORE_LEVEL", DEFAULT_SETTINGS["FRAUD_SCORE_LEVEL"])),
         "MAX_WORKERS": int(settings.get("MAX_WORKERS", DEFAULT_SETTINGS["MAX_WORKERS"])),
-        "ALLOWED_PASSWORDS": allowed_passwords,
-        # --- NEW SETTINGS ---
+        # --- REMOVED ALLOWED_PASSWORDS ---
         "SCAMALYTICS_API_KEY": settings.get("SCAMALYTICS_API_KEY", DEFAULT_SETTINGS["SCAMALYTICS_API_KEY"]),
         "SCAMALYTICS_API_URL": settings.get("SCAMALYTICS_API_URL", DEFAULT_SETTINGS["SCAMALYTICS_API_URL"]),
         "SCAMALYTICS_USERNAME": settings.get("SCAMALYTICS_USERNAME", DEFAULT_SETTINGS["SCAMALYTICS_USERNAME"])
@@ -90,23 +85,16 @@ def validate_proxy_format(proxy_line):
         logger.error(f"Error validating proxy format: {e}")
         return False
 
-def validate_proxy_password(proxy_line, allowed_passwords):
-    """Validate that proxy password matches any of the allowed passwords"""
-    try:
-        parts = proxy_line.strip().split(":")
-        if len(parts) == 4:  # host:port:user:password
-            host, port, user, password = parts
-            # Check that all parts are non-empty AND password matches any allowed password
-            if host and port and user and password and password in allowed_passwords:
-                return True
-        return False
-    except Exception as e:
-        logger.error(f"Error validating proxy password: {e}")
-        return False
+# --- REMOVED validate_proxy_password function ---
 
-def get_ip_from_proxy(proxy_line, allowed_passwords):
-    """Extract IP from proxy - with password validation"""
-    if not validate_proxy_password(proxy_line, allowed_passwords):
+def get_ip_from_proxy(proxy_line):
+    """Extract IP from proxy - REMOVED password validation"""
+    # No longer need allowed_passwords parameter
+    # if not validate_proxy_password(proxy_line, allowed_passwords): # REMOVED
+    #     return None
+
+    # Basic format check (still useful)
+    if not validate_proxy_format(proxy_line):
         return None
 
     try:
@@ -136,9 +124,14 @@ def get_ip_from_proxy(proxy_line, allowed_passwords):
         logger.error(f"❌ Failed to get IP from proxy {proxy_line}: {e}")
         return None
 
-def get_fraud_score(ip, proxy_line, allowed_passwords, api_key, api_url, api_user):
-    """Get fraud score via Scamalytics v3 API - with password validation"""
-    if not validate_proxy_password(proxy_line, allowed_passwords):
+def get_fraud_score(ip, proxy_line, api_key, api_url, api_user):
+    """Get fraud score via Scamalytics v3 API - REMOVED password validation"""
+    # No longer need allowed_passwords parameter
+    # if not validate_proxy_password(proxy_line, allowed_passwords): # REMOVED
+    #     return None
+
+    # Basic format check
+    if not validate_proxy_format(proxy_line):
         return None
 
     try:
@@ -191,20 +184,25 @@ def get_fraud_score(ip, proxy_line, allowed_passwords, api_key, api_url, api_use
         logger.error(f"⚠️ Error checking Scamalytics API for {ip}: {e}")
     return None
 
-def single_check_proxy(proxy_line, fraud_score_level, allowed_passwords, api_key, api_url, api_user):
-    """Check single proxy - with password validation"""
+def single_check_proxy(proxy_line, fraud_score_level, api_key, api_url, api_user):
+    """Check single proxy - REMOVED password validation"""
     time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
 
-    # Validate password first
-    if not validate_proxy_password(proxy_line, allowed_passwords):
-        logger.warning(f"❌ Proxy rejected - invalid password or format: {proxy_line}")
+    # --- REMOVED password validation check ---
+    # if not validate_proxy_password(proxy_line, allowed_passwords):
+    #     logger.warning(f"❌ Proxy rejected - invalid password or format: {proxy_line}")
+    #     return None
+
+    # Basic format check still useful
+    if not validate_proxy_format(proxy_line):
+        logger.warning(f"❌ Proxy rejected - invalid format: {proxy_line}")
         return None
 
-    ip = get_ip_from_proxy(proxy_line, allowed_passwords)
+    ip = get_ip_from_proxy(proxy_line) # Removed allowed_passwords argument
     if not ip:
         return None
 
-    score = get_fraud_score(ip, proxy_line, allowed_passwords, api_key, api_url, api_user)
+    score = get_fraud_score(ip, proxy_line, api_key, api_url, api_user) # Removed allowed_passwords argument
 
     if score is not None:
         if score <= fraud_score_level:
@@ -220,7 +218,6 @@ def single_check_proxy(proxy_line, fraud_score_level, allowed_passwords, api_key
 
     return None # API check failed
 
-# --- UPDATED: REMOVED IP BLOCKING AND ACCESS LOGGING ---
 @app.before_request
 def track_and_block():
     # Skip static files AND favicons
@@ -240,8 +237,7 @@ def index():
     MAX_PASTE = settings["MAX_PASTE"]
     FRAUD_SCORE_LEVEL = settings["FRAUD_SCORE_LEVEL"]
     MAX_WORKERS = settings["MAX_WORKERS"]
-    ALLOWED_PASSWORDS = settings["ALLOWED_PASSWORDS"]
-    # --- Get new settings ---
+    # --- REMOVED ALLOWED_PASSWORDS ---
     API_KEY = settings["SCAMALYTICS_API_KEY"]
     API_URL = settings["SCAMALYTICS_API_URL"]
     API_USER = settings["SCAMALYTICS_USERNAME"]
@@ -306,9 +302,9 @@ def index():
                 invalid_format_proxies.append(proxy)
                 logger.warning(f"Invalid proxy format: {proxy}")
 
-        # --- Pre-filter proxies based on caches and password ---
+        # --- Pre-filter proxies based on caches ---
         proxies_to_check = []
-        invalid_password_proxies = []
+        # --- REMOVED invalid_password_proxies ---
         used_count_prefilter = 0
         bad_count_prefilter = 0
 
@@ -321,11 +317,12 @@ def index():
                 bad_count_prefilter += 1
                 continue  # Exempt from search (already known bad)
 
-            if validate_proxy_password(proxy, ALLOWED_PASSWORDS):
-                proxies_to_check.append(proxy)
-            else:
-                invalid_password_proxies.append(proxy)
-                logger.warning(f"Invalid proxy password: {proxy}")
+            # --- REMOVED password validation ---
+            # if validate_proxy_password(proxy, ALLOWED_PASSWORDS):
+            proxies_to_check.append(proxy)
+            # else:
+            #     invalid_password_proxies.append(proxy)
+            #     logger.warning(f"Invalid proxy password: {proxy}")
 
         logger.info(f"Prefiltered: {used_count_prefilter} used, {bad_count_prefilter} bad.")
         processed_count = len(proxies_to_check)
@@ -334,20 +331,20 @@ def index():
         if invalid_format_proxies:
             logger.warning(f"Found {len(invalid_format_proxies)} invalid format proxies")
 
-        if invalid_password_proxies:
-            logger.warning(f"Found {len(invalid_password_proxies)} error proxies")
+        # --- REMOVED invalid_password_proxies check ---
 
-        # Only show failed.html if ALL proxies have invalid passwords AND there are no valid format proxies
-        if len(proxies_to_check) == 0 and len(valid_format_proxies) > 0 and len(invalid_password_proxies) > 0:
-            logger.warning("All proxies have invalid passwords or are cached")
-            # Only render failed if the *reason* is password
-            if len(invalid_password_proxies) == len(valid_format_proxies):
-                 return render_template("failed.html"), 403
+        # --- REMOVED failed.html logic related to passwords ---
+        # if len(proxies_to_check) == 0 and len(valid_format_proxies) > 0 and len(invalid_password_proxies) > 0:
+        #     logger.warning("All proxies have invalid passwords or are cached")
+        #     # Only render failed if the *reason* is password
+        #     if len(invalid_password_proxies) == len(valid_format_proxies):
+        #          return render_template("failed.html"), 403
 
         if proxies_to_check:
             with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
                 # Pass API key, URL, and User to the worker
-                futures = [executor.submit(single_check_proxy, proxy, FRAUD_SCORE_LEVEL, ALLOWED_PASSWORDS, API_KEY, API_URL, API_USER) for proxy in proxies_to_check]
+                # REMOVED ALLOWED_PASSWORDS from arguments
+                futures = [executor.submit(single_check_proxy, proxy, FRAUD_SCORE_LEVEL, API_KEY, API_URL, API_USER) for proxy in proxies_to_check]
                 for future in as_completed(futures):
                     result = future.result()
                     if result:
@@ -369,26 +366,26 @@ def index():
                 used_count = len([r for r in results if r['used']])
 
                 invalid_format_count = len(invalid_format_proxies)
-                invalid_password_count = len(invalid_password_proxies)
+                # --- REMOVED invalid_password_count ---
 
                 format_warning = f" ({invalid_format_count}  error)" if invalid_format_count > 0 else ""
-                password_warning = f" ({invalid_password_count} invalid password)" if invalid_password_count > 0 else ""
+                # --- REMOVED password_warning ---
                 prefilter_msg = f" (Skipped {used_count_prefilter} used, {bad_count_prefilter} bad)."
 
-                message = f"✅ Processed {processed_count} proxies ({input_count} submitted{format_warning}{password_warning}). Found {good_count} good proxies ({used_count} used).{truncation_warning}{prefilter_msg}"
+                message = f"✅ Processed {processed_count} proxies ({input_count} submitted{format_warning}). Found {good_count} good proxies ({used_count} used).{truncation_warning}{prefilter_msg}"
             else:
                 invalid_format_count = len(invalid_format_proxies)
-                invalid_password_count = len(invalid_password_proxies)
+                # --- REMOVED invalid_password_count ---
 
                 format_warning = f" ({invalid_format_count} invalid format)" if invalid_format_count > 0 else ""
-                password_warning = f" ({invalid_password_count} invalid password)" if invalid_password_count > 0 else ""
+                # --- REMOVED password_warning ---
                 prefilter_msg = f" (Skipped {used_count_prefilter} used, {bad_count_prefilter} bad)."
 
-                message = f"⚠️ Processed {processed_count} proxies ({input_count} submitted{format_warning}{password_warning}). No good proxies found.{truncation_warning}{prefilter_msg}"
+                message = f"⚠️ Processed {processed_count} proxies ({input_count} submitted{format_warning}). No good proxies found.{truncation_warning}{prefilter_msg}"
         else:
-            # No valid proxies at all (either format or password or cached)
+            # No valid proxies at all (either format or cached)
             prefilter_msg = f" (Skipped {used_count_prefilter} already used, {bad_count_prefilter} cached as bad)"
-            message = f"⚠️ No valid proxies provided. Submitted {input_count} lines, but none were valid proxy formats (host:port:username:password) with correct password.{prefilter_msg}"
+            message = f"⚠️ No valid proxies provided. Submitted {input_count} lines, but none were valid proxy formats (host:port:username:password).{prefilter_msg}"
 
     return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings)
 
@@ -397,15 +394,17 @@ def track_used():
     data = request.get_json()
     if data and "proxy" in data:
         try:
-            # Get current allowed passwords
-            settings = get_app_settings()
-            allowed_passwords = settings["ALLOWED_PASSWORDS"]
+            # --- REMOVED password validation ---
+            # settings = get_app_settings()
+            # allowed_passwords = settings["ALLOWED_PASSWORDS"]
+            # if not validate_proxy_password(data["proxy"], allowed_passwords):
+            #     return jsonify({"status": "error", "message": "Invalid password"}), 403
 
-            # Validate password before tracking
-            if not validate_proxy_password(data["proxy"], allowed_passwords):
-                return jsonify({"status": "error", "message": "Invalid password"}), 403
+            # Basic format check before getting IP
+            if not validate_proxy_format(data["proxy"]):
+                 return jsonify({"status": "error", "message": "Invalid proxy format"}), 400
 
-            ip = get_ip_from_proxy(data["proxy"], allowed_passwords)
+            ip = get_ip_from_proxy(data["proxy"]) # Removed allowed_passwords argument
             if ip:
                 add_used_ip(ip, data["proxy"])
             return jsonify({"status": "success"})
@@ -429,21 +428,17 @@ def admin():
         settings = get_app_settings()
         stats = {
             "total_checks": "N/A (Vercel)",
-             # --- REMOVED total_good calculation ---
             "total_good": "N/A", # Set to N/A as function was removed
             "max_paste": settings["MAX_PASTE"],
             "fraud_score_level": settings["FRAUD_SCORE_LEVEL"],
             "max_workers": settings["MAX_WORKERS"],
-            "allowed_passwords": ", ".join(settings["ALLOWED_PASSWORDS"]),
-            # --- NEW STATS ---
+            # --- REMOVED allowed_passwords ---
             "scamalytics_api_key": settings["SCAMALYTICS_API_KEY"],
             "scamalytics_api_url": settings["SCAMALYTICS_API_URL"],
             "scamalytics_username": settings["SCAMALYTICS_USERNAME"]
         }
 
         used_ips = get_all_used_ips()
-        # --- REMOVED good_proxies ---
-        # good_proxies = get_good_proxies() # REMOVED
 
         return render_template(
             "admin.html",
@@ -470,8 +465,7 @@ def admin_settings():
         max_paste = request.form.get("max_paste")
         fraud_score_level = request.form.get("fraud_score_level")
         max_workers = request.form.get("max_workers")
-        allowed_passwords = request.form.get("allowed_passwords")
-        # --- NEW FORM FIELDS ---
+        # --- REMOVED allowed_passwords ---
         scamalytics_api_key = request.form.get("scamalytics_api_key")
         scamalytics_api_url = request.form.get("scamalytics_api_url")
         scamalytics_username = request.form.get("scamalytics_username")
@@ -502,16 +496,7 @@ def admin_settings():
         except (ValueError, TypeError):
             max_workers = DEFAULT_SETTINGS["MAX_WORKERS"]
 
-        # Validate allowed passwords
-        if not allowed_passwords or len(allowed_passwords.strip()) == 0:
-            message = "Allowed passwords cannot be empty"
-            allowed_passwords = DEFAULT_SETTINGS["ALLOWED_PASSWORDS"]
-        else:
-            # Validate that we have at least one valid password
-            passwords_list = [pwd.strip() for pwd in allowed_passwords.split(",") if pwd.strip()]
-            if len(passwords_list) == 0:
-                message = "At least one valid password is required"
-                allowed_passwords = DEFAULT_SETTINGS["ALLOWED_PASSWORDS"]
+        # --- REMOVED password validation ---
 
         # --- VALIDATE NEW FIELDS ---
         if not scamalytics_api_key or len(scamalytics_api_key.strip()) < 5:
@@ -532,8 +517,7 @@ def admin_settings():
             update_setting("MAX_PASTE", str(max_paste))
             update_setting("FRAUD_SCORE_LEVEL", str(fraud_score_level))
             update_setting("MAX_WORKERS", str(max_workers))
-            update_setting("ALLOWED_PASSWORDS", allowed_passwords.strip())
-            # --- UPDATE NEW SETTINGS ---
+            # --- REMOVED allowed_passwords update ---
             update_setting("SCAMALYTICS_API_KEY", scamalytics_api_key.strip())
             update_setting("SCAMALYTICS_API_URL", scamalytics_api_url.strip())
             update_setting("SCAMALYTICS_USERNAME", scamalytics_username.strip())
@@ -541,12 +525,11 @@ def admin_settings():
             settings = get_app_settings()  # Refresh settings
             message = "Settings updated successfully"
 
-    # Pass the raw (string) version of allowed passwords to the template
+    # --- REMOVED sending raw passwords string to template ---
     settings_display = settings.copy()
-    settings_display["ALLOWED_PASSWORDS"] = ", ".join(settings["ALLOWED_PASSWORDS"])
+    # settings_display["ALLOWED_PASSWORDS"] = ", ".join(settings["ALLOWED_PASSWORDS"]) # REMOVED
 
     # Ensure the template file is in the right location!
-    # Remember to move admin_settings.html into the 'templates' folder
     return render_template("admin_settings.html", settings=settings_display, message=message)
 
 @app.route('/static/<path:path>')

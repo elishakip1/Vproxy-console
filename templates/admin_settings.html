@@ -8,13 +8,13 @@
 <body>
   <div class="container py-4">
     <h2 class="mb-4">⚙️ Application Settings</h2>
-    
+
     {% if message %}
     <div class="alert alert-{{ 'success' if 'success' in message else 'danger' }} mb-4">
       {{ message }}
     </div>
     {% endif %}
-    
+
     <div class="card mb-4">
       <div class="card-header bg-primary text-white">
         <h5 class="mb-0">Proxy Checking Settings</h5>
@@ -25,46 +25,37 @@
             <label for="max_paste" class="form-label">
               Max Proxies Per Check
             </label>
-            <input type="number" class="form-control" id="max_paste" 
+            <input type="number" class="form-control" id="max_paste"
                    name="max_paste" value="{{ settings.MAX_PASTE }}" min="5" max="100">
             <div class="form-text">Maximum number of proxies users can submit at once (5-100)</div>
           </div>
-          
+
           <div class="mb-3">
             <label for="fraud_score_level" class="form-label">
               Maximum Fraud Score
             </label>
-            <input type="number" class="form-control" id="fraud_score_level" 
+            <input type="number" class="form-control" id="fraud_score_level"
                    name="fraud_score_level" value="{{ settings.FRAUD_SCORE_LEVEL }}" min="0" max="100">
             <div class="form-text">0 = most strict (only perfect proxies), 100 = least strict</div>
           </div>
-          
+
           <div class="mb-3">
             <label for="max_workers" class="form-label">
               Concurrent Workers
             </label>
-            <input type="number" class="form-control" id="max_workers" 
+            <input type="number" class="form-control" id="max_workers"
                    name="max_workers" value="{{ settings.MAX_WORKERS }}" min="1" max="100">
             <div class="form-text">Number of parallel proxy checks (1-100)</div>
           </div>
 
-          <div class="mb-3">
-            <label for="allowed_passwords" class="form-label">
-              Allowed Proxy Passwords
-            </label>
-            <textarea class="form-control" id="allowed_passwords" 
-                      name="allowed_passwords" rows="3" required>{{ settings.ALLOWED_PASSWORDS }}</textarea>
-            <div class="form-text">Comma-separated list of allowed passwords. Proxies with any of these passwords will be accepted.</div>
-          </div>
-
           <hr>
           <h5 class="mt-3">API Settings</h5>
-          
+
           <div class="mb-3">
             <label for="scamalytics_username" class="form-label">
               Scamalytics Username
             </label>
-            <input type="text" class="form-control" id="scamalytics_username" 
+            <input type="text" class="form-control" id="scamalytics_username"
                    name="scamalytics_username" value="{{ settings.SCAMALYTICS_USERNAME }}" required>
             <div class="form-text">Your API username (e.g., keishamartell329)</div>
           </div>
@@ -73,16 +64,16 @@
             <label for="scamalytics_api_key" class="form-label">
               Scamalytics API Key
             </label>
-            <input type="text" class="form-control" id="scamalytics_api_key" 
+            <input type="text" class="form-control" id="scamalytics_api_key"
                    name="scamalytics_api_key" value="{{ settings.SCAMALYTICS_API_KEY }}" required>
             <div class="form-text">API Key for Scamalytics v3</div>
           </div>
-          
+
           <div class="mb-3">
             <label for="scamalytics_api_url" class="form-label">
               Scamalytics API URL
             </label>
-            <input type="text" class="form-control" id="scamalytics_api_url" 
+            <input type="text" class="form-control" id="scamalytics_api_url"
                    name="scamalytics_api_url" value="{{ settings.SCAMALYTICS_API_URL }}" required>
             <div class="form-text">API Endpoint URL (e.g., https://api11.scamalytics.com/v3/)</div>
           </div>
@@ -91,7 +82,7 @@
         </form>
       </div>
     </div>
-    
+
     <div class="alert alert-info">
       <strong>Note:</strong> Changes take effect immediately. Use with caution.
     </div>
