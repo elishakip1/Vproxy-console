@@ -2,7 +2,8 @@ from flask import Flask, request, render_template, redirect, url_for, jsonify, s
 import os
 import time
 import requests
-from bs4 import BeautifulSoup
+# BeautifulSoup is no longer needed for fraud score
+# from bs4 import BeautifulSoup 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import datetime
 import random
@@ -14,7 +15,9 @@ from sheets_util import (
     get_settings, update_setting, add_used_ip, delete_used_ip, 
     get_all_used_ips, log_good_proxy, get_good_proxies,
     log_user_access, get_blocked_ips, add_blocked_ip, 
-    remove_blocked_ip, is_ip_blocked
+    remove_blocked_ip, is_ip_blocked,
+    # --- NEW IMPORTS ---
+    log_bad_proxy, get_bad_proxies_list
 )
 
 # Configure logging
@@ -32,7 +35,10 @@ DEFAULT_SETTINGS = {
     "MAX_PASTE": 30,
     "FRAUD_SCORE_LEVEL": 0,
     "MAX_WORKERS": 5,
-    "ALLOWED_PASSWORDS": "123456_country-us_state-washington_session-ddMJlZq3_lifetime-168h,JBZAeWoqvF1XqOuw,68166538"  # Comma-separated list
+    "ALLOWED_PASSWORDS": "123456_country-us_state-washington_session-ddMJlZq3_lifetime-168h,JBZAeWoqvF1XqOuw,68166538",  # Comma-separated list
+    # --- NEW SETTINGS ---
+    "SCAMALYTICS_API_KEY": "YOUR_API_KEY_HERE", # Add your key to Google Sheets
+    "SCAMALYTICS_API_URL": "https://api11.scamalytics.com/v3/" # US Node
 }
 
 # User agents to rotate
@@ -62,7 +68,10 @@ def get_app_settings():
         "MAX_PASTE": int(settings.get("MAX_PASTE", DEFAULT_SETTINGS["MAX_PASTE"])),
         "FRAUD_SCORE_LEVEL": int(settings.get("FRAUD_SCORE_LEVEL", DEFAULT_SETTINGS["FRAUD_SCORE_LEVEL"])),
         "MAX_WORKERS": int(settings.get("MAX_WORKERS", DEFAULT_SETTINGS["MAX_WORKERS"])),
-        "ALLOWED_PASSWORDS": allowed_passwords
+        "ALLOWED_PASSWORDS": allowed_passwords,
+        # --- NEW SETTINGS ---
+        "SCAMALYTICS_API_KEY": settings.get("SCAMALYTICS_API_KEY", DEFAULT_SETTINGS["SCAMALYTICS_API_KEY"]),
+        "SCAMALYTICS_API_URL": settings.get("SCAMALYTICS_API_URL", DEFAULT_SETTINGS["SCAMALYTICS_API_URL"])
     }
 
 def validate_proxy_format(proxy_line):
@@ -125,8 +134,9 @@ def get_ip_from_proxy(proxy_line, allowed_passwords):
         logger.error(f"❌ Failed to get IP from proxy {proxy_line}: {e}")
         return None
 
-def get_fraud_score(ip, proxy_line, allowed_passwords):
-    """Get fraud score for IP using proxy - with password validation"""
+# --- REPLACED FUNCTION ---
+def get_fraud_score(ip, proxy_line, allowed_passwords, api_key, api_url):
+    """Get fraud score via Scamalytics v3 API - with password validation"""
     if not validate_proxy_password(proxy_line, allowed_passwords):
         return None
         
@@ -147,14 +157,11 @@ def get_fraud_score(ip, proxy_line, allowed_passwords):
         session.mount('http://', HTTPAdapter(max_retries=retries))
         session.mount('https://', HTTPAdapter(max_retries=retries))
         
-        url = f"https://scamalytics.com/ip/{ip}"
+        # Use the v3 API endpoint
+        url = f"{api_url}?key={api_key}&ip={ip}"
         headers = {
             "User-Agent": random.choice(USER_AGENTS),
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
-            "Connection": "keep-alive",
-            "Upgrade-Insecure-Requests": "1",
-            "Cache-Control": "max-age=0"
+            "Accept": "application/json", # Request JSON response
         }
         
         response = session.get(
@@ -165,17 +172,28 @@ def get_fraud_score(ip, proxy_line, allowed_passwords):
         )
         
         if response.status_code == 200:
-            soup = BeautifulSoup(response.text, 'html.parser')
-            score_div = soup.find('div', class_='score')
-            if score_div and "Fraud Score:" in score_div.text:
-                score_text = score_div.text.strip().split(":")[1].strip()
-                return int(score_text)
+            data = response.json()
+            # Check for API-level error
+            if data.get("scamalytics", {}).get("status") == "ok":
+                score = data.get("scamalytics", {}).get("scamalytics_score")
+                if score is not None:
+                    return int(score)
+                else:
+                    logger.error(f"Scamalytics API OK but no score for {ip}")
+            else:
+                logger.error(f"Scamalytics API error for {ip}: {data.get('scamalytics', {}).get('status')}")
+        else:
+            logger.error(f"Scamalytics API request failed for {ip}: HTTP {response.status_code} {response.text}")
+            
     except Exception as e:
-        logger.error(f"⚠️ Error checking Scamalytics for {ip}: {e}")
+        logger.error(f"⚠️ Error checking Scamalytics API for {ip}: {e}")
     return None
 
-def single_check_proxy(proxy_line, fraud_score_level, allowed_passwords):
+# --- UPDATED FUNCTION ---
+def single_check_proxy(proxy_line, fraud_score_level, allowed_passwords, api_key, api_url):
     """Check single proxy - with password validation"""
+    # Note: bad_proxy_cache is now checked in the main route before starting the thread
+    
     time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
     
     # Validate password first
@@ -187,10 +205,21 @@ def single_check_proxy(proxy_line, fraud_score_level, allowed_passwords):
     if not ip:
         return None
 
-    score = get_fraud_score(ip, proxy_line, allowed_passwords)
-    if score is not None and score <= fraud_score_level:
-        return {"proxy": proxy_line, "ip": ip}
-    return None
+    score = get_fraud_score(ip, proxy_line, allowed_passwords, api_key, api_url)
+    
+    if score is not None:
+        if score <= fraud_score_level:
+            # Good proxy
+            return {"proxy": proxy_line, "ip": ip}
+        else:
+            # Bad proxy - log it to the cache
+            try:
+                log_bad_proxy(proxy_line, ip, score)
+            except Exception as e:
+                logger.error(f"Error logging bad proxy from thread: {e}")
+            return None # Not a good proxy
+            
+    return None # API check failed
 
 @app.before_request
 def track_and_block():
@@ -223,6 +252,9 @@ def index():
     FRAUD_SCORE_LEVEL = settings["FRAUD_SCORE_LEVEL"]
     MAX_WORKERS = settings["MAX_WORKERS"]
     ALLOWED_PASSWORDS = settings["ALLOWED_PASSWORDS"]
+    # --- Get new settings ---
+    API_KEY = settings["SCAMALYTICS_API_KEY"]
+    API_URL = settings["SCAMALYTICS_API_URL"]
     
     results = []
     message = ""
@@ -250,6 +282,25 @@ def index():
                 all_lines = all_lines[:MAX_PASTE]
             proxies = all_lines
 
+        # --- NEW: Load caches *before* processing ---
+        try:
+            used_ips_records = get_all_used_ips()
+            used_ips_list = [r['IP'] for r in used_ips_records]
+            # Cache of proxy strings that are already marked as used
+            used_proxy_cache = set([r['Proxy'] for r in used_ips_records])
+        except Exception as e:
+            logger.error(f"Error getting used IP/Proxy cache: {e}")
+            used_ips_list = []
+            used_proxy_cache = set()
+
+        try:
+            # Cache of proxy strings that are already marked as bad
+            bad_proxy_cache = set(get_bad_proxies_list())
+        except Exception as e:
+            logger.error(f"Error getting bad proxy cache: {e}")
+            bad_proxy_cache = set()
+
+
         # Filter out empty lines and validate format
         valid_format_proxies = []
         invalid_format_proxies = []
@@ -265,39 +316,54 @@ def index():
                 invalid_format_proxies.append(proxy)
                 logger.warning(f"Invalid proxy format: {proxy}")
 
-        # Separate valid format proxies by password validation
-        valid_password_proxies = []
+        # --- NEW: Pre-filter proxies based on caches and password ---
+        proxies_to_check = []
         invalid_password_proxies = []
-        
+        used_count_prefilter = 0
+        bad_count_prefilter = 0
+
         for proxy in valid_format_proxies:
+            if proxy in used_proxy_cache:
+                used_count_prefilter += 1
+                continue  # Exempt from search
+            
+            if proxy in bad_proxy_cache:
+                bad_count_prefilter += 1
+                continue  # Exempt from search (already known bad)
+
             if validate_proxy_password(proxy, ALLOWED_PASSWORDS):
-                valid_password_proxies.append(proxy)
+                proxies_to_check.append(proxy)
             else:
                 invalid_password_proxies.append(proxy)
                 logger.warning(f"Invalid proxy password: {proxy}")
+        
+        logger.info(f"Prefiltered: {used_count_prefilter} used, {bad_count_prefilter} bad.")
+        processed_count = len(proxies_to_check)
 
-        processed_count = len(valid_password_proxies)
 
         if invalid_format_proxies:
             logger.warning(f"Found {len(invalid_format_proxies)} invalid format proxies")
 
         if invalid_password_proxies:
-            logger.warning(f"Found {len(invalid_password_proxies)} error  proxies")
+            logger.warning(f"Found {len(invalid_password_proxies)} error proxies")
 
         # Only show failed.html if ALL proxies have invalid passwords AND there are no valid format proxies
-        if len(valid_password_proxies) == 0 and len(valid_format_proxies) > 0:
-            logger.warning("All proxies have invalid passwords")
-            return render_template("failed.html"), 403
+        if len(proxies_to_check) == 0 and len(valid_format_proxies) > 0 and len(invalid_password_proxies) > 0:
+            logger.warning("All proxies have invalid passwords or are cached")
+            # Only render failed if the *reason* is password
+            if len(invalid_password_proxies) == len(valid_format_proxies):
+                 return render_template("failed.html"), 403
 
-        if valid_password_proxies:
+        if proxies_to_check:
             with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                futures = [executor.submit(single_check_proxy, proxy, FRAUD_SCORE_LEVEL, ALLOWED_PASSWORDS) for proxy in valid_password_proxies]
+                # Pass API key and URL to the worker
+                futures = [executor.submit(single_check_proxy, proxy, FRAUD_SCORE_LEVEL, ALLOWED_PASSWORDS, API_KEY, API_URL) for proxy in proxies_to_check]
                 for future in as_completed(futures):
                     result = future.result()
                     if result:
                         try:
-                            used_ips = [ip['IP'] for ip in get_all_used_ips()]
-                            used = result["ip"] in used_ips
+                            # Check if the *exit IP* is in the used list
+                            used = result["ip"] in used_ips_list
                         except Exception as e:
                             logger.error(f"Error checking used IPs: {e}")
                             used = False
@@ -324,19 +390,22 @@ def index():
                 
                 format_warning = f" ({invalid_format_count}  error)" if invalid_format_count > 0 else ""
                 password_warning = f" ({invalid_password_count} invalid password)" if invalid_password_count > 0 else ""
+                prefilter_msg = f" (Skipped {used_count_prefilter} used, {bad_count_prefilter} bad)."
                 
-                message = f"✅ Processed {processed_count} proxies ({input_count} submitted{format_warning}{password_warning}). Found {good_count} good proxies ({used_count} used).{truncation_warning}"
+                message = f"✅ Processed {processed_count} proxies ({input_count} submitted{format_warning}{password_warning}). Found {good_count} good proxies ({used_count} used).{truncation_warning}{prefilter_msg}"
             else:
                 invalid_format_count = len(invalid_format_proxies)
                 invalid_password_count = len(invalid_password_proxies)
                 
                 format_warning = f" ({invalid_format_count} invalid format)" if invalid_format_count > 0 else ""
                 password_warning = f" ({invalid_password_count} invalid password)" if invalid_password_count > 0 else ""
-                
-                message = f"⚠️ Processed {processed_count} proxies ({input_count} submitted{format_warning}{password_warning}). No good proxies found.{truncation_warning}"
+                prefilter_msg = f" (Skipped {used_count_prefilter} used, {bad_count_prefilter} bad)."
+
+                message = f"⚠️ Processed {processed_count} proxies ({input_count} submitted{format_warning}{password_warning}). No good proxies found.{truncation_warning}{prefilter_msg}"
         else:
-            # No valid proxies at all (either format or password)
-            message = f"⚠️ No valid proxies provided. Submitted {input_count} lines, but none were valid proxy formats (host:port:username:password) with correct password."
+            # No valid proxies at all (either format or password or cached)
+            prefilter_msg = f" (Skipped {used_count_prefilter} already used, {bad_count_prefilter} cached as bad)"
+            message = f"⚠️ No valid proxies provided. Submitted {input_count} lines, but none were valid proxy formats (host:port:username:password) with correct password.{prefilter_msg}"
     
     return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings)
 
@@ -380,7 +449,10 @@ def admin():
             "max_paste": settings["MAX_PASTE"],
             "fraud_score_level": settings["FRAUD_SCORE_LEVEL"],
             "max_workers": settings["MAX_WORKERS"],
-            "allowed_passwords": ", ".join(settings["ALLOWED_PASSWORDS"])
+            "allowed_passwords": ", ".join(settings["ALLOWED_PASSWORDS"]),
+            # --- NEW STATS ---
+            "scamalytics_api_key": settings["SCAMALYTICS_API_KEY"],
+            "scamalytics_api_url": settings["SCAMALYTICS_API_URL"]
         }
         
         used_ips = get_all_used_ips()
@@ -408,6 +480,10 @@ def admin_settings():
         fraud_score_level = request.form.get("fraud_score_level")
         max_workers = request.form.get("max_workers")
         allowed_passwords = request.form.get("allowed_passwords")
+        # --- NEW FORM FIELDS ---
+        scamalytics_api_key = request.form.get("scamalytics_api_key")
+        scamalytics_api_url = request.form.get("scamalytics_api_url")
+
         
         # Validate inputs
         try:
@@ -445,16 +521,34 @@ def admin_settings():
                 message = "At least one valid password is required"
                 allowed_passwords = DEFAULT_SETTINGS["ALLOWED_PASSWORDS"]
         
+        # --- VALIDATE NEW FIELDS ---
+        if not scamalytics_api_key or len(scamalytics_api_key.strip()) < 5:
+            message = "Scamalytics API Key seems too short"
+            scamalytics_api_key = DEFAULT_SETTINGS["SCAMALYTICS_API_KEY"]
+        
+        if not scamalytics_api_url or not scamalytics_api_url.strip().startswith("http"):
+            message = "Scamalytics API URL must be a valid URL"
+            scamalytics_api_url = DEFAULT_SETTINGS["SCAMALYTICS_API_URL"]
+
+        
         # Only update if no validation errors
         if not message:
             update_setting("MAX_PASTE", str(max_paste))
             update_setting("FRAUD_SCORE_LEVEL", str(fraud_score_level))
             update_setting("MAX_WORKERS", str(max_workers))
             update_setting("ALLOWED_PASSWORDS", allowed_passwords.strip())
+            # --- UPDATE NEW SETTINGS ---
+            update_setting("SCAMALYTICS_API_KEY", scamalytics_api_key.strip())
+            update_setting("SCAMALYTICS_API_URL", scamalytics_api_url.strip())
+
             settings = get_app_settings()  # Refresh settings
             message = "Settings updated successfully"
     
-    return render_template("admin_settings.html", settings=settings, message=message)
+    # Pass the raw (string) version of allowed passwords to the template
+    settings_display = settings.copy()
+    settings_display["ALLOWED_PASSWORDS"] = ", ".join(settings["ALLOWED_PASSWORDS"])
+    
+    return render_template("admin_settings.html", settings=settings_display, message=message)
 
 @app.route("/admin/block-ip", methods=["POST"])
 def block_ip():

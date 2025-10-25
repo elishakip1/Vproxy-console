@@ -29,6 +29,11 @@ SHEET_CONFIG = {
             "blocked": {
                 "name": "BlockedIPs",
                 "headers": ["IP", "Reason", "Timestamp"]
+            },
+            # --- NEW WORKSHEET FOR BAD PROXIES ---
+            "bad_proxies": {
+                "name": "BAD",
+                "headers": ["Proxy", "IP", "Score", "Timestamp"]
             }
         }
     },
@@ -193,6 +198,38 @@ def get_good_proxies():
         return [row["Proxy"] for row in sheet.get_all_records()]
     except Exception as e:
         logger.error(f"Error getting good proxies: {e}")
+        return []
+
+# --- NEW FUNCTION to log bad proxies ---
+def log_bad_proxy(proxy, ip, score):
+    """Log a bad proxy to the BAD worksheet"""
+    try:
+        sheet = get_worksheet("used_ips", "bad_proxies")
+        if sheet:
+            # Check if proxy already exists
+            records = sheet.get_all_records()
+            for record in records:
+                if record["Proxy"] == proxy:
+                    return True # Already logged
+            
+            sheet.append_row([proxy, ip, score, get_eat_time()])
+            return True
+        return False
+    except Exception as e:
+        logger.error(f"Error logging bad proxy: {e}")
+        return False
+
+# --- NEW FUNCTION to get bad proxy cache ---
+def get_bad_proxies_list():
+    """Get all bad proxy strings from BAD worksheet"""
+    try:
+        sheet = get_worksheet("used_ips", "bad_proxies")
+        if not sheet:
+            return []
+        # Return only the proxy string for efficient cache lookup
+        return [row["Proxy"] for row in sheet.get_all_records()]
+    except Exception as e:
+        logger.error(f"Error getting bad proxies list: {e}")
         return []
 
 def get_settings():

@@ -71,6 +71,8 @@
             <li class="list-group-item">Max Fraud Score: <strong>{{ stats.fraud_score_level }}</strong></li>
             <li class="list-group-item">Max Workers: <strong>{{ stats.max_workers }}</strong></li>
             <li class="list-group-item">Allowed Passwords: <strong>{{ stats.allowed_passwords }}</strong></li>
+            <li class="list-group-item">Scamalytics Key: <strong>{{ stats.scamalytics_api_key[:4] }}...</strong></li>
+            <li class="list-group-item">Scamalytics URL: <strong>{{ stats.scamalytics_api_url }}</strong></li>
         </ul>
         <a href="/admin/settings" class="btn btn-outline-primary mt-2">Edit Settings</a>
     </div>
@@ -151,7 +153,6 @@
       </div>
     </div>
 
-    <!-- Blocked IPs Section -->
     <div class="card p-3">
       <h4>🚫 Blocked IPs</h4>
       <form method="POST" action="/admin/block-ip" class="mb-3">
