@@ -12,11 +12,10 @@ from requests.packages.urllib3.util.retry import Retry
 import logging
 import sys
 # --- UPDATED IMPORTS ---
-# Removed: log_good_proxy, log_user_access, get_blocked_ips,
-#          add_blocked_ip, remove_blocked_ip, is_ip_blocked
+# Removed: get_good_proxies
 from sheets_util import (
     get_settings, update_setting, add_used_ip, delete_used_ip,
-    get_all_used_ips, get_good_proxies, # Kept get_good_proxies for stats
+    get_all_used_ips, # Kept get_all_used_ips for display
     log_bad_proxy, get_bad_proxies_list
 )
 
@@ -227,24 +226,6 @@ def track_and_block():
     # Skip static files AND favicons
     if request.path.startswith('/static') or request.path.endswith(('.ico', '.png')):
         return
-
-    # Get client IP (handling proxy headers)
-    # if request.headers.getlist("X-Forwarded-For"):
-    #     ip = request.headers.getlist("X-Forwarded-For")[0]
-    # else:
-    #     ip = request.remote_addr
-
-    # --- REMOVED: Access Logging ---
-    # user_agent = request.headers.get('User-Agent', 'Unknown')
-    # log_user_access(ip, user_agent)
-
-    # --- REMOVED: IP Blocking Check ---
-    # if not request.path.startswith('/admin') and is_ip_blocked(ip):
-    #     return render_template("blocked.html"), 403
-
-    # --- REMOVED: Admin IP Lock (as requested earlier) ---
-    # if request.path.startswith('/admin') and ip != ADMIN_IP:
-    #     return render_template("admin_blocked.html"), 403
     pass # No actions needed before request anymore
 
 @app.route("/", methods=["GET", "POST"])
@@ -384,14 +365,6 @@ def index():
                         })
 
             if results:
-                # --- REMOVED: log_good_proxy call ---
-                # for item in results:
-                #     if not item["used"]:
-                #         try:
-                #             log_good_proxy(item["proxy"], item["ip"])
-                #         except Exception as e:
-                #             logger.error(f"Error logging good proxy: {e}")
-
                 good_count = len([r for r in results if not r['used']])
                 used_count = len([r for r in results if r['used']])
 
@@ -449,14 +422,15 @@ def delete_used_ip_route(ip):
         logger.error(f"Error deleting used IP: {e}")
     return redirect(url_for("admin"))
 
-# --- UPDATED ADMIN ROUTE: REMOVED BLOCKED IPS ---
+# --- UPDATED ADMIN ROUTE ---
 @app.route("/admin")
 def admin():
     try:
         settings = get_app_settings()
         stats = {
             "total_checks": "N/A (Vercel)",
-            "total_good": len(get_good_proxies()), # Kept for stats display
+             # --- REMOVED total_good calculation ---
+            "total_good": "N/A", # Set to N/A as function was removed
             "max_paste": settings["MAX_PASTE"],
             "fraud_score_level": settings["FRAUD_SCORE_LEVEL"],
             "max_workers": settings["MAX_WORKERS"],
@@ -468,14 +442,14 @@ def admin():
         }
 
         used_ips = get_all_used_ips()
-        good_proxies = get_good_proxies() # Kept for display
-        # blocked_ips = get_blocked_ips() # REMOVED
+        # --- REMOVED good_proxies ---
+        # good_proxies = get_good_proxies() # REMOVED
 
         return render_template(
             "admin.html",
             stats=stats,
             used_ips=used_ips,
-            good_proxies=good_proxies,
+            good_proxies=[], # Pass empty list as good_proxies were removed
             blocked_ips=[] # Pass empty list as blocked_ips were removed
         )
     except Exception as e:
@@ -574,13 +548,6 @@ def admin_settings():
     # Ensure the template file is in the right location!
     # Remember to move admin_settings.html into the 'templates' folder
     return render_template("admin_settings.html", settings=settings_display, message=message)
-
-# --- REMOVED block_ip and unblock_ip routes ---
-# @app.route("/admin/block-ip", methods=["POST"])
-# def block_ip(): ...
-
-# @app.route("/admin/unblock-ip/<ip>")
-# def unblock_ip(ip): ...
 
 @app.route('/static/<path:path>')
 def send_static(path):
