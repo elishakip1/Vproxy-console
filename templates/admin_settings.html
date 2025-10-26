@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>Settings - Proxy Checker</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"> <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
     body { padding-bottom: 80px; } /* Add padding for notepad */
 
@@ -100,7 +100,6 @@
     </div>
     {% endif %}
 
-    <!-- Flash messages for settings page -->
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
             {% for category, message in messages %}
@@ -185,10 +184,8 @@
     </div>
   </div>
 
-  <!-- Notepad Widget HTML -->
   <div id="notepad-widget">
-      <div id="notepad-container" class="hidden"> <!-- Start hidden -->
-          <div id="notepad-header">
+      <div id="notepad-container" class="hidden"> <div id="notepad-header">
               <span>Quick Notes</span>
               <button id="notepad-close-btn">&times;</button>
           </div>
@@ -203,7 +200,6 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <!-- Notepad Widget Script -->
   <script>
     document.addEventListener('DOMContentLoaded', () => {
         const toggleBtn = document.getElementById('notepad-toggle-btn');

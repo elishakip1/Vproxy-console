@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Proxy Checker</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"> <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body { background-color: #f0f2f5; font-family: sans-serif; padding-bottom: 80px; /* Add padding for notepad */ }
         .container { margin-top: 50px; max-width: 800px; }
@@ -108,28 +108,21 @@
     <div class="container bg-white p-4 rounded shadow-sm">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h2 class="mb-0">Proxy Checker</h2>
-            <div> <!-- Wrapper div for buttons -->
-                <!-- Show Admin button only if user is admin -->
-                {% if current_user.is_authenticated and current_user.is_admin %}
+            <div> {% if current_user.is_authenticated and current_user.is_admin %}
                     <a href="{{ url_for('admin') }}" class="btn btn-outline-primary btn-sm">Admin Panel</a>
                 {% endif %}
-                <!-- Add Logout Button -->
                 {% if current_user.is_authenticated %}
                     <a href="{{ url_for('logout') }}" class="btn btn-outline-secondary btn-sm">Logout ({{ current_user.username }})</a>
                 {% endif %}
             </div>
         </div>
 
-        <!-- === NEW ANNOUNCEMENT SECTION === -->
         {% if announcement %}
         <div class="alert alert-primary alert-dismissible fade show" role="alert">
           <strong>Notice:</strong> {{ announcement }}
           <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
         {% endif %}
-        <!-- === END ANNOUNCEMENT SECTION === -->
-
-        <!-- Display Flash Messages -->
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
                 {% for category, message in messages %}
@@ -141,12 +134,10 @@
             {% endif %}
         {% endwith %}
 
-        <!-- Display message from POST request -->
         {% if message %}
         <div class="alert alert-info">{{ message }}</div>
         {% endif %}
 
-        <!-- === ACCORDION WITH FORM (RESTORED) === -->
         <div class="accordion" id="proxyAccordion">
             <div class="accordion-item">
                 <h2 class="accordion-header" id="formHeading">
@@ -180,10 +171,6 @@
                 </div>
             </div>
         </div>
-        <!-- === END ACCORDION === -->
-
-
-        <!-- === RESULTS LIST (RESTORED) === -->
         {% if results %}
         <hr>
         <h5 class="mt-4">✅ Good Proxies Found (Score <= {{ settings.FRAUD_SCORE_LEVEL }})</h5>
@@ -191,16 +178,12 @@
             {% for item in results %}
             <li class="list-group-item d-flex justify-content-between align-items-center">
                 <span class="proxy-masked" id="proxy-{{ loop.index }}" data-full-proxy="{{ item.proxy }}">
-                    {{ item.proxy.split(':')[0] }}:{{ item.proxy.split(':')[1] }}:******** <!-- Mask username/pass -->
-                </span>
-                <div> <!-- Wrapper for badge and button -->
-                    {% if item.used %}
-                    <span class="badge bg-secondary me-2">USED IP</span> <!-- Changed badge style -->
-                    {% endif %}
+                    {{ item.proxy.split(':')[0] }}:{{ item.proxy.split(':')[1] }}:******** </span>
+                <div> {% if item.used %}
+                    <span class="badge bg-secondary me-2">USED IP</span> {% endif %}
                     <button class="btn btn-sm btn-outline-secondary copy-btn {% if item.used %}disabled{% endif %}"
                             onclick="copyToClipboard('proxy-{{ loop.index }}', this); trackUsedProxy('{{ item.proxy }}')"
-                            {% if item.used %}disabled{% endif %}> <!-- Disable button if used -->
-                        Copy
+                            {% if item.used %}disabled{% endif %}> Copy
                     </button>
                 </div>
             </li>
@@ -210,13 +193,10 @@
         </ul>
         <p class="mt-3 text-muted text-end">Results will clear automatically.</p>
         {% endif %}
-         <!-- === END RESULTS LIST === -->
-    </div>
+         </div>
 
-    <!-- Notepad Widget HTML -->
     <div id="notepad-widget">
-        <div id="notepad-container" class="hidden"> <!-- Start hidden -->
-            <div id="notepad-header">
+        <div id="notepad-container" class="hidden"> <div id="notepad-header">
                 <span>Quick Notes</span>
                 <button id="notepad-close-btn">&times;</button>
             </div>
