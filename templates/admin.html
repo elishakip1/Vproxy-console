@@ -3,92 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <title>Admin Panel - Proxy Checker</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"> <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
-    /* ... (keep existing styles) ... */
-    body { padding-bottom: 80px; } /* Add padding for notepad */
-
-    /* Notepad Widget Styles */
-    #notepad-widget {
-        position: fixed;
-        bottom: 20px;
-        right: 20px;
-        z-index: 1050;
-    }
-    #notepad-toggle-btn {
-        background-color: #0d6efd; /* Primary color */
-        color: white;
-        border: none;
-        border-radius: 50%;
-        width: 50px;
-        height: 50px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-        cursor: pointer;
-        transition: background-color 0.2s;
-    }
-    #notepad-toggle-btn:hover {
-        background-color: #0b5ed7;
-    }
-    #notepad-container {
-        position: absolute;
-        bottom: 65px; /* Above the toggle button */
-        right: 0;
-        width: 300px;
-        height: 350px;
-        background-color: #ffffff;
-        border-radius: 8px;
-        box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-        transition: all 0.3s ease-in-out;
-        opacity: 1;
-        transform: translateY(0);
-        pointer-events: auto;
-    }
-    #notepad-container.hidden {
-        display: none;
-        opacity: 0;
-        transform: translateY(10px);
-        pointer-events: none;
-    }
-    #notepad-header {
-        background-color: #f8f9fa;
-        padding: 10px 15px;
-        border-bottom: 1px solid #dee2e6;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        font-weight: bold;
-        cursor: grab;
-    }
-    #notepad-close-btn {
-        background: none;
-        border: none;
-        font-size: 1.5rem;
-        line-height: 1;
-        padding: 0 5px;
-        cursor: pointer;
-        color: #6c757d;
-    }
-    #notepad-close-btn:hover {
-        color: #343a40;
-    }
-    #notepad-textarea {
-        flex-grow: 1;
-        border: none;
-        padding: 15px;
-        resize: none;
-        font-family: sans-serif;
-        font-size: 14px;
-        color: #212529;
-    }
-    #notepad-textarea:focus {
-        outline: none;
-    }
+    /* ... (all existing styles) ... */
   </style>
 </head>
 <body>
@@ -118,11 +36,18 @@
     <div class="row mt-4">
       <div class="col-md-6">
         <div class="card p-3 mb-4">
-          <h4>📊 Stats</h4>
+          <h4>📊 API Stats</h4>
           <ul class="list-group">
-            <li class="list-group-item">Total Checks: <strong>{{ stats.total_checks }}</strong></li>
-            <li class="list-group-item">Good Proxies Found: <strong>{{ stats.total_good }}</strong></li>
+            <li class="list-group-item d-flex justify-content-between align-items-center">
+              API Credits Used
+              <span class="badge bg-secondary">{{ stats.api_credits_used }}</span>
+            </li>
+            <li class="list-group-item d-flex justify-content-between align-items-center">
+              API Credits Remaining
+              <span class="badge bg-primary">{{ stats.api_credits_remaining }}</span>
+            </li>
           </ul>
+           <div class="form-text p-1">Note: Credits are updated after running the 'Strict Tester'.</div>
         </div>
       </div>
       <div class="col-md-6">
@@ -133,8 +58,6 @@
                 <li class="list-group-item">Max Fraud Score: <strong>{{ stats.fraud_score_level }}</strong></li>
                 <li class="list-group-item">Max Workers: <strong>{{ stats.max_workers }}</strong></li>
                 <li class="list-group-item">Scamalytics User: <strong>{{ stats.scamalytics_username }}</strong></li>
-                <li class="list-group-item">Scamalytics Key: <strong>{{ stats.scamalytics_api_key[:4] }}...</strong></li>
-                <li class="list-group-item">Scamalytics URL: <strong>{{ stats.scamalytics_api_url }}</strong></li>
             </ul>
             <a href="/admin/settings" class="btn btn-outline-primary mt-2">Edit Settings</a>
         </div>
@@ -143,14 +66,7 @@
     <div class="row mt-4">
       <div class="col-md-6">
         <div class="card p-3 mb-4">
-          <h4>📅 Daily Good Proxy Graph</h4>
-          <p class="text-muted">Graph unavailable on Vercel deployment</p>
-        </div>
-      </div>
-      <div class="col-md-6">
-        <div class="card p-3 mb-4">
           <h4>📣 Manage Announcement</h4>
-          <p class="text-muted small">This message will be shown at the top of the user homepage.</p>
           <form action="{{ url_for('admin_announcement') }}" method="POST">
             <div class="mb-3">
               <label for="announcement_text" class="form-label">Announcement Text:</label>
@@ -160,8 +76,11 @@
             <button type="submit" name="delete_announcement" value="1" class="btn btn-outline-danger">Clear Announcement</button>
           </form>
         </div>
+      </div>
+      <div class="col-md-6">
         <div class="card p-3 mb-4">
           <h4>🧠 Admin Actions</h4>
+          <a href="/admin/test" class="btn btn-warning mb-2">🛡️ Run Strict Proxy Tester</a>
           <a href="/admin/settings" class="btn btn-outline-primary mb-2">Configure Settings</a>
           <a href="/" class="btn btn-outline-secondary">Go to Checker</a>
         </div>
@@ -202,59 +121,6 @@
     </div>
     </div>
 
-  <div id="notepad-widget">
-        <div id="notepad-container" class="hidden"> <div id="notepad-header">
-                <span>Quick Notes</span>
-                <button id="notepad-close-btn">&times;</button>
-            </div>
-            <textarea id="notepad-textarea" placeholder="Write notes here..."></textarea>
-        </div>
-        <button id="notepad-toggle-btn">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 20h9"></path>
-                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
-            </svg>
-        </button>
-    </div>
-
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-
-  <script>
-    document.addEventListener('DOMContentLoaded', () => {
-        // --- Notepad Widget ---
-        const toggleBtn = document.getElementById('notepad-toggle-btn');
-        const notepad = document.getElementById('notepad-container');
-        const closeBtn = document.getElementById('notepad-close-btn');
-        const textarea = document.getElementById('notepad-textarea');
-        const storageKey = 'userNotepadContent';
-
-        // Load saved notes
-        if (textarea) {
-            textarea.value = localStorage.getItem(storageKey) || '';
-        }
-
-        // Save notes on input
-        if (textarea) {
-            textarea.addEventListener('input', () => {
-                localStorage.setItem(storageKey, textarea.value);
-            });
-        }
-
-        // Toggle notepad visibility
-        if (toggleBtn && notepad) {
-            toggleBtn.addEventListener('click', () => {
-                notepad.classList.toggle('hidden');
-            });
-        }
-
-        // Close notepad
-        if (closeBtn && notepad) {
-            closeBtn.addEventListener('click', () => {
-                notepad.classList.add('hidden');
-            });
-        }
-        // --- End Notepad Widget ---
-    });
-  </script>
-</body>
+  </body>
 </html>
