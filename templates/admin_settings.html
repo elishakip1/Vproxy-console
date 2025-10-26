@@ -211,31 +211,10 @@
         const textarea = document.getElementById('notepad-textarea');
         const storageKey = 'userNotepadContent';
 
-        // Load saved notes
-        if (textarea) {
-            textarea.value = localStorage.getItem(storageKey) || '';
-        }
-
-        // Save notes on input
-        if (textarea) {
-            textarea.addEventListener('input', () => {
-                localStorage.setItem(storageKey, textarea.value);
-            });
-        }
-
-        // Toggle notepad visibility
-        if (toggleBtn && notepad) {
-            toggleBtn.addEventListener('click', () => {
-                notepad.classList.toggle('hidden');
-            });
-        }
-
-        // Close notepad
-        if (closeBtn && notepad) {
-            closeBtn.addEventListener('click', () => {
-                notepad.classList.add('hidden');
-            });
-        }
+        if (textarea) { textarea.value = localStorage.getItem(storageKey) || ''; }
+        if (textarea) { textarea.addEventListener('input', () => { localStorage.setItem(storageKey, textarea.value); }); }
+        if (toggleBtn && notepad) { toggleBtn.addEventListener('click', () => { notepad.classList.toggle('hidden'); }); }
+        if (closeBtn && notepad) { closeBtn.addEventListener('click', () => { notepad.classList.add('hidden'); }); }
     });
   </script>
 </body>

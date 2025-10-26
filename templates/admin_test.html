@@ -7,10 +7,11 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body { background-color: #f0f2f5; font-family: sans-serif; padding-bottom: 80px; }
-        .container { margin-top: 50px; max-width: 800px; }
+        .container { margin-top: 50px; max-width: 900px; /* Increased max-width for table */ }
         .textarea-box { height: 200px; }
-        .copy-btn { float: right; font-size: 12px; }
-        .proxy-masked { font-family: monospace; }
+        .copy-btn { font-size: 12px; } /* Removed float */
+        .proxy-masked { font-family: monospace; word-break: break-all; /* Prevent long proxies breaking layout */ }
+        .copy-btn.disabled { opacity: 0.5; cursor: not-allowed; }
         .proxy-counter { position: absolute; right: 20px; bottom: 10px; font-size: 0.85rem;
                          color: #6c757d; background: rgba(255, 255, 255, 0.8); padding: 2px 5px; border-radius: 3px; }
         .counter-error { color: #dc3545; font-weight: bold; }
@@ -18,6 +19,11 @@
         .counter-ok { color: #198754; }
         .textarea-container { position: relative; }
         .alert-dismissible .btn-close { top: 0; right: 0; z-index: 2; padding: 1.25rem 1rem;}
+        /* Table specific styles */
+        .table th, .table td { vertical-align: middle; }
+        .table th { font-size: 0.9rem; }
+        .table td { font-size: 0.85rem; }
+        .table .text-end { text-align: right !important; }
     </style>
 </head>
 <body>
@@ -51,13 +57,13 @@
         <div class="accordion" id="proxyAccordion">
             <div class="accordion-item">
                 <h2 class="accordion-header" id="formHeading">
-                    <button class="accordion-button {% if results %}collapsed{% endif %}" type="button"
+                    <button class="accordion-button {% if results is not defined or not results %}show{% else %}collapsed{% endif %}" type="button"
                             data-bs-toggle="collapse" data-bs-target="#proxyForm"
-                            aria-expanded="{{ 'false' if results else 'true' }}" aria-controls="proxyForm">
+                            aria-expanded="{{ 'true' if results is not defined or not results else 'false' }}" aria-controls="proxyForm">
                         Paste or Upload Proxies (Max {{ max_paste }})
                     </button>
                 </h2>
-                <div id="proxyForm" class="accordion-collapse collapse {% if not results %}show{% endif %}"
+                <div id="proxyForm" class="accordion-collapse collapse {% if results is not defined or not results %}show{% endif %}"
                      aria-labelledby="formHeading" data-bs-parent="#proxyAccordion">
                     <div class="accordion-body">
                         <form method="POST" action="{{ url_for('admin_test') }}" enctype="multipart/form-data" id="proxyFormElement">
@@ -82,41 +88,57 @@
             </div>
         </div>
 
-        {% if results %}
+        {% if results is defined and results is not none %}
         <hr>
-        <h5 class="mt-4">✅ Good Proxies (Strict Filter)</h5>
-        <ul class="list-group mt-2">
-            {% for item in results %}
-            <li class="list-group-item d-flex justify-content-between align-items-center">
-                <span class="proxy-masked" id="proxy-{{ loop.index }}" data-full-proxy="{{ item.proxy }}">
-                    {{ item.proxy.split(':')[0] }}:{{ item.proxy.split(':')[1] }}:********
-                </span>
-                <div>
-                    {% if item.used %}
-                    <span class="badge bg-secondary me-2">USED IP</span>
-                    {% endif %}
-                    <button class="btn btn-sm btn-outline-secondary copy-btn {% if item.used %}disabled{% endif %}"
-                            onclick="copyToClipboard('proxy-{{ loop.index }}', this); trackUsedProxy('{{ item.proxy }}')"
-                            {% if item.used %}disabled{% endif %}>
-                        Copy
-                    </button>
-                </div>
-            </li>
-            {% else %}
-             <li class="list-group-item text-muted">No proxies passed the strict filter in this batch.</li>
-            {% endfor %}
-        </ul>
+        <h5 class="mt-4">✅ Good Proxies (Strict Filter - Score <= {{ settings.STRICT_FRAUD_SCORE_LEVEL }})</h5>
+        
+        <div class="table-responsive mt-2">
+            <table class="table table-sm table-bordered table-hover">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width: 40%;">Proxy (Masked)</th>
+                        <th style="width: 8%;">Country</th>
+                        <th style="width: 15%;">State</th>
+                        <th style="width: 15%;">City</th>
+                        <th style="width: 10%;">Postcode</th>
+                        <th style="width: 12%;" class="text-end">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in results %}
+                    <tr>
+                        <td>
+                            <span class="proxy-masked" id="proxy-{{ loop.index }}" data-full-proxy="{{ item.proxy }}">
+                                {{ item.proxy.split(':')[0] }}:{{ item.proxy.split(':')[1] }}:********
+                            </span>
+                        </td>
+                        <td>{{ item.geo.country_code | default('N/A') }}</td>
+                        <td>{{ item.geo.state | default('N/A') }}</td>
+                        <td>{{ item.geo.city | default('N/A') }}</td>
+                        <td>{{ item.geo.postcode | default('N/A') }}</td>
+                        <td class="text-end">
+                             {% if item.used %}
+                             <span class="badge bg-secondary me-1">USED IP</span>
+                             {% endif %}
+                            <button class="btn btn-sm btn-outline-secondary copy-btn {% if item.used %}disabled{% endif %}"
+                                    onclick="copyToClipboard('proxy-{{ loop.index }}', this); trackUsedProxy('{{ item.proxy }}')"
+                                    {% if item.used %}disabled{% endif %}>
+                                Copy
+                            </button>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="6" class="text-center text-muted">No proxies passed the strict filter in this batch.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
         {% endif %}
     </div>
 
     <script>
-        // --- COPY-PASTE ALL JAVASCRIPT from index.html ---
-        // It will work as-is, including the copyToClipboard, trackUsedProxy,
-        // updateProxyCounter, and checkFileLines functions.
-        // I am omitting it here for brevity, but you should
-        // copy the entire <script> block from index.html
-        // (except the notepad parts, unless you want that too).
-        
         let trackedProxies = new Set();
         const MAX_LINES = {{ max_paste }};
         let fileLineCount = 0;
@@ -132,39 +154,129 @@
                 counter.className = 'proxy-counter counter-error';
                 submitBtn.disabled = true;
                 textarea.classList.add('is-invalid');
+            } else if (count === MAX_LINES) {
+                counter.className = 'proxy-counter counter-warning';
+                submitBtn.disabled = false;
+                 textarea.classList.remove('is-invalid');
             } else {
                 counter.className = 'proxy-counter counter-ok';
-                submitBtn.disabled = (count === 0 && fileLineCount === 0);
-                textarea.classList.remove('is-invalid');
+                submitBtn.disabled = (count === 0 && fileLineCount === 0) || (count === 0 && fileLineCount > MAX_LINES);
+                 textarea.classList.remove('is-invalid');
+            }
+
+             if (count > 0) {
+                 document.getElementById('fileCounter').textContent = "File upload will be ignored if text is present.";
+                 if (fileLineCount > MAX_LINES) submitBtn.disabled = true;
+             } else {
+                 checkFileLines(document.getElementById('proxyfile'));
+             }
+        }
+
+        function checkFileLines(input) {
+            const file = input.files[0];
+            const fileCounter = document.getElementById('fileCounter');
+            const submitBtn = document.getElementById('submitBtn');
+            const textAreaCount = document.getElementById('proxytext').value.split('\n').filter(line => line.trim() !== '').length;
+
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const lines = e.target.result.split('\n').filter(line => line.trim() !== '');
+                    fileLineCount = lines.length;
+
+                    if (fileLineCount > MAX_LINES) {
+                        fileCounter.innerHTML = `<span class="text-danger">File contains: ${fileLineCount} proxies (max ${MAX_LINES})</span>`;
+                        if (textAreaCount === 0) submitBtn.disabled = true;
+                    } else {
+                        fileCounter.innerHTML = `File contains: <span class="text-success">${fileLineCount}</span> proxies`;
+                        if (textAreaCount === 0 || textAreaCount <= MAX_LINES) submitBtn.disabled = false;
+                    }
+                };
+                 reader.onerror = function() {
+                     fileCounter.innerHTML = `<span class="text-danger">Error reading file.</span>`;
+                     fileLineCount = 0;
+                     if (textAreaCount === 0) submitBtn.disabled = true;
+                 };
+                reader.readAsText(file);
+            } else {
+                fileLineCount = 0;
+                fileCounter.textContent = "File contains: 0 proxies";
+                if (textAreaCount === 0) submitBtn.disabled = true;
+                else submitBtn.disabled = (textAreaCount > MAX_LINES);
             }
         }
-        
-        // ... (rest of JS functions: checkFileLines, copyToClipboard, etc.) ...
-        
-        // --- Simplified copy/paste from index.html for brevity ---
+
        function copyToClipboard(elementId, clickedButton) {
             const element = document.getElementById(elementId);
             const fullProxy = element.getAttribute('data-full-proxy');
+
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(fullProxy).then(() => {
-                    clickedButton.textContent = 'Copied!';
-                    clickedButton.disabled = true;
-                    setTimeout(() => {
-                         clickedButton.textContent = 'Copy';
-                         clickedButton.disabled = false;
-                    }, 2000);
+                    showCopiedMessage(element, clickedButton);
+                }).catch(err => {
+                    console.error('Async: Could not copy text: ', err);
+                    copyUsingExecCommand(fullProxy, element, clickedButton);
                 });
+            } else {
+                copyUsingExecCommand(fullProxy, element, clickedButton);
             }
        }
 
+        function copyUsingExecCommand(textToCopy, element, clickedButton) {
+            const textArea = document.createElement("textarea");
+            textArea.value = textToCopy;
+            textArea.style.top = "0";
+            textArea.style.left = "0";
+            textArea.style.position = "fixed";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    showCopiedMessage(element, clickedButton);
+                }
+            } catch (err) {
+                console.error('Fallback: Oops, unable to copy', err);
+            }
+            document.body.removeChild(textArea);
+        }
+
+       function showCopiedMessage(element, clickedButton) {
+            clickedButton.disabled = true;
+            clickedButton.textContent = 'Copied!';
+            clickedButton.classList.remove('btn-outline-secondary');
+            clickedButton.classList.add('btn-success');
+
+            setTimeout(() => {
+                 if (!clickedButton.classList.contains('disabled')) { // Check if not permanently disabled by server
+                    clickedButton.disabled = false;
+                    clickedButton.textContent = 'Copy';
+                    clickedButton.classList.remove('btn-success');
+                    clickedButton.classList.add('btn-outline-secondary');
+                 }
+             }, 3000);
+       }
+
+
         function trackUsedProxy(proxy) {
+            console.log("Tracking used:", proxy);
             fetch('/track-used', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', },
                 body: JSON.stringify({proxy: proxy})
-            });
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status !== 'success') {
+                    console.error('Error tracking used proxy:', data.message);
+                } else {
+                    console.log("Successfully tracked used proxy:", proxy);
+                }
+            })
+            .catch(error => console.error('Network error tracking used proxy:', error));
         }
-        
+
         document.addEventListener('DOMContentLoaded', () => {
              updateProxyCounter(document.getElementById('proxytext'));
              checkFileLines(document.getElementById('proxyfile'));

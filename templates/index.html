@@ -181,10 +181,12 @@
                 <span class="proxy-masked" id="proxy-{{ loop.index }}" data-full-proxy="{{ item.proxy }}">
                     {{ item.proxy.split(':')[0] }}:{{ item.proxy.split(':')[1] }}:******** </span>
                 <div> {% if item.used %}
-                    <span class="badge bg-secondary me-2">USED IP</span> {% endif %}
+                    <span class="badge bg-secondary me-2">USED IP</span>
+                    {% endif %}
                     <button class="btn btn-sm btn-outline-secondary copy-btn {% if item.used %}disabled{% endif %}"
                             onclick="copyToClipboard('proxy-{{ loop.index }}', this); trackUsedProxy('{{ item.proxy }}')"
-                            {% if item.used %}disabled{% endif %}> Copy
+                            {% if item.used %}disabled{% endif %}>
+                        Copy
                     </button>
                 </div>
             </li>
@@ -226,23 +228,22 @@
             if (count > MAX_LINES) {
                 counter.className = 'proxy-counter counter-error';
                 submitBtn.disabled = true;
-                textarea.classList.add('is-invalid'); // Add visual feedback
+                textarea.classList.add('is-invalid');
             } else if (count === MAX_LINES) {
                 counter.className = 'proxy-counter counter-warning';
                 submitBtn.disabled = false;
                  textarea.classList.remove('is-invalid');
             } else {
                 counter.className = 'proxy-counter counter-ok';
-                submitBtn.disabled = (count === 0 && fileLineCount === 0) || (count === 0 && fileLineCount > MAX_LINES); // Disable if only file selected and it's too big
+                submitBtn.disabled = (count === 0 && fileLineCount === 0) || (count === 0 && fileLineCount > MAX_LINES);
                  textarea.classList.remove('is-invalid');
             }
 
-            // If text is entered, disable submit if file is too large
              if (count > 0) {
                  document.getElementById('fileCounter').textContent = "File upload will be ignored if text is present.";
-                 if (fileLineCount > MAX_LINES) submitBtn.disabled = true; // Still check file size
+                 if (fileLineCount > MAX_LINES) submitBtn.disabled = true;
              } else {
-                 checkFileLines(document.getElementById('proxyfile')); // Re-evaluate file counter and button state
+                 checkFileLines(document.getElementById('proxyfile'));
              }
         }
 
@@ -260,26 +261,23 @@
 
                     if (fileLineCount > MAX_LINES) {
                         fileCounter.innerHTML = `<span class="text-danger">File contains: ${fileLineCount} proxies (max ${MAX_LINES})</span>`;
-                         // Disable submit if file is too large AND no text is entered
                         if (textAreaCount === 0) submitBtn.disabled = true;
                     } else {
                         fileCounter.innerHTML = `File contains: <span class="text-success">${fileLineCount}</span> proxies`;
-                        // Enable submit if file is valid AND no text is entered OR text area is valid
                         if (textAreaCount === 0 || textAreaCount <= MAX_LINES) submitBtn.disabled = false;
                     }
                 };
                  reader.onerror = function() {
                      fileCounter.innerHTML = `<span class="text-danger">Error reading file.</span>`;
                      fileLineCount = 0;
-                     if (textAreaCount === 0) submitBtn.disabled = true; // Disable if error and no text
+                     if (textAreaCount === 0) submitBtn.disabled = true;
                  };
                 reader.readAsText(file);
             } else {
                 fileLineCount = 0;
                 fileCounter.textContent = "File contains: 0 proxies";
-                 // Disable button if no file and no text
                 if (textAreaCount === 0) submitBtn.disabled = true;
-                else submitBtn.disabled = (textAreaCount > MAX_LINES); // Enable if text area is valid
+                else submitBtn.disabled = (textAreaCount > MAX_LINES);
             }
         }
 
@@ -287,25 +285,21 @@
             const element = document.getElementById(elementId);
             const fullProxy = element.getAttribute('data-full-proxy');
 
-            // --- Use Clipboard API (more modern) with fallback ---
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(fullProxy).then(() => {
                     showCopiedMessage(element, clickedButton);
                 }).catch(err => {
                     console.error('Async: Could not copy text: ', err);
-                    copyUsingExecCommand(fullProxy, element, clickedButton); // Fallback
+                    copyUsingExecCommand(fullProxy, element, clickedButton);
                 });
             } else {
-                // Fallback for older browsers or insecure contexts
                 copyUsingExecCommand(fullProxy, element, clickedButton);
             }
        }
 
-       // Fallback copy method
         function copyUsingExecCommand(textToCopy, element, clickedButton) {
             const textArea = document.createElement("textarea");
             textArea.value = textToCopy;
-            // Avoid scrolling to bottom
             textArea.style.top = "0";
             textArea.style.left = "0";
             textArea.style.position = "fixed";
@@ -317,66 +311,47 @@
                 if (successful) {
                     showCopiedMessage(element, clickedButton);
                 } else {
-                     console.error('Fallback: Copying text command was unsuccessful');
-                     alert('Copying failed. Please copy manually.'); // Inform user on fallback failure
+                     alert('Copying failed. Please copy manually.');
                 }
             } catch (err) {
-                console.error('Fallback: Oops, unable to copy', err);
-                alert('Copying failed. Please copy manually.'); // Inform user on fallback failure
+                alert('Copying failed. Please copy manually.');
             }
             document.body.removeChild(textArea);
         }
 
-
        function showCopiedMessage(element, clickedButton) {
-            // --- MODIFIED ---
-            // Disable all OTHER copy buttons
             const allCopyButtons = document.querySelectorAll('.copy-btn');
             allCopyButtons.forEach(btn => {
-                if (btn !== clickedButton) {
-                    // Only disable if it's not already permanently disabled (which have the 'disabled' class from server)
-                    if (!btn.classList.contains('disabled')) {
-                        btn.disabled = true;
-                    }
+                if (btn !== clickedButton && !btn.classList.contains('disabled')) {
+                    btn.disabled = true;
                 }
             });
-            // --- END MODIFIED ---
 
-            // Disable the clicked button and mark as copied
             clickedButton.disabled = true;
             clickedButton.textContent = 'Copied!';
             clickedButton.classList.remove('btn-outline-secondary');
-            clickedButton.classList.add('btn-success'); // 'disabled' class is added by btn.disabled = true
+            clickedButton.classList.add('btn-success');
 
-             // Re-enable the CLICKED button after 3 seconds
             setTimeout(() => {
-                 // Only re-enable if it's not permanently disabled
                  if (!clickedButton.classList.contains('disabled')) {
                     clickedButton.disabled = false;
                     clickedButton.textContent = 'Copy';
                     clickedButton.classList.remove('btn-success');
                     clickedButton.classList.add('btn-outline-secondary');
                  }
-             }, 3000); // Re-enable clicked button after 3 seconds
+             }, 3000);
 
-            // --- NEW ---
-            // Re-enable all OTHER buttons after 60 seconds
             setTimeout(() => {
                 allCopyButtons.forEach(btn => {
-                    if (btn !== clickedButton) {
-                        // Only re-enable if it's not permanently disabled (which have the 'disabled' class from server)
-                        if (!btn.classList.contains('disabled')) {
-                            btn.disabled = false;
-                        }
+                    if (btn !== clickedButton && !btn.classList.contains('disabled')) {
+                        btn.disabled = false;
                     }
                 });
-            }, 60000); // Re-enable other buttons after 1 minute
-            // --- END NEW ---
+            }, 60000);
        }
 
 
         function trackUsedProxy(proxy) {
-            console.log("Tracking used:", proxy); // Log for debugging
             fetch('/track-used', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', },
@@ -386,21 +361,16 @@
             .then(data => {
                 if (data.status !== 'success') {
                     console.error('Error tracking used proxy:', data.message);
-                } else {
-                    console.log("Successfully tracked used proxy:", proxy);
                 }
             })
             .catch(error => console.error('Network error tracking used proxy:', error));
         }
 
-        // Initialize counter and button state on page load
         document.addEventListener('DOMContentLoaded', () => {
              updateProxyCounter(document.getElementById('proxytext'));
-             checkFileLines(document.getElementById('proxyfile')); // Also check initial file state
-             // Clear results after a delay only if results are present
+             checkFileLines(document.getElementById('proxyfile'));
              {% if results %}
              setTimeout(() => {
-                 // Redirect to the same page without POST data to clear results
                  window.location.href = window.location.pathname;
              }, 300000); // 5 minutes
              {% endif %}
@@ -412,32 +382,10 @@
             const textarea = document.getElementById('notepad-textarea');
             const storageKey = 'userNotepadContent';
 
-            // Load saved notes
-            if (textarea) {
-                textarea.value = localStorage.getItem(storageKey) || '';
-            }
-
-            // Save notes on input
-            if (textarea) {
-                textarea.addEventListener('input', () => {
-                    localStorage.setItem(storageKey, textarea.value);
-                });
-            }
-
-            // Toggle notepad visibility
-            if (toggleBtn && notepad) {
-                toggleBtn.addEventListener('click', () => {
-                    // Use classList for toggling
-                    notepad.classList.toggle('hidden');
-                });
-            }
-
-            // Close notepad
-            if (closeBtn && notepad) {
-                closeBtn.addEventListener('click', () => {
-                    notepad.classList.add('hidden');
-                });
-            }
+            if (textarea) { textarea.value = localStorage.getItem(storageKey) || ''; }
+            if (textarea) { textarea.addEventListener('input', () => { localStorage.setItem(storageKey, textarea.value); }); }
+            if (toggleBtn && notepad) { toggleBtn.addEventListener('click', () => { notepad.classList.toggle('hidden'); }); }
+            if (closeBtn && notepad) { closeBtn.addEventListener('click', () => { notepad.classList.add('hidden'); }); }
             // --- End Notepad Widget ---
          });
 
