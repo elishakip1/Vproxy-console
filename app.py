@@ -72,7 +72,8 @@ DEFAULT_SETTINGS = {
     "MAX_PASTE": 30, "FRAUD_SCORE_LEVEL": 0, "MAX_WORKERS": 5,
     "SCAMALYTICS_API_KEY": "YOUR_API_KEY_HERE",
     "SCAMALYTICS_API_URL": "https://api11.scamalytics.com/v3/",
-    "SCAMALYTICS_USERNAME": "YOUR_USERNAME_HERE"
+    "SCAMALYTICS_USERNAME": "YOUR_USERNAME_HERE",
+    "ANNOUNCEMENT": "" # <-- ADDED
 }
 
 # User agents
@@ -94,7 +95,8 @@ def get_app_settings():
         "MAX_WORKERS": int(settings.get("MAX_WORKERS", DEFAULT_SETTINGS["MAX_WORKERS"])),
         "SCAMALYTICS_API_KEY": settings.get("SCAMALYTICS_API_KEY", DEFAULT_SETTINGS["SCAMALYTICS_API_KEY"]),
         "SCAMALYTICS_API_URL": settings.get("SCAMALYTICS_API_URL", DEFAULT_SETTINGS["SCAMALYTICS_API_URL"]),
-        "SCAMALYTICS_USERNAME": settings.get("SCAMALYTICS_USERNAME", DEFAULT_SETTINGS["SCAMALYTICS_USERNAME"])
+        "SCAMALYTICS_USERNAME": settings.get("SCAMALYTICS_USERNAME", DEFAULT_SETTINGS["SCAMALYTICS_USERNAME"]),
+        "ANNOUNCEMENT": settings.get("ANNOUNCEMENT", DEFAULT_SETTINGS["ANNOUNCEMENT"]) # <-- ADDED
     }
 
 def validate_proxy_format(proxy_line):
@@ -203,6 +205,7 @@ def index():
     except Exception as e: logger.critical(f"CRITICAL ERROR getting app settings: {e}", exc_info=True); return render_template("error.html", error="Could not load critical settings."), 500
     MAX_PASTE = settings["MAX_PASTE"]; FRAUD_SCORE_LEVEL = settings["FRAUD_SCORE_LEVEL"]; MAX_WORKERS = settings["MAX_WORKERS"]
     API_KEY = settings["SCAMALYTICS_API_KEY"]; API_URL = settings["SCAMALYTICS_API_URL"]; API_USER = settings["SCAMALYTICS_USERNAME"]
+    announcement = settings.get("ANNOUNCEMENT") # <-- ADDED
     results = []; message = None
 
     if request.method == "POST":
@@ -214,13 +217,13 @@ def index():
                 if input_count > MAX_PASTE: truncation_warning = f" Input truncated to first {MAX_PASTE}."; proxies_input = all_lines[:MAX_PASTE]
                 else: proxies_input = all_lines
                 logger.info(f"Received {input_count} via file.")
-            except Exception as e: logger.error(f"File read error: {e}", exc_info=True); message = "Error reading file."; return render_template("index.html", results=[], message=message, max_paste=MAX_PASTE, settings=settings)
+            except Exception as e: logger.error(f"File read error: {e}", exc_info=True); message = "Error reading file."; return render_template("index.html", results=[], message=message, max_paste=MAX_PASTE, settings=settings, announcement=announcement) # <-- MODIFIED
         elif 'proxytext' in request.form and request.form.get("proxytext", "").strip():
             proxytext = request.form.get("proxytext", ""); all_lines = proxytext.strip().splitlines(); input_count = len(all_lines)
             if input_count > MAX_PASTE: truncation_warning = f" Input truncated to first {MAX_PASTE}."; proxies_input = all_lines[:MAX_PASTE]
             else: proxies_input = all_lines
             logger.info(f"Received {input_count} via text.")
-        else: message = "Please paste proxies or upload file."; return render_template("index.html", results=[], message=message, max_paste=MAX_PASTE, settings=settings)
+        else: message = "Please paste proxies or upload file."; return render_template("index.html", results=[], message=message, max_paste=MAX_PASTE, settings=settings, announcement=announcement) # <-- MODIFIED
 
         # --- Load Caches ---
         try: used_ips_records = get_all_used_ips(); used_ips_list = {r.get('IP') for r in used_ips_records if r.get('IP')}; used_proxy_cache = {r.get('Proxy') for r in used_ips_records if r.get('Proxy')}; logger.info(f"Loaded {len(used_proxy_cache)} used proxies.")
@@ -307,7 +310,7 @@ def index():
         logger.info(f"Request processing took {end_time - start_time:.2f} seconds.")
 
     # Always pass settings to the template
-    return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings)
+    return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings, announcement=announcement) # <-- MODIFIED
 
 
 @app.route("/track-used", methods=["POST"])
@@ -335,8 +338,9 @@ def admin():
     try:
         settings = get_app_settings(); stats = {"total_checks": "N/A (Vercel)", "total_good": "N/A", "max_paste": settings["MAX_PASTE"], "fraud_score_level": settings["FRAUD_SCORE_LEVEL"], "max_workers": settings["MAX_WORKERS"], "scamalytics_api_key": settings["SCAMALYTICS_API_KEY"], "scamalytics_api_url": settings["SCAMALYTICS_API_URL"], "scamalytics_username": settings["SCAMALYTICS_USERNAME"]}
         used_ips = get_all_used_ips()
-        return render_template( "admin.html", stats=stats, used_ips=used_ips, good_proxies=[], blocked_ips=[] )
-    except Exception as e: logger.error(f"Admin panel error: {e}", exc_info=True); flash("Error loading admin panel data.", "danger"); return render_template("admin.html", stats={}, used_ips=[], good_proxies=[], blocked_ips=[])
+        announcement = settings.get("ANNOUNCEMENT") # <-- ADDED
+        return render_template( "admin.html", stats=stats, used_ips=used_ips, good_proxies=[], blocked_ips=[], announcement=announcement ) # <-- MODIFIED
+    except Exception as e: logger.error(f"Admin panel error: {e}", exc_info=True); flash("Error loading admin panel data.", "danger"); return render_template("admin.html", stats={}, used_ips=[], good_proxies=[], blocked_ips=[], announcement="") # <-- MODIFIED
 
 
 @app.route("/admin/settings", methods=["GET", "POST"])
@@ -380,6 +384,37 @@ def admin_settings():
     return render_template("admin_settings.html", settings=current_settings, message=None) # message is now handled by flash
 
 
+# --- NEW ROUTE ---
+@app.route("/admin/announcement", methods=["POST"])
+@admin_required
+def admin_announcement():
+    """Handles saving or deleting the announcement."""
+    try:
+        if "save_announcement" in request.form:
+            text = request.form.get("announcement_text", "").strip()
+            if update_setting("ANNOUNCEMENT", text):
+                flash("Announcement updated successfully.", "success")
+                logger.info(f"Admin '{current_user.username}' updated announcement.")
+            else:
+                flash("Error saving announcement to Google Sheet.", "danger")
+                logger.error("Failed to save announcement to GSheet.")
+        
+        elif "delete_announcement" in request.form:
+            if update_setting("ANNOUNCEMENT", ""): # Clear by saving empty string
+                flash("Announcement cleared successfully.", "success")
+                logger.info(f"Admin '{current_user.username}' cleared announcement.")
+            else:
+                flash("Error clearing announcement in Google Sheet.", "danger")
+                logger.error("Failed to clear announcement in GSheet.")
+                
+    except Exception as e:
+        logger.error(f"Error in admin_announcement route: {e}", exc_info=True)
+        flash("An unexpected error occurred.", "danger")
+        
+    return redirect(url_for("admin"))
+# --- END NEW ROUTE ---
+
+
 @app.route("/delete-used-ip/<ip>")
 @admin_required
 def delete_used_ip_route(ip):
@@ -398,7 +433,7 @@ def send_static(path):
 
 
 # --- Error Handling ---
-@app.errorhandler(404)
+@app.errorhandler(4404)
 def page_not_found(e):
     logger.warning(f"404 Not Found: {request.path}")
     # Check if user is logged in to show appropriate template

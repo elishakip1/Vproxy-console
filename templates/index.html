@@ -120,6 +120,15 @@
             </div>
         </div>
 
+        <!-- === NEW ANNOUNCEMENT SECTION === -->
+        {% if announcement %}
+        <div class="alert alert-primary alert-dismissible fade show" role="alert">
+          <strong>Notice:</strong> {{ announcement }}
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+        {% endif %}
+        <!-- === END ANNOUNCEMENT SECTION === -->
+
         <!-- Display Flash Messages -->
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
@@ -277,9 +286,6 @@
                         // Enable submit if file is valid AND no text is entered OR text area is valid
                         if (textAreaCount === 0 || textAreaCount <= MAX_LINES) submitBtn.disabled = false;
                     }
-                    // Clear text area if file is selected (optional, depends on desired behavior)
-                    // document.getElementById('proxytext').value = '';
-                    // updateProxyCounter(document.getElementById('proxytext'));
                 };
                  reader.onerror = function() {
                      fileCounter.innerHTML = `<span class="text-danger">Error reading file.</span>`;
@@ -342,25 +348,53 @@
 
 
        function showCopiedMessage(element, clickedButton) {
+            // --- MODIFIED ---
+            // Disable all OTHER copy buttons
+            const allCopyButtons = document.querySelectorAll('.copy-btn');
+            allCopyButtons.forEach(btn => {
+                if (btn !== clickedButton) {
+                    // Only disable if it's not already permanently disabled (which have the 'disabled' class from server)
+                    if (!btn.classList.contains('disabled')) {
+                        btn.disabled = true;
+                    }
+                }
+            });
+            // --- END MODIFIED ---
+
             // Disable the clicked button and mark as copied
             clickedButton.disabled = true;
             clickedButton.textContent = 'Copied!';
             clickedButton.classList.remove('btn-outline-secondary');
-            clickedButton.classList.add('btn-success', 'disabled'); // Make it green and disabled
+            clickedButton.classList.add('btn-success'); // 'disabled' class is added by btn.disabled = true
 
-             // Optionally, re-enable after a delay
+             // Re-enable the CLICKED button after 3 seconds
             setTimeout(() => {
-                 clickedButton.disabled = false;
-                 clickedButton.textContent = 'Copy';
-                 clickedButton.classList.remove('btn-success', 'disabled');
-                 clickedButton.classList.add('btn-outline-secondary');
-             }, 3000); // Re-enable after 3 seconds
+                 // Only re-enable if it's not permanently disabled
+                 if (!clickedButton.classList.contains('disabled')) {
+                    clickedButton.disabled = false;
+                    clickedButton.textContent = 'Copy';
+                    clickedButton.classList.remove('btn-success');
+                    clickedButton.classList.add('btn-outline-secondary');
+                 }
+             }, 3000); // Re-enable clicked button after 3 seconds
+
+            // --- NEW ---
+            // Re-enable all OTHER buttons after 60 seconds
+            setTimeout(() => {
+                allCopyButtons.forEach(btn => {
+                    if (btn !== clickedButton) {
+                        // Only re-enable if it's not permanently disabled (which have the 'disabled' class from server)
+                        if (!btn.classList.contains('disabled')) {
+                            btn.disabled = false;
+                        }
+                    }
+                });
+            }, 60000); // Re-enable other buttons after 1 minute
+            // --- END NEW ---
        }
 
 
         function trackUsedProxy(proxy) {
-            // No need to track client-side if we disable the button
-            // If you still want to track immediately:
             console.log("Tracking used:", proxy); // Log for debugging
             fetch('/track-used', {
                 method: 'POST',
@@ -371,7 +405,6 @@
             .then(data => {
                 if (data.status !== 'success') {
                     console.error('Error tracking used proxy:', data.message);
-                    // Optionally, inform user or re-enable button if tracking failed?
                 } else {
                     console.log("Successfully tracked used proxy:", proxy);
                 }
@@ -430,6 +463,5 @@
     </script>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <!-- Tawk.to can stay -->
     </body>
 </html>
