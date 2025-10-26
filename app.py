@@ -433,7 +433,8 @@ def send_static(path):
 
 
 # --- Error Handling ---
-@app.errorhandler(4404)
+# --- CORRECTED ERROR CODE ---
+@app.errorhandler(404)
 def page_not_found(e):
     logger.warning(f"404 Not Found: {request.path}")
     # Check if user is logged in to show appropriate template
@@ -443,6 +444,7 @@ def page_not_found(e):
         # Redirect unauthenticated users hitting 404 back to login
         flash("Please log in to access this page.", "warning")
         return redirect(url_for('login'))
+# --- END CORRECTION ---
 
 
 @app.errorhandler(500)
@@ -455,3 +457,4 @@ def internal_server_error(e):
 # --- Main Execution ---
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
