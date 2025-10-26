@@ -51,6 +51,7 @@ class User(UserMixin):
     @property
     def is_admin(self): return self.role == "admin"
 
+# TODO: Replace with a secure user store in a real application
 users = {
     1: User(id=1, username="Boss", password="ADMIN123", role="admin"),
     2: User(id=2, username="Work", password="password"),
@@ -79,10 +80,10 @@ DEFAULT_SETTINGS = {
     "ANNOUNCEMENT": "",
     "API_CREDITS_USED": "N/A",
     "API_CREDITS_REMAINING": "N/A",
-    "STRICT_FRAUD_SCORE_LEVEL": 20
+    "STRICT_FRAUD_SCORE_LEVEL": 20 # <-- Default strict score
 }
 
-# User agents
+# User agents for requests
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15",
@@ -96,7 +97,8 @@ REQUEST_TIMEOUT = 5; MIN_DELAY = 0.5; MAX_DELAY = 1.5
 
 def get_app_settings():
     """Fetches settings from Google Sheet, providing defaults."""
-    settings = get_settings()
+    settings = get_settings() # Fetch from sheets_util
+    # Apply defaults if settings are missing from the sheet
     return {
         "MAX_PASTE": int(settings.get("MAX_PASTE", DEFAULT_SETTINGS["MAX_PASTE"])),
         "FRAUD_SCORE_LEVEL": int(settings.get("FRAUD_SCORE_LEVEL", DEFAULT_SETTINGS["FRAUD_SCORE_LEVEL"])),
@@ -114,82 +116,153 @@ def validate_proxy_format(proxy_line):
     """Validate proxy format: host:port:username:password"""
     try:
         parts = proxy_line.strip().split(":")
-        if len(parts) == 4: host, port, user, password = parts; return bool(host and port and user and password)
+        # Ensure exactly 4 non-empty parts
+        if len(parts) == 4 and all(part for part in parts):
+            return True
         return False
-    except Exception as e: logger.error(f"Error validating proxy format '{proxy_line}': {e}"); return False
+    except Exception as e:
+        logger.error(f"Error validating proxy format '{proxy_line}': {e}")
+        return False
 
 def get_ip_from_proxy(proxy_line):
-    """Extract IP using the proxy."""
-    if not validate_proxy_format(proxy_line): return None
+    """Extract public IP address using the provided proxy via api.ipify.org."""
+    if not validate_proxy_format(proxy_line):
+        return None
     try:
         host, port, user, pw = proxy_line.strip().split(":")
-        proxies = { "http": f"http://{user}:{pw}@{host}:{port}", "https": f"http://{user}:{pw}@{host}:{port}" }
-        session = requests.Session(); retries = Retry(total=1, backoff_factor=0.2, status_forcelist=[500, 502, 503, 504])
-        session.mount('http://', HTTPAdapter(max_retries=retries)); session.mount('https://', HTTPAdapter(max_retries=retries))
-        response = session.get("https://api.ipify.org", proxies=proxies, timeout=REQUEST_TIMEOUT-1, headers={"User-Agent": random.choice(USER_AGENTS)})
-        response.raise_for_status(); ip = response.text.strip()
-        if ip and '.' in ip and len(ip.split('.')) == 4: return ip
-        else: logger.warning(f"Invalid IP format received from ipify for {proxy_line}: {ip}"); return None
-    except requests.exceptions.RequestException as e: logger.error(f"❌ Failed to get IP from proxy {proxy_line}: {e}"); return None
-    except Exception as e: logger.error(f"❌ Unexpected error getting IP from proxy {proxy_line}: {e}", exc_info=False); return None
+        proxy_dict = {
+            "http": f"http://{user}:{pw}@{host}:{port}",
+            "https": f"http://{user}:{pw}@{host}:{port}" # Use http tunnel for https
+        }
+        # Use a session with retries for robustness
+        session = requests.Session()
+        retries = Retry(total=1, backoff_factor=0.2, status_forcelist=[500, 502, 503, 504])
+        session.mount('http://', HTTPAdapter(max_retries=retries))
+        session.mount('https://', HTTPAdapter(max_retries=retries))
+
+        response = session.get(
+            "https://api.ipify.org",
+            proxies=proxy_dict,
+            timeout=REQUEST_TIMEOUT - 1, # Slightly less than worker timeout
+            headers={"User-Agent": random.choice(USER_AGENTS)}
+        )
+        response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+        ip = response.text.strip()
+
+        # Basic IP format validation
+        if ip and '.' in ip and len(ip.split('.')) == 4:
+            return ip
+        else:
+            logger.warning(f"Invalid IP format received from ipify for {proxy_line}: {ip}")
+            return None
+    except requests.exceptions.Timeout:
+        logger.error(f"❌ Timeout getting IP from proxy {proxy_line}")
+        return None
+    except requests.exceptions.ProxyError as pe:
+         logger.error(f"❌ Proxy error getting IP from proxy {proxy_line}: {pe}")
+         return None
+    except requests.exceptions.RequestException as e:
+        logger.error(f"❌ Network error getting IP from proxy {proxy_line}: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"❌ Unexpected error getting IP from proxy {proxy_line}: {e}", exc_info=False)
+        return None
 
 def get_fraud_score(ip, proxy_line, api_key, api_url, api_user):
-    """Get fraud score via Scamalytics v3 API. (Returns score only)"""
+    """Get fraud score via Scamalytics v3 API. Returns score (int) or None."""
     if not validate_proxy_format(proxy_line): return None
+    if not ip: return None # Need IP to check score
     try:
         host, port, user, pw = proxy_line.strip().split(":")
-        proxy_url = f"http://{user}:{pw}@{host}:{port}"; proxies = { "http": proxy_url, "https": proxy_url }
-        session = requests.Session(); retries = Retry(total=1, backoff_factor=0.3, status_forcelist=[429, 500, 502, 503, 504])
-        session.mount('http://', HTTPAdapter(max_retries=retries)); session.mount('https://', HTTPAdapter(max_retries=retries))
-        url = f"{api_url.rstrip('/')}/{api_user}/?key={api_key}&ip={ip}"; headers = { "User-Agent": random.choice(USER_AGENTS), "Accept": "application/json", }
+        proxy_url = f"http://{user}:{pw}@{host}:{port}"
+        proxies = { "http": proxy_url, "https": proxy_url }
+        session = requests.Session()
+        retries = Retry(total=1, backoff_factor=0.3, status_forcelist=[429, 500, 502, 503, 504])
+        session.mount('http://', HTTPAdapter(max_retries=retries))
+        session.mount('https://', HTTPAdapter(max_retries=retries))
+
+        url = f"{api_url.rstrip('/')}/{api_user}/?key={api_key}&ip={ip}"
+        headers = { "User-Agent": random.choice(USER_AGENTS), "Accept": "application/json", }
+
         response = session.get(url, headers=headers, proxies=proxies, timeout=REQUEST_TIMEOUT)
+
         if response.status_code == 200:
             try:
                 data = response.json()
                 if data.get("scamalytics", {}).get("status") == "ok":
                     score = data.get("scamalytics", {}).get("scamalytics_score")
-                    if score is not None: return int(score)
-                    else: logger.warning(f"API OK but no score for IP {ip} via {proxy_line}")
-                else: api_status = data.get('scamalytics', {}).get('status', 'N/A'); logger.error(f"API error '{api_status}' for IP {ip} via {proxy_line}")
-            except requests.exceptions.JSONDecodeError: logger.error(f"JSON decode error for IP {ip} via {proxy_line}. Response: {response.text[:100]}")
-        else: logger.error(f"API request failed for IP {ip} via {proxy_line}: HTTP {response.status_code} {response.text[:100]}")
-    except requests.exceptions.RequestException as e: logger.error(f"⚠️ Network error checking API for IP {ip} via {proxy_line}: {e}")
-    except Exception as e: logger.error(f"⚠️ Unexpected error checking API for IP {ip} via {proxy_line}: {e}", exc_info=False)
-    return None
-
-def get_fraud_score_detailed(ip, proxy_line, api_key, api_url, api_user):
-    """Get detailed fraud score report via Scamalytics v3 API. (Returns full data)"""
-    if not validate_proxy_format(proxy_line): return None
-    try:
-        host, port, user, pw = proxy_line.strip().split(":")
-        proxy_url = f"http://{user}:{pw}@{host}:{port}"; proxies = { "http": proxy_url, "https": proxy_url }
-        session = requests.Session(); retries = Retry(total=1, backoff_factor=0.3, status_forcelist=[429, 500, 502, 503, 504])
-        session.mount('http://', HTTPAdapter(max_retries=retries)); session.mount('https://', HTTPAdapter(max_retries=retries))
-        url = f"{api_url.rstrip('/')}/{api_user}/?key={api_key}&ip={ip}"; headers = { "User-Agent": random.choice(USER_AGENTS), "Accept": "application/json", }
-        response = session.get(url, headers=headers, proxies=proxies, timeout=REQUEST_TIMEOUT)
-
-        if response.status_code == 200:
-            try:
-                data = response.json()
-                return data
+                    if score is not None:
+                        return int(score)
+                    else:
+                        logger.warning(f"API status OK but no score found for IP {ip} via {proxy_line}")
+                else:
+                    api_status = data.get('scamalytics', {}).get('status', 'N/A')
+                    logger.error(f"Scamalytics API error '{api_status}' for IP {ip} via {proxy_line}")
+            except ValueError: # Handle case where score is not an integer
+                 logger.error(f"Could not convert score to int for IP {ip}. Response: {data}")
             except requests.exceptions.JSONDecodeError:
-                logger.error(f"JSON decode error for IP {ip} via {proxy_line}. Response: {response.text[:100]}")
-                return None
+                logger.error(f"JSON decode error checking score for IP {ip} via {proxy_line}. Response: {response.text[:100]}")
         else:
-            logger.error(f"API request failed for IP {ip} via {proxy_line}: HTTP {response.status_code} {response.text[:100]}")
-            return None
+            logger.error(f"API request failed (HTTP {response.status_code}) checking score for IP {ip} via {proxy_line}: {response.text[:100]}")
+
+    except requests.exceptions.Timeout:
+         logger.error(f"⚠️ Timeout checking API for IP {ip} via {proxy_line}")
+    except requests.exceptions.ProxyError as pe:
+        logger.error(f"⚠️ Proxy error checking API for IP {ip} via {proxy_line}: {pe}")
     except requests.exceptions.RequestException as e:
         logger.error(f"⚠️ Network error checking API for IP {ip} via {proxy_line}: {e}")
     except Exception as e:
         logger.error(f"⚠️ Unexpected error checking API for IP {ip} via {proxy_line}: {e}", exc_info=False)
     return None
 
+def get_fraud_score_detailed(ip, proxy_line, api_key, api_url, api_user):
+    """Get detailed fraud score report via Scamalytics v3 API. Returns full response dict or None."""
+    if not validate_proxy_format(proxy_line): return None
+    if not ip: return None
+    try:
+        host, port, user, pw = proxy_line.strip().split(":")
+        proxy_url = f"http://{user}:{pw}@{host}:{port}"
+        proxies = { "http": proxy_url, "https": proxy_url }
+        session = requests.Session()
+        retries = Retry(total=1, backoff_factor=0.3, status_forcelist=[429, 500, 502, 503, 504])
+        session.mount('http://', HTTPAdapter(max_retries=retries))
+        session.mount('https://', HTTPAdapter(max_retries=retries))
+
+        url = f"{api_url.rstrip('/')}/{api_user}/?key={api_key}&ip={ip}"
+        headers = { "User-Agent": random.choice(USER_AGENTS), "Accept": "application/json", }
+
+        response = session.get(url, headers=headers, proxies=proxies, timeout=REQUEST_TIMEOUT)
+
+        if response.status_code == 200:
+            try:
+                data = response.json()
+                return data # Return the full dict
+            except requests.exceptions.JSONDecodeError:
+                logger.error(f"JSON decode error getting detailed score for IP {ip} via {proxy_line}. Response: {response.text[:100]}")
+                return None
+        else:
+            logger.error(f"API request failed (HTTP {response.status_code}) getting detailed score for IP {ip} via {proxy_line}: {response.text[:100]}")
+            return None
+    except requests.exceptions.Timeout:
+        logger.error(f"⚠️ Timeout getting detailed score for IP {ip} via {proxy_line}")
+    except requests.exceptions.ProxyError as pe:
+        logger.error(f"⚠️ Proxy error getting detailed score for IP {ip} via {proxy_line}: {pe}")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"⚠️ Network error getting detailed score for IP {ip} via {proxy_line}: {e}")
+    except Exception as e:
+        logger.error(f"⚠️ Unexpected error getting detailed score for IP {ip} via {proxy_line}: {e}", exc_info=False)
+    return None
+
 def single_check_proxy(proxy_line, fraud_score_level, api_key, api_url, api_user):
-    """Checks a single proxy: gets IP and score. (Returns dict or None)"""
-    time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
-    if not validate_proxy_format(proxy_line): logger.warning(f"❌ Format fail: {proxy_line}"); return None
+    """Checks a single proxy (basic check): gets IP and score. Returns dict {'proxy': ..., 'ip': ...} or None."""
+    time.sleep(random.uniform(MIN_DELAY, MAX_DELAY)) # Basic rate limiting
+    if not validate_proxy_format(proxy_line):
+        logger.warning(f"❌ Format fail: {proxy_line}")
+        return None
     ip = get_ip_from_proxy(proxy_line)
-    if not ip: logger.warning(f"❌ No IP: {proxy_line}"); return None
+    if not ip:
+        # get_ip_from_proxy logs the specific error
+        return None
     score = get_fraud_score(ip, proxy_line, api_key, api_url, api_user)
     if score is not None:
         if score <= fraud_score_level:
@@ -197,38 +270,47 @@ def single_check_proxy(proxy_line, fraud_score_level, api_key, api_url, api_user
             return {"proxy": proxy_line, "ip": ip}
         else:
             logger.info(f"❌ Score fail: {proxy_line} (IP: {ip}, Score: {score})")
-            try: log_bad_proxy(proxy_line, ip, score)
-            except Exception as e: logger.error(f"Error logging bad proxy '{proxy_line}': {e}")
-            return None
-    else: logger.warning(f"❓ No score: {proxy_line} (IP: {ip})"); return None
-
+            try:
+                # Log bad proxies asynchronously? Consider if GSheet writes become a bottleneck.
+                log_bad_proxy(proxy_line, ip, score)
+            except Exception as e:
+                logger.error(f"Error logging bad proxy '{proxy_line}': {e}")
+            return None # Failed score check
+    else:
+        # get_fraud_score logs the specific error
+        logger.warning(f"❓ Could not get score: {proxy_line} (IP: {ip})")
+        return None # Failed to get score
 
 def single_check_proxy_detailed(proxy_line, fraud_score_level, api_key, api_url, api_user):
     """
-    Checks a single proxy with detailed criteria and extracts geo info + score.
-    Returns: A dict {'proxy': '...', 'ip': '...', 'credits': {...}, 'geo': {...}, 'score': ...}
+    Checks a single proxy with detailed criteria, extracts geo info + score.
+    Always returns a dict: {'proxy': str|None, 'ip': str|None, 'credits': dict, 'geo': dict, 'score': int|None}
+    'proxy' is only non-None if all checks pass.
     """
-    time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
+    time.sleep(random.uniform(MIN_DELAY, MAX_DELAY)) # Basic rate limiting
+    base_result = {"proxy": None, "ip": None, "credits": {}, "geo": {}, "score": None} # Base structure
+
     if not validate_proxy_format(proxy_line):
         logger.warning(f"❌ [Strict] Format fail: {proxy_line}")
-        return {"proxy": None, "ip": None, "credits": {}, "geo": {}, "score": None}
+        return base_result
 
     ip = get_ip_from_proxy(proxy_line)
+    base_result["ip"] = ip # Store IP even if check fails later
     if not ip:
-        logger.warning(f"❌ [Strict] No IP: {proxy_line}")
-        return {"proxy": None, "ip": None, "credits": {}, "geo": {}, "score": None}
+        # get_ip_from_proxy logs the error
+        return base_result
 
     data = get_fraud_score_detailed(ip, proxy_line, api_key, api_url, api_user)
 
-    credits_data = {}
+    # Always try to extract credits if the response exists
     if data and data.get("credits"):
-        credits_data = data.get("credits")
+        base_result["credits"] = data.get("credits")
 
-    geo_data = {}
+    # Always try to extract geo if the response exists
     try:
         if data and data.get("external_datasources", {}).get("dbip"):
             dbip_data = data["external_datasources"]["dbip"]
-            geo_data = {
+            base_result["geo"] = {
                 "country_code": dbip_data.get("ip_country_code", "N/A"),
                 "state": dbip_data.get("ip_state_name", "N/A"),
                 "city": dbip_data.get("ip_city", "N/A"),
@@ -236,28 +318,37 @@ def single_check_proxy_detailed(proxy_line, fraud_score_level, api_key, api_url,
             }
     except Exception as e:
         logger.warning(f"Could not extract geo data for {ip}: {e}")
-        geo_data = {"country_code": "ERR", "state": "ERR", "city": "ERR", "postcode": "ERR"}
+        base_result["geo"] = {"country_code": "ERR", "state": "ERR", "city": "ERR", "postcode": "ERR"}
 
-    score = None # Initialize score
+    # Process Scamalytics data if available
     if data and data.get("scamalytics"):
         scam_data = data.get("scamalytics", {})
-        score = scam_data.get("scamalytics_score") # Get score here
+        score_val = scam_data.get("scamalytics_score")
+        base_result["score"] = score_val # Store score regardless of checks
 
+        # Check API status first
         if scam_data.get("status") != "ok":
             logger.warning(f"❓ [Strict] API Error: {scam_data.get('status')} for {proxy_line}")
-            return {"proxy": None, "ip": ip, "credits": credits_data, "geo": geo_data, "score": score}
+            return base_result # Return with available info (IP, credits, geo, score)
 
         # --- Apply Strict Filtering ---
         try:
             passed = True
-            if score is None:
+            score_int = None
+
+            # Convert score to int, handle None or non-integer
+            if score_val is None:
                 passed = False
             else:
-                score = int(score) # Convert score to int here after checking it's not None
+                try:
+                    score_int = int(score_val)
+                except (ValueError, TypeError):
+                    logger.warning(f"❓ [Strict] Non-integer score received: {score_val} for {proxy_line}")
+                    passed = False
 
             # 1. Score check
-            if passed and not (score <= fraud_score_level):
-                logger.info(f"❌ [Strict] Score fail: {proxy_line} (Score: {score})")
+            if passed and not (score_int <= fraud_score_level):
+                logger.info(f"❌ [Strict] Score fail: {proxy_line} (Score: {score_int})")
                 passed = False
 
             # 2. Risk check
@@ -279,33 +370,42 @@ def single_check_proxy_detailed(proxy_line, fraud_score_level, api_key, api_url,
                         break
 
             if passed:
-                logger.info(f"✅ [Strict] Good: {proxy_line} (IP: {ip}, Score: {score})")
-                return {"proxy": proxy_line, "ip": ip, "credits": credits_data, "geo": geo_data, "score": score}
+                logger.info(f"✅ [Strict] Good: {proxy_line} (IP: {ip}, Score: {score_int})")
+                base_result["proxy"] = proxy_line # Set proxy only if all checks passed
+                return base_result
             else:
-                # Still log to bad proxies if score was the failure
-                if score is not None and score > fraud_score_level:
-                    try: log_bad_proxy(proxy_line, ip, score)
+                # Log to bad proxies if score was the primary failure reason
+                if score_int is not None and score_int > fraud_score_level:
+                    try: log_bad_proxy(proxy_line, ip, score_int)
                     except Exception as e: logger.error(f"Error logging bad proxy '{proxy_line}': {e}")
-
-                return {"proxy": None, "ip": ip, "credits": credits_data, "geo": geo_data, "score": score}
+                # Return result without proxy set
+                return base_result
 
         except Exception as e:
-            logger.error(f"Error during strict check logic for {proxy_line}: {e}")
-            return {"proxy": None, "ip": ip, "credits": credits_data, "geo": geo_data, "score": score}
+            logger.error(f"Error during strict check logic for {proxy_line}: {e}", exc_info=False)
+            return base_result # Return with available info
 
     else:
-        logger.warning(f"❓ [Strict] No scamalytics data block: {proxy_line} (IP: {ip})")
-        return {"proxy": None, "ip": ip, "credits": credits_data, "geo": geo_data, "score": None}
+        # Handle case where Scamalytics API call failed completely or returned invalid structure
+        logger.warning(f"❓ [Strict] No valid Scamalytics data block for: {proxy_line} (IP: {ip})")
+        return base_result # Return with available info (IP, credits, geo)
 # --- END HELPER FUNCTIONS ---
 
 
 # --- BEFORE REQUEST HANDLER ---
 @app.before_request
 def before_request_func():
-    """Skip checks for static/asset routes."""
-    if request.path.startswith(('/static', '/login', '/logout')) or request.path.endswith(('.ico', '.png')) or '/admin/test' in request.path:
+    """Skip checks for static/asset routes and admin test page."""
+    if request.path.startswith(('/static', '/login', '/logout')) or \
+       request.path.endswith(('.ico', '.png')) or \
+       request.path == url_for('admin_test'): # Check specifically for the test route
         return
-    pass
+    # Apply checks/redirects for other routes if needed (removed original 'pass')
+    # Example: If you wanted all non-admin users redirected from '/admin/*'
+    # if request.path.startswith('/admin') and not request.path.startswith('/admin/test') \
+    #    and current_user.is_authenticated and not current_user.is_admin:
+    #     flash("Admin access required.", "danger")
+    #     return redirect(url_for('index'))
 # --- END BEFORE REQUEST HANDLER ---
 
 
@@ -314,144 +414,265 @@ def before_request_func():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     """Handles user login."""
-    if current_user.is_authenticated: return redirect(url_for('admin') if current_user.is_admin else url_for('index'))
+    if current_user.is_authenticated:
+        return redirect(url_for('admin') if current_user.is_admin else url_for('index'))
     error = None
     if request.method == 'POST':
-        username = request.form.get('username'); password = request.form.get('password'); remember = request.form.get('remember') == 'on'
+        username = request.form.get('username')
+        password = request.form.get('password')
+        remember = request.form.get('remember') == 'on'
+        # Find user (replace with DB lookup in real app)
         user_to_login = next((user for uid, user in users.items() if user.username == username), None)
+
+        # !! Use password hashing in production !!
         if user_to_login and user_to_login.password == password:
-            login_user(user_to_login, remember=remember); next_page = request.args.get('next')
-            if next_page and not current_user.is_admin and ('/admin' in next_page or '/delete-used-ip' in next_page): flash("Redirecting to user dashboard.", "info"); next_page = url_for('index')
-            if current_user.is_admin and next_page == url_for('index'): next_page = url_for('admin')
-            logger.info(f"User '{username}' logged in."); return redirect(next_page or (url_for('admin') if current_user.is_admin else url_for('index')))
-        else: logger.warning(f"Failed login attempt: '{username}'"); error = 'Invalid Credentials.'
+            login_user(user_to_login, remember=remember)
+            next_page = request.args.get('next')
+            # Security: Prevent redirecting non-admins trying to access admin pages
+            if next_page and not current_user.is_admin and ('/admin' in next_page or '/delete-used-ip' in next_page):
+                 flash("Redirecting to user dashboard.", "info")
+                 next_page = url_for('index')
+            # Redirect admins from index to admin if that was the 'next' page
+            if current_user.is_admin and next_page == url_for('index'):
+                 next_page = url_for('admin')
+            logger.info(f"User '{username}' logged in successfully.")
+            return redirect(next_page or (url_for('admin') if current_user.is_admin else url_for('index')))
+        else:
+            logger.warning(f"Failed login attempt for username: '{username}'")
+            error = 'Invalid Credentials. Please try again.'
     return render_template('login.html', error=error)
 
 @app.route('/logout')
 @login_required
 def logout():
     """Handles user logout."""
-    username = current_user.username; logout_user(); flash('You have been logged out.', 'info'); logger.info(f"User '{username}' logged out."); return redirect(url_for('login'))
+    username = current_user.username # Get username before logging out
+    logout_user()
+    flash('You have been logged out successfully.', 'info')
+    logger.info(f"User '{username}' logged out.")
+    return redirect(url_for('login'))
 
 
 @app.route("/", methods=["GET", "POST"])
 @login_required
 def index():
     """Main proxy checker page with early exit."""
-    try: settings = get_app_settings()
-    except Exception as e: logger.critical(f"CRITICAL ERROR getting app settings: {e}", exc_info=True); return render_template("error.html", error="Could not load critical settings."), 500
-    MAX_PASTE = settings["MAX_PASTE"]; FRAUD_SCORE_LEVEL = settings["FRAUD_SCORE_LEVEL"]; MAX_WORKERS = settings["MAX_WORKERS"]
-    API_KEY = settings["SCAMALYTICS_API_KEY"]; API_URL = settings["SCAMALYTICS_API_URL"]; API_USER = settings["SCAMALYTICS_USERNAME"]
+    try:
+        settings = get_app_settings()
+    except Exception as e:
+        logger.critical(f"CRITICAL ERROR getting app settings on index page: {e}", exc_info=True)
+        return render_template("error.html", error="Could not load critical application settings."), 500
+
+    MAX_PASTE = settings["MAX_PASTE"]
+    FRAUD_SCORE_LEVEL = settings["FRAUD_SCORE_LEVEL"]
+    MAX_WORKERS = settings["MAX_WORKERS"]
+    API_KEY = settings["SCAMALYTICS_API_KEY"]
+    API_URL = settings["SCAMALYTICS_API_URL"]
+    API_USER = settings["SCAMALYTICS_USERNAME"]
     announcement = settings.get("ANNOUNCEMENT")
-    results = []; message = None
+
+    results = [] # Initialize results for GET requests
+    message = None # Initialize message for GET requests
 
     if request.method == "POST":
-        start_time = time.time(); proxies_input = []; input_count = 0; truncation_warning = ""
-        # --- Handle Input ---
+        start_time = time.time()
+        proxies_input = []
+        input_count = 0
+        truncation_warning = ""
+
+        # --- Handle Input (File or Text) ---
         if 'proxyfile' in request.files and request.files['proxyfile'].filename:
             try:
-                file = request.files['proxyfile']; all_lines = file.read().decode("utf-8", errors='ignore').strip().splitlines(); input_count = len(all_lines)
-                if input_count > MAX_PASTE: truncation_warning = f" Input truncated to first {MAX_PASTE}."; proxies_input = all_lines[:MAX_PASTE]
-                else: proxies_input = all_lines
-                logger.info(f"Received {input_count} via file.")
-            except Exception as e: logger.error(f"File read error: {e}", exc_info=True); message = "Error reading file."; return render_template("index.html", results=[], message=message, max_paste=MAX_PASTE, settings=settings, announcement=announcement)
+                file = request.files['proxyfile']
+                # Read file carefully, handle potential decoding errors
+                all_lines = file.read().decode("utf-8", errors='ignore').strip().splitlines()
+                input_count = len(all_lines)
+                if input_count > MAX_PASTE:
+                    truncation_warning = f" Input file truncated to first {MAX_PASTE} lines."
+                    proxies_input = all_lines[:MAX_PASTE]
+                else:
+                    proxies_input = all_lines
+                logger.info(f"Received {input_count} proxies via file upload.")
+            except Exception as e:
+                logger.error(f"Error reading uploaded file: {e}", exc_info=True)
+                message = "Error processing uploaded file. Please ensure it's a valid text file."
+                # Return template immediately on file error
+                return render_template("index.html", results=[], message=message, max_paste=MAX_PASTE, settings=settings, announcement=announcement)
         elif 'proxytext' in request.form and request.form.get("proxytext", "").strip():
-            proxytext = request.form.get("proxytext", ""); all_lines = proxytext.strip().splitlines(); input_count = len(all_lines)
-            if input_count > MAX_PASTE: truncation_warning = f" Input truncated to first {MAX_PASTE}."; proxies_input = all_lines[:MAX_PASTE]
-            else: proxies_input = all_lines
-            logger.info(f"Received {input_count} via text.")
-        else: message = "Please paste proxies or upload file."; return render_template("index.html", results=[], message=message, max_paste=MAX_PASTE, settings=settings, announcement=announcement)
+            proxytext = request.form.get("proxytext", "")
+            all_lines = proxytext.strip().splitlines()
+            input_count = len(all_lines)
+            if input_count > MAX_PASTE:
+                truncation_warning = f" Input text truncated to first {MAX_PASTE} lines."
+                proxies_input = all_lines[:MAX_PASTE]
+            else:
+                proxies_input = all_lines
+            logger.info(f"Received {input_count} proxies via text area.")
+        else:
+            # Handle case where form is submitted empty
+            message = "No proxies submitted. Please paste proxies or upload a file."
+            return render_template("index.html", results=[], message=message, max_paste=MAX_PASTE, settings=settings, announcement=announcement)
 
-        # --- Load Caches ---
-        try: used_ips_records = get_all_used_ips(); used_ips_list = {r.get('IP') for r in used_ips_records if r.get('IP')}; used_proxy_cache = {r.get('Proxy') for r in used_ips_records if r.get('Proxy')}; logger.info(f"Loaded {len(used_proxy_cache)} used proxies.")
-        except Exception as e: logger.error(f"Error loading used cache: {e}"); used_ips_list = set(); used_proxy_cache = set(); message = "Warn: Could not load used cache."
-        try: bad_proxy_cache = set(get_bad_proxies_list()); logger.info(f"Loaded {len(bad_proxy_cache)} bad proxies.")
-        except Exception as e: logger.error(f"Error loading bad cache: {e}"); bad_proxy_cache = set(); message = (message or "") + " Warn: Could not load bad cache."
+        # --- Load Caches (Used IPs and Bad Proxies) ---
+        used_ips_list = set()
+        used_proxy_cache = set()
+        bad_proxy_cache = set()
+        cache_load_warnings = []
+        try:
+            used_ips_records = get_all_used_ips()
+            used_ips_list = {r.get('IP') for r in used_ips_records if r.get('IP')}
+            used_proxy_cache = {r.get('Proxy') for r in used_ips_records if r.get('Proxy')}
+            logger.info(f"Loaded {len(used_ips_list)} used IPs and {len(used_proxy_cache)} used proxies from cache.")
+        except Exception as e:
+            logger.error(f"Error loading used proxy cache: {e}")
+            cache_load_warnings.append("Could not load used proxy cache.")
+        try:
+            bad_proxy_cache = set(get_bad_proxies_list())
+            logger.info(f"Loaded {len(bad_proxy_cache)} bad proxies from cache.")
+        except Exception as e:
+            logger.error(f"Error loading bad proxy cache: {e}")
+            cache_load_warnings.append("Could not load bad proxy cache.")
+        if cache_load_warnings:
+             message = "Warning: " + " ".join(cache_load_warnings)
 
-        # --- Filter Proxies ---
-        proxies_to_check = []; invalid_format_proxies = []; used_count_prefilter = 0; bad_count_prefilter = 0
-        unique_proxies_input = set(p.strip() for p in proxies_input if p.strip())
+        # --- Filter Proxies (Unique, Format, Cache) ---
+        proxies_to_check = []
+        invalid_format_proxies = []
+        used_count_prefilter = 0
+        bad_count_prefilter = 0
+        # Use a set for efficient uniqueness check, process only non-empty lines
+        unique_proxies_input = {p.strip() for p in proxies_input if p.strip()}
+        logger.info(f"Processing {len(unique_proxies_input)} unique non-empty input lines.")
+
         for proxy in unique_proxies_input:
-            if not validate_proxy_format(proxy): invalid_format_proxies.append(proxy); continue
-            if proxy in used_proxy_cache: used_count_prefilter += 1; continue
-            if proxy in bad_proxy_cache: bad_count_prefilter += 1; continue
-            proxies_to_check.append(proxy)
-        processed_count = len(proxies_to_check); logger.info(f"Prefiltering done: {len(unique_proxies_input)} unique -> {len(invalid_format_proxies)} invalid, {used_count_prefilter} used, {bad_count_prefilter} bad. {processed_count} to check.")
+            if not validate_proxy_format(proxy):
+                invalid_format_proxies.append(proxy)
+                continue
+            if proxy in used_proxy_cache:
+                used_count_prefilter += 1
+                continue
+            if proxy in bad_proxy_cache:
+                bad_count_prefilter += 1
+                continue
+            proxies_to_check.append(proxy) # Add valid, non-cached proxy to the check list
+
+        processed_count = len(proxies_to_check)
+        logger.info(f"Prefiltering complete: {len(unique_proxies_input)} unique -> {len(invalid_format_proxies)} invalid, {used_count_prefilter} skipped (used cache), {bad_count_prefilter} skipped (bad cache). {processed_count} proxies remaining to check.")
 
         # --- Execute Checks Concurrently with Early Exit ---
         good_proxy_results = []
-        target_good_proxies = 2
+        target_good_proxies = 2 # Configurable? For now, hardcoded early exit target
         futures = set()
         cancelled_count = 0
 
         if proxies_to_check:
-            actual_workers = min(MAX_WORKERS, processed_count); logger.info(f"Starting check for {processed_count} proxies using {actual_workers} workers (target: {target_good_proxies} good)...")
+            actual_workers = min(MAX_WORKERS, processed_count)
+            logger.info(f"Starting check for {processed_count} proxies using {actual_workers} workers (target: {target_good_proxies} usable good proxies)...")
             with ThreadPoolExecutor(max_workers=actual_workers) as executor:
+                # Submit all tasks
                 for proxy in proxies_to_check:
+                    # Uses the basic single_check_proxy
                     futures.add(executor.submit(single_check_proxy, proxy, FRAUD_SCORE_LEVEL, API_KEY, API_URL, API_USER))
 
+                # Process results as they complete, implement early exit
                 while futures:
                     done, futures = wait(futures, return_when=FIRST_COMPLETED)
                     for future in done:
                         try:
-                            result = future.result()
-                            if result:
+                            result = future.result() # Get result from completed future
+                            if result: # Check if proxy passed (result is not None)
+                                # Check against the *live* used IP list
                                 result['used'] = result.get('ip') in used_ips_list
                                 good_proxy_results.append(result)
+                                # Check if target is met (counting only non-used proxies)
                                 if len([r for r in good_proxy_results if not r['used']]) >= target_good_proxies:
-                                    logger.info(f"Target of {target_good_proxies} usable proxies reached. Cancelling remaining checks.")
+                                    logger.info(f"Target of {target_good_proxies} usable proxies reached. Cancelling remaining tasks.")
+                                    # Cancel pending futures
                                     for f in futures:
                                         if f.cancel(): cancelled_count += 1
-                                    futures = set()
-                                    break
+                                    futures = set() # Clear the set to stop the loop
+                                    break # Exit inner loop (processing 'done' futures)
                         except Exception as exc:
-                            logger.error(f'A proxy check generated an exception: {exc}', exc_info=False)
+                            # Log exceptions from individual proxy checks without crashing the app
+                            logger.error(f'A proxy check task generated an exception: {exc}', exc_info=False)
 
-                    if not futures:
+                    if not futures: # Break outer loop if futures set is empty (cancelled)
                         break
-            logger.info(f"Finished checking. Found {len(good_proxy_results)} potential good proxies. Cancelled {cancelled_count} tasks.")
+
+            logger.info(f"Finished checking. Found {len(good_proxy_results)} potential good proxies (score <= {FRAUD_SCORE_LEVEL}). Cancelled {cancelled_count} tasks due to early exit.")
+        else:
+            logger.info("No valid proxies left to check after prefiltering.")
 
 
         # --- Final Processing and Message Construction ---
-        final_results_display = sorted(good_proxy_results, key=lambda x: x['used'])
+        final_results_display = sorted(good_proxy_results, key=lambda x: x['used']) # Show non-used first
 
         good_count_final = len([r for r in final_results_display if not r['used']])
         used_count_final = len([r for r in final_results_display if r['used']])
         invalid_format_count = len(invalid_format_proxies)
+        # Calculate how many checks were actually attempted (not cancelled or prefiltered)
         checks_attempted = processed_count - cancelled_count
 
+        # Build informative message
         format_warning = f" ({invalid_format_count} invalid format)" if invalid_format_count > 0 else ""
-        prefilter_msg = f" (Skipped {used_count_prefilter} used cache, {bad_count_prefilter} bad cache)." if used_count_prefilter > 0 or bad_count_prefilter > 0 else ""
-        cancel_msg = f" Stopped early after finding {good_count_final} usable proxies (checked {checks_attempted})." if cancelled_count > 0 else ""
+        prefilter_msg = ""
+        if used_count_prefilter > 0 or bad_count_prefilter > 0:
+             prefilter_msg = f" (Skipped {used_count_prefilter} from used cache, {bad_count_prefilter} from bad cache)."
+        cancel_msg = ""
+        if cancelled_count > 0:
+            cancel_msg = f" Stopped early after finding {good_count_final} usable proxies (checked {checks_attempted})."
 
+        # Combine messages
         if good_count_final > 0 or used_count_final > 0:
-            message_prefix = f"✅ Checked {checks_attempted} proxies ({input_count} submitted{format_warning})."
-            message_suffix = f" Found {good_count_final} usable proxies ({used_count_final} previously used IPs found).{truncation_warning}{prefilter_msg}{cancel_msg}"
-            message = message_prefix + message_suffix
+            base_message = f"✅ Checked {checks_attempted} proxies ({input_count} submitted{format_warning}). Found {good_count_final} usable proxies ({used_count_final} previously used IPs found)."
         else:
-             message = f"⚠️ Checked {checks_attempted} proxies ({input_count} submitted{format_warning}). No new usable proxies found.{truncation_warning}{prefilter_msg}"
+             base_message = f"⚠️ Checked {checks_attempted} proxies ({input_count} submitted{format_warning}). No new usable proxies found."
 
-        results = final_results_display
+        # Append warnings/info
+        full_message = base_message + truncation_warning + prefilter_msg + cancel_msg
+        # Prepend existing cache warnings if any
+        message = (message + " " + full_message) if message else full_message
+
+        results = final_results_display # Set results for template
         end_time = time.time()
         logger.info(f"Request processing took {end_time - start_time:.2f} seconds.")
 
+    # Render template for both GET and POST (after processing)
     return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings, announcement=announcement)
 
 
 @app.route("/track-used", methods=["POST"])
 @login_required
 def track_used():
-    """Endpoint called by JS when 'Copy' is clicked."""
-    data = request.get_json(); proxy_line = data.get("proxy") if data else None
-    if not proxy_line: return jsonify({"status": "error", "message": "Invalid request data"}), 400
-    if not validate_proxy_format(proxy_line): logger.warning(f"Track-used invalid format: {proxy_line}"); return jsonify({"status": "error", "message": "Invalid proxy format"}), 400
+    """Endpoint called by JS to mark a proxy's IP as used."""
+    data = request.get_json()
+    proxy_line = data.get("proxy") if data else None
+
+    if not proxy_line:
+        logger.warning("Track-used request received without proxy data.")
+        return jsonify({"status": "error", "message": "Invalid request data"}), 400
+
+    if not validate_proxy_format(proxy_line):
+        logger.warning(f"Track-used request received with invalid proxy format: {proxy_line}")
+        return jsonify({"status": "error", "message": "Invalid proxy format"}), 400
+
     try:
         ip = get_ip_from_proxy(proxy_line)
         if ip:
-            if add_used_ip(ip, proxy_line): logger.info(f"Marked used: {proxy_line} (IP: {ip})"); return jsonify({"status": "success"})
-            else: logger.error(f"Failed add used IP/Proxy: {proxy_line} (IP: {ip})"); return jsonify({"status": "error", "message": "Failed update"}), 500
-        else: logger.warning(f"Could not get IP to mark used: {proxy_line}"); return jsonify({"status": "error", "message": "Could not verify IP"}), 400
-    except Exception as e: logger.error(f"Error tracking used proxy '{proxy_line}': {e}", exc_info=True); return jsonify({"status": "error", "message": "Server error"}), 500
+            if add_used_ip(ip, proxy_line):
+                logger.info(f"Successfully marked IP {ip} as used for proxy: {proxy_line}")
+                return jsonify({"status": "success"})
+            else:
+                # add_used_ip logs its own errors
+                logger.error(f"Failed to add used IP/Proxy to Google Sheet: {proxy_line} (IP: {ip})")
+                return jsonify({"status": "error", "message": "Failed to update usage status"}), 500
+        else:
+            # get_ip_from_proxy logs its own errors
+            logger.warning(f"Could not retrieve IP to mark proxy as used: {proxy_line}")
+            return jsonify({"status": "error", "message": "Could not verify proxy IP before marking used"}), 400
+    except Exception as e:
+        logger.error(f"Unexpected error in /track-used for proxy '{proxy_line}': {e}", exc_info=True)
+        return jsonify({"status": "error", "message": "Internal server error during usage tracking"}), 500
 
 
 # --- Admin Routes (Protected) ---
@@ -462,8 +683,12 @@ def admin():
     """Admin dashboard page."""
     try:
         settings = get_app_settings()
+        # Consolidate stats for template
         stats = {
-            "total_checks": "N/A (Vercel)", "total_good": "N/A",
+            # Basic stats (currently placeholders)
+            "total_checks": "N/A (Vercel)",
+            "total_good": "N/A",
+            # Current settings display
             "max_paste": settings["MAX_PASTE"],
             "fraud_score_level": settings["FRAUD_SCORE_LEVEL"],
             "strict_fraud_score_level": settings.get("STRICT_FRAUD_SCORE_LEVEL", "N/A"),
@@ -471,15 +696,26 @@ def admin():
             "scamalytics_api_key": settings["SCAMALYTICS_API_KEY"],
             "scamalytics_api_url": settings["SCAMALYTICS_API_URL"],
             "scamalytics_username": settings["SCAMALYTICS_USERNAME"],
+            # API Credits
             "api_credits_used": settings.get("API_CREDITS_USED", "N/A"),
             "api_credits_remaining": settings.get("API_CREDITS_REMAINING", "N/A")
         }
-        used_ips = get_all_used_ips()
+        # Fetch used IPs list
+        used_ips = get_all_used_ips() # Assuming this returns a list of dicts
         announcement = settings.get("ANNOUNCEMENT")
-        return render_template( "admin.html", stats=stats, used_ips=used_ips, good_proxies=[], blocked_ips=[], announcement=announcement )
+        return render_template(
+            "admin.html",
+            stats=stats,
+            used_ips=used_ips,
+            # Placeholders for future features if needed
+            good_proxies=[],
+            blocked_ips=[],
+            announcement=announcement
+            )
     except Exception as e:
-        logger.error(f"Admin panel error: {e}", exc_info=True)
-        flash("Error loading admin panel data.", "danger")
+        logger.error(f"Error loading admin panel: {e}", exc_info=True)
+        flash("Error loading admin panel data. Please check logs.", "danger")
+        # Provide safe defaults on error
         stats_error = { "api_credits_used": "Error", "api_credits_remaining": "Error" }
         return render_template("admin.html", stats=stats_error, used_ips=[], good_proxies=[], blocked_ips=[], announcement="")
 
@@ -488,9 +724,13 @@ def admin():
 @admin_required
 def admin_test():
     """Admin-only strict proxy checker page."""
-    try: settings = get_app_settings()
-    except Exception as e: logger.critical(f"CRITICAL ERROR getting app settings: {e}", exc_info=True); return render_template("error.html", error="Could not load critical settings."), 500
+    try:
+        settings = get_app_settings()
+    except Exception as e:
+        logger.critical(f"CRITICAL ERROR getting app settings for admin test: {e}", exc_info=True)
+        return render_template("error.html", error="Could not load critical application settings."), 500
 
+    # Extract settings for clarity
     MAX_PASTE = settings["MAX_PASTE"]
     STRICT_FRAUD_SCORE_LEVEL = settings["STRICT_FRAUD_SCORE_LEVEL"]
     MAX_WORKERS = settings["MAX_WORKERS"]
@@ -498,120 +738,185 @@ def admin_test():
     API_URL = settings["SCAMALYTICS_API_URL"]
     API_USER = settings["SCAMALYTICS_USERNAME"]
 
-    results = []; message = None
-    last_credits = None
+    results = None # Use None to indicate no results yet on GET
+    message = None
+    if request.method == "GET":
+         # Pass necessary info for the form display on GET
+         return render_template("admin_test.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings)
 
-    if request.method == "POST":
-        start_time = time.time(); proxies_input = []; input_count = 0; truncation_warning = ""
+    # --- POST Request Logic ---
+    start_time = time.time()
+    proxies_input = []
+    input_count = 0
+    truncation_warning = ""
 
-        # --- Handle Input ---
-        if 'proxyfile' in request.files and request.files['proxyfile'].filename:
-            try:
-                file = request.files['proxyfile']; all_lines = file.read().decode("utf-8", errors='ignore').strip().splitlines(); input_count = len(all_lines)
-                if input_count > MAX_PASTE: truncation_warning = f" Input truncated to first {MAX_PASTE}."; proxies_input = all_lines[:MAX_PASTE]
-                else: proxies_input = all_lines
-                logger.info(f"[Strict] Received {input_count} via file.")
-            except Exception as e: logger.error(f"[Strict] File read error: {e}", exc_info=True); message = "Error reading file."; return render_template("admin_test.html", results=[], message=message, max_paste=MAX_PASTE, settings=settings)
-        elif 'proxytext' in request.form and request.form.get("proxytext", "").strip():
-            proxytext = request.form.get("proxytext", ""); all_lines = proxytext.strip().splitlines(); input_count = len(all_lines)
-            if input_count > MAX_PASTE: truncation_warning = f" Input truncated to first {MAX_PASTE}."; proxies_input = all_lines[:MAX_PASTE]
-            else: proxies_input = all_lines
-            logger.info(f"[Strict] Received {input_count} via text.")
+    # --- Handle Input ---
+    if 'proxyfile' in request.files and request.files['proxyfile'].filename:
+        try:
+            file = request.files['proxyfile']
+            all_lines = file.read().decode("utf-8", errors='ignore').strip().splitlines()
+            input_count = len(all_lines)
+            if input_count > MAX_PASTE:
+                truncation_warning = f" Input file truncated to first {MAX_PASTE} lines."
+                proxies_input = all_lines[:MAX_PASTE]
+            else:
+                proxies_input = all_lines
+            logger.info(f"[Strict] Received {input_count} proxies via file upload.")
+        except Exception as e:
+            logger.error(f"[Strict] File read error: {e}", exc_info=True)
+            message = "Error processing uploaded file."
+            return render_template("admin_test.html", results=[], message=message, max_paste=MAX_PASTE, settings=settings) # Show empty results on error
+    elif 'proxytext' in request.form and request.form.get("proxytext", "").strip():
+        proxytext = request.form.get("proxytext", "")
+        all_lines = proxytext.strip().splitlines()
+        input_count = len(all_lines)
+        if input_count > MAX_PASTE:
+            truncation_warning = f" Input text truncated to first {MAX_PASTE} lines."
+            proxies_input = all_lines[:MAX_PASTE]
         else:
-            message = "Please paste proxies or upload file."
-            return render_template("admin_test.html", results=[], message=message, max_paste=MAX_PASTE, settings=settings)
+            proxies_input = all_lines
+        logger.info(f"[Strict] Received {input_count} proxies via text area.")
+    else:
+        message = "No proxies submitted."
+        return render_template("admin_test.html", results=[], message=message, max_paste=MAX_PASTE, settings=settings) # Show empty results
 
-        # --- Load Caches ---
-        try: used_ips_records = get_all_used_ips(); used_ips_list = {r.get('IP') for r in used_ips_records if r.get('IP')}; used_proxy_cache = {r.get('Proxy') for r in used_ips_records if r.get('Proxy')}; logger.info(f"[Strict] Loaded {len(used_proxy_cache)} used proxies.")
-        except Exception as e: logger.error(f"[Strict] Error loading used cache: {e}"); used_ips_list = set(); used_proxy_cache = set(); message = "Warn: Could not load used cache."
-        try: bad_proxy_cache = set(get_bad_proxies_list()); logger.info(f"[Strict] Loaded {len(bad_proxy_cache)} bad proxies.")
-        except Exception as e: logger.error(f"[Strict] Error loading bad cache: {e}"); bad_proxy_cache = set(); message = (message or "") + " Warn: Could not load bad cache."
+    # --- Load Caches ---
+    used_ips_list = set()
+    used_proxy_cache = set()
+    bad_proxy_cache = set()
+    cache_load_warnings = []
+    try:
+        used_ips_records = get_all_used_ips()
+        used_ips_list = {r.get('IP') for r in used_ips_records if r.get('IP')}
+        used_proxy_cache = {r.get('Proxy') for r in used_ips_records if r.get('Proxy')}
+        logger.info(f"[Strict] Loaded {len(used_ips_list)} used IPs and {len(used_proxy_cache)} used proxies.")
+    except Exception as e:
+        logger.error(f"[Strict] Error loading used proxy cache: {e}")
+        cache_load_warnings.append("Could not load used proxy cache.")
+    try:
+        bad_proxy_cache = set(get_bad_proxies_list())
+        logger.info(f"[Strict] Loaded {len(bad_proxy_cache)} bad proxies.")
+    except Exception as e:
+        logger.error(f"[Strict] Error loading bad proxy cache: {e}")
+        cache_load_warnings.append("Could not load bad proxy cache.")
+    if cache_load_warnings:
+         message = "Warning: " + " ".join(cache_load_warnings)
 
-        # --- Filter Proxies ---
-        proxies_to_check = []; invalid_format_proxies = []; used_count_prefilter = 0; bad_count_prefilter = 0
-        unique_proxies_input = set(p.strip() for p in proxies_input if p.strip())
-        for proxy in unique_proxies_input:
-            if not validate_proxy_format(proxy): invalid_format_proxies.append(proxy); continue
-            if proxy in used_proxy_cache: used_count_prefilter += 1; continue
-            if proxy in bad_proxy_cache: bad_count_prefilter += 1; continue
-            proxies_to_check.append(proxy)
-        processed_count = len(proxies_to_check); logger.info(f"[Strict] Prefiltering done: {len(unique_proxies_input)} unique -> {len(invalid_format_proxies)} invalid, {used_count_prefilter} used, {bad_count_prefilter} bad. {processed_count} to check.")
+    # --- Filter Proxies ---
+    proxies_to_check = []
+    invalid_format_proxies = []
+    used_count_prefilter = 0
+    bad_count_prefilter = 0
+    unique_proxies_input = {p.strip() for p in proxies_input if p.strip()}
+    logger.info(f"[Strict] Processing {len(unique_proxies_input)} unique non-empty input lines.")
 
-        # --- Execute Checks Concurrently ---
-        good_proxy_results = []
-        futures = set()
-        last_credits = {}
+    for proxy in unique_proxies_input:
+        if not validate_proxy_format(proxy):
+            invalid_format_proxies.append(proxy)
+            continue
+        # Skip proxies already known to be used or bad
+        if proxy in used_proxy_cache:
+            used_count_prefilter += 1
+            continue
+        if proxy in bad_proxy_cache:
+            bad_count_prefilter += 1
+            continue
+        proxies_to_check.append(proxy)
 
-        if proxies_to_check:
-            actual_workers = min(MAX_WORKERS, processed_count)
-            logger.info(f"[Strict] Starting check for {processed_count} proxies using {actual_workers} workers...")
-            with ThreadPoolExecutor(max_workers=actual_workers) as executor:
-                for proxy in proxies_to_check:
-                    futures.add(executor.submit(single_check_proxy_detailed, proxy, STRICT_FRAUD_SCORE_LEVEL, API_KEY, API_URL, API_USER))
+    processed_count = len(proxies_to_check)
+    logger.info(f"[Strict] Prefiltering complete: {len(unique_proxies_input)} unique -> {len(invalid_format_proxies)} invalid, {used_count_prefilter} skipped (used cache), {bad_count_prefilter} skipped (bad cache). {processed_count} proxies remaining.")
 
-                for future in as_completed(futures):
-                    try:
-                        result = future.result()
-                        if result:
-                            if result.get("credits"):
-                                last_credits = result.get("credits") # Store latest credits
+    # --- Execute Checks Concurrently ---
+    good_proxy_results = [] # Store results that pass the strict check
+    futures = set()
+    last_credits = {} # Store the credit info from the last successful API call
 
-                            if result.get("proxy"): # Check if proxy passed
-                                result['used'] = result.get('ip') in used_ips_list
-                                good_proxy_results.append(result)
+    if proxies_to_check:
+        actual_workers = min(MAX_WORKERS, processed_count)
+        logger.info(f"[Strict] Starting check for {processed_count} proxies using {actual_workers} workers...")
+        with ThreadPoolExecutor(max_workers=actual_workers) as executor:
+            # Submit all tasks using the detailed checker
+            for proxy in proxies_to_check:
+                futures.add(executor.submit(single_check_proxy_detailed, proxy, STRICT_FRAUD_SCORE_LEVEL, API_KEY, API_URL, API_USER))
 
-                    except Exception as exc:
-                        logger.error(f'[Strict] A proxy check generated an exception: {exc}', exc_info=False)
+            # Process results as they complete
+            for future in as_completed(futures):
+                try:
+                    result = future.result() # result is always a dict now
+                    if result:
+                        # Store the latest credit info received
+                        if result.get("credits"):
+                            last_credits = result.get("credits")
 
-            logger.info(f"[Strict] Finished checking. Found {len(good_proxy_results)} potential good proxies.")
+                        # Check if the 'proxy' key is set (meaning it passed checks)
+                        if result.get("proxy"):
+                            result['used'] = result.get('ip') in used_ips_list # Check against live used IP list
+                            good_proxy_results.append(result)
 
-        # --- Update API Credits ---
-        credit_msg = "" # Initialize credit message
-        if last_credits: # Check if we got *any* credit info
-            try:
-                used = last_credits.get("used", "N/A")
-                remaining = last_credits.get("remaining", "N/A")
+                except Exception as exc:
+                    logger.error(f'[Strict] A proxy check task generated an exception: {exc}', exc_info=False)
 
-                if used != "N/A" and remaining != "N/A":
-                    if update_setting("API_CREDITS_USED", str(used)) and \
-                       update_setting("API_CREDITS_REMAINING", str(remaining)):
-                        logger.info(f"Updated API credits: Used={used}, Remaining={remaining}")
-                        credit_msg = f" (API Credits Updated: {remaining} left)"
-                    else:
-                        logger.error("Failed to update API credits in Google Sheet.")
-                        credit_msg = " (Failed to update API credits in Sheet)"
+        logger.info(f"[Strict] Finished checking. Found {len(good_proxy_results)} proxies passing strict filter.")
+    else:
+        logger.info("[Strict] No valid proxies left to check after prefiltering.")
+
+    # --- Update API Credits in Google Sheet ---
+    credit_msg = ""
+    if last_credits: # Check if we received any credit info
+        try:
+            used = last_credits.get("used", "N/A")
+            remaining = last_credits.get("remaining", "N/A")
+
+            # Update sheet only if we have valid numbers
+            if used != "N/A" and remaining != "N/A":
+                # Perform updates sequentially
+                update_used_ok = update_setting("API_CREDITS_USED", str(used))
+                update_remaining_ok = update_setting("API_CREDITS_REMAINING", str(remaining))
+
+                if update_used_ok and update_remaining_ok:
+                    logger.info(f"Successfully updated API credits in Google Sheet: Used={used}, Remaining={remaining}")
+                    credit_msg = f" (API Credits Updated: {remaining} left)"
                 else:
-                    logger.warning("Credits block found, but 'used' or 'remaining' keys were missing.")
-                    credit_msg = " (Could not parse API credits)"
+                    logger.error("Failed to update one or both API credit settings in Google Sheet.")
+                    credit_msg = " (Failed to update API credits in Sheet)"
+            else:
+                logger.warning("Received credits block, but 'used' or 'remaining' keys were missing or 'N/A'.")
+                credit_msg = " (Could not parse API credits)"
 
-            except Exception as e:
-                logger.error(f"Error updating API credits: {e}")
-                credit_msg = " (Error updating API credits)"
-        else:
-             if processed_count > 0: # Only log/message if proxies were actually checked
-                logger.warning("No credit information was returned from any API call during strict check.")
-                credit_msg = " (Could not get API credit info)"
+        except Exception as e:
+            logger.error(f"Error during API credit update process: {e}")
+            credit_msg = " (Error updating API credits)"
+    else:
+         if processed_count > 0: # Only mention if checks were run
+            logger.warning("No credit information was returned from any API call during strict check.")
+            credit_msg = " (Could not get API credit info)"
 
-        # --- Final Processing and Message Construction ---
-        final_results_display = sorted(good_proxy_results, key=lambda x: x['used'])
-        good_count_final = len([r for r in final_results_display if not r['used']])
-        used_count_final = len([r for r in final_results_display if r['used']])
-        invalid_format_count = len(invalid_format_proxies)
-        checks_attempted = processed_count
+    # --- Final Processing and Message Construction ---
+    final_results_display = sorted(good_proxy_results, key=lambda x: x['used'])
+    good_count_final = len([r for r in final_results_display if not r['used']])
+    used_count_final = len([r for r in final_results_display if r['used']])
+    invalid_format_count = len(invalid_format_proxies)
+    checks_attempted = processed_count # All proxies submitted to executor were attempted
 
-        format_warning = f" ({invalid_format_count} invalid format)" if invalid_format_count > 0 else ""
-        prefilter_msg = f" (Skipped {used_count_prefilter} used cache, {bad_count_prefilter} bad cache)." if used_count_prefilter > 0 or bad_count_prefilter > 0 else ""
+    format_warning = f" ({invalid_format_count} invalid format)" if invalid_format_count > 0 else ""
+    prefilter_msg = ""
+    if used_count_prefilter > 0 or bad_count_prefilter > 0:
+        prefilter_msg = f" (Skipped {used_count_prefilter} from used cache, {bad_count_prefilter} from bad cache)."
 
-        if good_count_final > 0 or used_count_final > 0:
-            main_message = f"✅ Checked {checks_attempted} proxies ({input_count} submitted{format_warning}). Found {good_count_final} usable proxies ({used_count_final} previously used IPs found).{truncation_warning}{prefilter_msg}"
-        else:
-             main_message = f"⚠️ Checked {checks_attempted} proxies ({input_count} submitted{format_warning}). No new usable proxies found.{truncation_warning}{prefilter_msg}"
+    if good_count_final > 0 or used_count_final > 0:
+        main_message = f"✅ Checked {checks_attempted} proxies ({input_count} submitted{format_warning}). Found {good_count_final} usable proxies passing strict filter ({used_count_final} previously used IPs found)."
+    else:
+         main_message = f"⚠️ Checked {checks_attempted} proxies ({input_count} submitted{format_warning}). No new usable proxies found passing strict filter."
 
-        message = main_message + credit_msg # Combine messages
+    # Combine main result message with credit update status and truncation/filter info
+    message = main_message + truncation_warning + prefilter_msg + credit_msg
+    # Prepend any initial cache load warnings
+    message = ("Warning: " + " ".join(cache_load_warnings) + " " + message) if cache_load_warnings else message
 
-        results = final_results_display
-        end_time = time.time()
-        logger.info(f"[Strict] Request processing took {end_time - start_time:.2f} seconds.")
+
+    results = final_results_display # Set results for template display
+    end_time = time.time()
+    logger.info(f"[Strict] Request processing took {end_time - start_time:.2f} seconds.")
 
     return render_template("admin_test.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings)
 
@@ -620,66 +925,74 @@ def admin_test():
 @admin_required
 def admin_settings():
     """Admin settings page."""
-    try: current_settings = get_app_settings()
-    except Exception as e: logger.critical(f"CRITICAL ERROR getting settings in ADMIN: {e}", exc_info=True); flash("Could not load settings.", "danger"); return render_template("admin_settings.html", settings=DEFAULT_SETTINGS, message=None)
+    try:
+        current_settings = get_app_settings()
+    except Exception as e:
+        logger.critical(f"CRITICAL ERROR getting settings for admin settings page: {e}", exc_info=True)
+        flash("Could not load current settings.", "danger")
+        # Render with defaults on critical error
+        return render_template("admin_settings.html", settings=DEFAULT_SETTINGS, message=None)
 
     if request.method == "POST":
+        form_settings = {} # Store validated form values
+        error_msg = None
         try:
-            max_paste = int(request.form.get("max_paste", DEFAULT_SETTINGS["MAX_PASTE"]))
-            fraud_score_level = int(request.form.get("fraud_score_level", DEFAULT_SETTINGS["FRAUD_SCORE_LEVEL"]))
-            strict_fraud_score_level = int(request.form.get("strict_fraud_score_level", DEFAULT_SETTINGS["STRICT_FRAUD_SCORE_LEVEL"]))
-            max_workers = int(request.form.get("max_workers", DEFAULT_SETTINGS["MAX_WORKERS"]))
-            scamalytics_api_key = request.form.get("scamalytics_api_key", "").strip()
-            scamalytics_api_url = request.form.get("scamalytics_api_url", "").strip()
-            scamalytics_username = request.form.get("scamalytics_username", "").strip()
+            # Validate and convert form inputs
+            form_settings["MAX_PASTE"] = int(request.form.get("max_paste", DEFAULT_SETTINGS["MAX_PASTE"]))
+            form_settings["FRAUD_SCORE_LEVEL"] = int(request.form.get("fraud_score_level", DEFAULT_SETTINGS["FRAUD_SCORE_LEVEL"]))
+            form_settings["STRICT_FRAUD_SCORE_LEVEL"] = int(request.form.get("strict_fraud_score_level", DEFAULT_SETTINGS["STRICT_FRAUD_SCORE_LEVEL"]))
+            form_settings["MAX_WORKERS"] = int(request.form.get("max_workers", DEFAULT_SETTINGS["MAX_WORKERS"]))
+            form_settings["SCAMALYTICS_API_KEY"] = request.form.get("scamalytics_api_key", "").strip()
+            form_settings["SCAMALYTICS_API_URL"] = request.form.get("scamalytics_api_url", "").strip()
+            form_settings["SCAMALYTICS_USERNAME"] = request.form.get("scamalytics_username", "").strip()
+
+            # Input constraints validation
+            if not (5 <= form_settings["MAX_PASTE"] <= 100): error_msg = "Max proxies must be between 5 and 100."
+            elif not (0 <= form_settings["FRAUD_SCORE_LEVEL"] <= 100): error_msg = "User Fraud score must be between 0 and 100."
+            elif not (0 <= form_settings["STRICT_FRAUD_SCORE_LEVEL"] <= 100): error_msg = "Strict Fraud score must be between 0 and 100."
+            elif not (1 <= form_settings["MAX_WORKERS"] <= 100): error_msg = "Max workers must be between 1 and 100."
+            elif len(form_settings["SCAMALYTICS_API_KEY"]) < 5: error_msg = "API Key seems too short."
+            elif not form_settings["SCAMALYTICS_API_URL"].startswith("http"): error_msg = "API URL must start with http or https."
+            elif len(form_settings["SCAMALYTICS_USERNAME"]) < 3: error_msg = "Username seems too short."
 
         except ValueError:
-             flash("Invalid input: all scores and counts must be numbers.", "danger")
-             return render_template("admin_settings.html", settings=current_settings, message=None)
-
-        error_msg = None
-        if not (5 <= max_paste <= 100): error_msg = "Max proxies must be 5-100"
-        elif not (0 <= fraud_score_level <= 100): error_msg = "Fraud score must be 0-100"
-        elif not (0 <= strict_fraud_score_level <= 100): error_msg = "Strict Fraud score must be 0-100"
-        elif not (1 <= max_workers <= 100): error_msg = "Max workers must be 1-100"
-        elif len(scamalytics_api_key) < 5: error_msg = "API Key too short"
-        elif not scamalytics_api_url.startswith("http"): error_msg = "API URL invalid"
-        elif len(scamalytics_username) < 3: error_msg = "Username too short"
+             error_msg = "Invalid input: Score levels, Max Proxies, and Max Workers must be whole numbers."
 
         if not error_msg:
-            logger.info("Attempting settings update..."); success = True
-            if not update_setting("MAX_PASTE", str(max_paste)): success = False
-            if not update_setting("FRAUD_SCORE_LEVEL", str(fraud_score_level)): success = False
-            if not update_setting("STRICT_FRAUD_SCORE_LEVEL", str(strict_fraud_score_level)): success = False
-            if not update_setting("MAX_WORKERS", str(max_workers)): success = False
-            if not update_setting("SCAMALYTICS_API_KEY", scamalytics_api_key): success = False
-            if not update_setting("SCAMALYTICS_API_URL", scamalytics_api_url): success = False
-            if not update_setting("SCAMALYTICS_USERNAME", scamalytics_username): success = False
+            logger.info("Attempting settings update via admin panel...")
+            success_count = 0
+            settings_to_update = [
+                ("MAX_PASTE", form_settings["MAX_PASTE"]),
+                ("FRAUD_SCORE_LEVEL", form_settings["FRAUD_SCORE_LEVEL"]),
+                ("STRICT_FRAUD_SCORE_LEVEL", form_settings["STRICT_FRAUD_SCORE_LEVEL"]),
+                ("MAX_WORKERS", form_settings["MAX_WORKERS"]),
+                ("SCAMALYTICS_API_KEY", form_settings["SCAMALYTICS_API_KEY"]),
+                ("SCAMALYTICS_API_URL", form_settings["SCAMALYTICS_API_URL"]),
+                ("SCAMALYTICS_USERNAME", form_settings["SCAMALYTICS_USERNAME"]),
+            ]
 
-            if success:
-                logger.info("Settings updated.");
+            for key, value in settings_to_update:
+                if update_setting(key, str(value)): # Ensure value is string for sheet
+                    success_count += 1
+                else:
+                    logger.error(f"Failed to update setting '{key}' in Google Sheet.")
+
+            if success_count == len(settings_to_update):
+                logger.info("All settings updated successfully.")
                 flash("Settings updated successfully", "success")
-                current_settings = get_app_settings() # Refresh after save
+                current_settings = get_app_settings() # Refresh view with saved settings
             else:
-                logger.error("Failed GSheet update.");
-                error_msg = "Error saving settings."
+                error_msg = f"Error saving settings: {len(settings_to_update) - success_count} update(s) failed. Check logs."
+                flash(error_msg, "danger")
+                # Keep form values for correction, merge with non-form settings
+                current_settings.update(form_settings)
 
-        if error_msg:
+        else: # Validation failed
              flash(error_msg, "danger")
-             # Keep submitted values on error for display
-             current_settings = {
-                 "MAX_PASTE": max_paste,
-                 "FRAUD_SCORE_LEVEL": fraud_score_level,
-                 "STRICT_FRAUD_SCORE_LEVEL": strict_fraud_score_level,
-                 "MAX_WORKERS": max_workers,
-                 "SCAMALYTICS_API_KEY": scamalytics_api_key,
-                 "SCAMALYTICS_API_URL": scamalytics_api_url,
-                 "SCAMALYTICS_USERNAME": scamalytics_username,
-                 "ANNOUNCEMENT": current_settings.get("ANNOUNCEMENT"), # Keep existing non-form values
-                 "API_CREDITS_USED": current_settings.get("API_CREDITS_USED"),
-                 "API_CREDITS_REMAINING": current_settings.get("API_CREDITS_REMAINING")
-             }
+             # Keep form values for correction, merge with non-form settings
+             current_settings.update(form_settings)
 
+    # Render template with current (or submitted-on-error) settings
     return render_template("admin_settings.html", settings=current_settings, message=None)
 
 
@@ -694,20 +1007,20 @@ def admin_announcement():
                 flash("Announcement updated successfully.", "success")
                 logger.info(f"Admin '{current_user.username}' updated announcement.")
             else:
-                flash("Error saving announcement to Google Sheet.", "danger")
+                flash("Error saving announcement to Google Sheet. Check logs.", "danger")
                 logger.error("Failed to save announcement to GSheet.")
 
         elif "delete_announcement" in request.form:
-            if update_setting("ANNOUNCEMENT", ""):
+            if update_setting("ANNOUNCEMENT", ""): # Clear by saving empty string
                 flash("Announcement cleared successfully.", "success")
                 logger.info(f"Admin '{current_user.username}' cleared announcement.")
             else:
-                flash("Error clearing announcement in Google Sheet.", "danger")
+                flash("Error clearing announcement in Google Sheet. Check logs.", "danger")
                 logger.error("Failed to clear announcement in GSheet.")
 
     except Exception as e:
         logger.error(f"Error in admin_announcement route: {e}", exc_info=True)
-        flash("An unexpected error occurred.", "danger")
+        flash("An unexpected error occurred while managing the announcement.", "danger")
 
     return redirect(url_for("admin"))
 
@@ -715,38 +1028,57 @@ def admin_announcement():
 @app.route("/delete-used-ip/<ip>")
 @admin_required
 def delete_used_ip_route(ip):
-    """Deletes a used IP record."""
+    """Deletes a used IP record from the Google Sheet."""
+    if not ip: # Basic validation
+         flash("Invalid IP provided for deletion.", "warning")
+         return redirect(url_for("admin"))
     try:
-        if delete_used_ip(ip): flash(f"Removed record for {ip}.", "success"); logger.info(f"Admin deleted IP: {ip}")
-        else: flash(f"Could not find record for {ip}.", "warning"); logger.warning(f"Admin delete failed, IP not found: {ip}")
-    except Exception as e: logger.error(f"Error deleting IP {ip}: {e}", exc_info=True); flash("Error deleting record.", "danger")
+        if delete_used_ip(ip):
+            flash(f"Successfully removed record for IP {ip}.", "success")
+            logger.info(f"Admin '{current_user.username}' deleted used IP record: {ip}")
+        else:
+            # delete_used_ip logs specific errors/not found
+            flash(f"Could not delete record for IP {ip}. It might not exist or an error occurred.", "warning")
+    except Exception as e:
+        logger.error(f"Unexpected error in delete_used_ip_route for IP {ip}: {e}", exc_info=True)
+        flash("An server error occurred while trying to delete the record.", "danger")
     return redirect(url_for("admin"))
 
 
 @app.route('/static/<path:path>')
 def send_static(path):
-    """Serves static files."""
+    """Serves static files (if any)."""
+    # This is generally handled by Vercel for static assets,
+    # but keep it for local development or specific needs.
     return send_from_directory('static', path)
 
 
 # --- Error Handling ---
 @app.errorhandler(404)
 def page_not_found(e):
-    logger.warning(f"404 Not Found: {request.path}")
+    """Handles 404 Not Found errors."""
+    logger.warning(f"404 Not Found access attempt: {request.path}")
     if current_user.is_authenticated:
-        if 'favicon' in request.path:
-             return '', 404 # Return empty 404 for missing favicons
-        return render_template('error.html', error=f'Page Not Found: {request.path}'), 404
+        # Don't render full error page for missing assets like favicon
+        if request.path.endswith(('.ico', '.png', '.css', '.js')):
+             return '', 404 # Return empty 404
+        return render_template('error.html', error=f'The requested page ({request.path}) was not found.'), 404
     else:
-        flash("Please log in to access this page.", "warning")
+        # Redirect unauthenticated users trying to access non-existent pages to login
+        flash("Page not found or access denied. Please log in.", "warning")
         return redirect(url_for('login'))
 
 
 @app.errorhandler(500)
 def internal_server_error(e):
-    logger.error(f"500 Internal Server Error: {e}", exc_info=True)
-    return render_template('error.html', error='An internal server error occurred. Please try again later.'), 500
+    """Handles 500 Internal Server Errors."""
+    # Log the full exception details for debugging
+    logger.error(f"500 Internal Server Error processing request {request.path}: {e}", exc_info=True)
+    # Provide a generic error message to the user
+    return render_template('error.html', error='An internal server error occurred. The administrator has been notified.'), 500
 
 # --- Main Execution ---
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    # Use Gunicorn or another WSGI server in production instead of app.run()
+    # For local development:
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False) # Use PORT env var if available
