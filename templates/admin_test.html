@@ -7,10 +7,10 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body { background-color: #f0f2f5; font-family: sans-serif; padding-bottom: 80px; }
-        .container { margin-top: 50px; max-width: 900px; /* Increased max-width for table */ }
+        .container { margin-top: 50px; max-width: 950px; /* Wider for more columns */ }
         .textarea-box { height: 200px; }
-        .copy-btn { font-size: 12px; } /* Removed float */
-        .proxy-masked { font-family: monospace; word-break: break-all; /* Prevent long proxies breaking layout */ }
+        .copy-btn { font-size: 12px; }
+        .proxy-masked { font-family: monospace; word-break: break-all; }
         .copy-btn.disabled { opacity: 0.5; cursor: not-allowed; }
         .proxy-counter { position: absolute; right: 20px; bottom: 10px; font-size: 0.85rem;
                          color: #6c757d; background: rgba(255, 255, 255, 0.8); padding: 2px 5px; border-radius: 3px; }
@@ -20,9 +20,9 @@
         .textarea-container { position: relative; }
         .alert-dismissible .btn-close { top: 0; right: 0; z-index: 2; padding: 1.25rem 1rem;}
         /* Table specific styles */
-        .table th, .table td { vertical-align: middle; }
-        .table th { font-size: 0.9rem; }
-        .table td { font-size: 0.85rem; }
+        .table th, .table td { vertical-align: middle; padding: 0.4rem; /* Adjust padding */ }
+        .table th { font-size: 0.8rem; white-space: nowrap; /* Prevent headers wrapping */ }
+        .table td { font-size: 0.75rem; /* Slightly smaller data */ }
         .table .text-end { text-align: right !important; }
         .table .text-center { text-align: center !important; }
     </style>
@@ -37,7 +37,7 @@
         </div>
 
         <div class="alert alert-warning">
-          <strong>Note:</strong> This page uses advanced filtering (low risk, no datacenter/vpn, etc.) and updates API credit counts.
+          <strong>Note:</strong> This page uses advanced filtering (low risk, score <= {{ settings.STRICT_FRAUD_SCORE_LEVEL }}, no datacenter/vpn/blacklist flags, etc.) and updates API credit counts.
         </div>
 
         {% with messages = get_flashed_messages(with_categories=true) %}
@@ -51,14 +51,14 @@
             {% endif %}
         {% endwith %}
 
-        {% if message %}
+        {% if message is defined and message %}
         <div class="alert alert-info">{{ message }}</div>
         {% endif %}
 
         <div class="accordion" id="proxyAccordion">
             <div class="accordion-item">
                 <h2 class="accordion-header" id="formHeading">
-                    <button class="accordion-button {% if results is defined and results %}collapsed{% endif %}" type="button"
+                     <button class="accordion-button {% if results is defined and results %}collapsed{% endif %}" type="button"
                             data-bs-toggle="collapse" data-bs-target="#proxyForm"
                             aria-expanded="{{ 'false' if results is defined and results else 'true' }}" aria-controls="proxyForm">
                         Paste or Upload Proxies (Max {{ max_paste }})
@@ -89,7 +89,7 @@
             </div>
         </div>
 
-        {% if results is defined and results is not none %}
+        {% if results is defined and results is not none %} {# Check if results exist #}
         <hr>
         <h5 class="mt-4">✅ Good Proxies (Strict Filter - Score <= {{ settings.STRICT_FRAUD_SCORE_LEVEL }})</h5>
 
@@ -97,13 +97,14 @@
             <table class="table table-sm table-bordered table-hover">
                 <thead class="table-light">
                     <tr>
-                        <th style="width: 35%;">Proxy (Masked)</th>
+                        <th style="width: 28%;">Proxy (Masked)</th>
+                        <th style="width: 12%;">IP Address</th>
                         <th style="width: 8%;">Country</th>
-                        <th style="width: 14%;">State</th>
-                        <th style="width: 14%;">City</th>
-                        <th style="width: 9%;">Postcode</th>
-                        <th style="width: 8%;" class="text-center">Score</th>
-                        <th style="width: 12%;" class="text-end">Action</th>
+                        <th style="width: 10%;">State</th>
+                        <th style="width: 10%;">City</th>
+                        <th style="width: 8%;">Postcode</th>
+                        <th style="width: 7%;" class="text-center">Score</th>
+                        <th style="width: 17%;" class="text-end">Action</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -114,6 +115,7 @@
                                 {{ item.proxy.split(':')[0] }}:{{ item.proxy.split(':')[1] }}:********
                             </span>
                         </td>
+                        <td>{{ item.ip | default('N/A') }}</td>
                         <td>{{ item.geo.country_code | default('N/A') }}</td>
                         <td>{{ item.geo.state | default('N/A') }}</td>
                         <td>{{ item.geo.city | default('N/A') }}</td>
@@ -130,19 +132,19 @@
                             </button>
                         </td>
                     </tr>
-                    {% else %}
+                    {% else %} {# Use else for the loop #}
                     <tr>
-                        <td colspan="7" class="text-center text-muted">No proxies passed the strict filter in this batch.</td>
+                        <td colspan="8" class="text-center text-muted">No proxies passed the strict filter in this batch.</td>
                     </tr>
-                    {% endfor %}
+                    {% endfor %} {# End the loop #}
                 </tbody>
             </table>
         </div>
-        {% endif %}
+        {% endif %} {# End check if results exist #}
     </div>
 
     <script>
-        let trackedProxies = new Set();
+        let trackedProxiesThisSession = new Set();
         const MAX_LINES = {{ max_paste }};
         let fileLineCount = 0;
 
@@ -153,23 +155,34 @@
             counter.textContent = `${count}/${MAX_LINES}`;
             const submitBtn = document.getElementById('submitBtn');
 
-            if (count > MAX_LINES) {
+            const isTextAreaTooLong = count > MAX_LINES;
+            const isFileTooLong = fileLineCount > MAX_LINES;
+            const isTextAreaEmpty = count === 0;
+            const isFileEmpty = fileLineCount === 0;
+
+            if (isTextAreaTooLong) {
                 counter.className = 'proxy-counter counter-error';
-                submitBtn.disabled = true;
                 textarea.classList.add('is-invalid');
             } else if (count === MAX_LINES) {
                 counter.className = 'proxy-counter counter-warning';
-                submitBtn.disabled = false;
                  textarea.classList.remove('is-invalid');
             } else {
                 counter.className = 'proxy-counter counter-ok';
-                submitBtn.disabled = (count === 0 && fileLineCount === 0) || (count === 0 && fileLineCount > MAX_LINES);
                  textarea.classList.remove('is-invalid');
             }
 
-             if (count > 0) {
+            if (isTextAreaTooLong || (isFileTooLong && isTextAreaEmpty)) {
+                 submitBtn.disabled = true;
+            } else if (isTextAreaEmpty && isFileEmpty) {
+                 submitBtn.disabled = true;
+            }
+             else {
+                 submitBtn.disabled = false;
+             }
+
+
+             if (!isTextAreaEmpty) {
                  document.getElementById('fileCounter').textContent = "File upload will be ignored if text is present.";
-                 if (fileLineCount > MAX_LINES) submitBtn.disabled = true;
              } else {
                  checkFileLines(document.getElementById('proxyfile'));
              }
@@ -180,31 +193,33 @@
             const fileCounter = document.getElementById('fileCounter');
             const submitBtn = document.getElementById('submitBtn');
             const textAreaCount = document.getElementById('proxytext').value.split('\n').filter(line => line.trim() !== '').length;
+            const isTextAreaEmpty = textAreaCount === 0;
 
             if (file) {
                 const reader = new FileReader();
                 reader.onload = function(e) {
                     const lines = e.target.result.split('\n').filter(line => line.trim() !== '');
                     fileLineCount = lines.length;
+                    const isFileTooLong = fileLineCount > MAX_LINES;
 
-                    if (fileLineCount > MAX_LINES) {
+                    if (isFileTooLong) {
                         fileCounter.innerHTML = `<span class="text-danger">File contains: ${fileLineCount} proxies (max ${MAX_LINES})</span>`;
-                        if (textAreaCount === 0) submitBtn.disabled = true;
+                        if(isTextAreaEmpty) submitBtn.disabled = true;
                     } else {
                         fileCounter.innerHTML = `File contains: <span class="text-success">${fileLineCount}</span> proxies`;
-                        if (textAreaCount === 0 || textAreaCount <= MAX_LINES) submitBtn.disabled = false;
+                         if (isTextAreaEmpty || textAreaCount <= MAX_LINES) submitBtn.disabled = false;
                     }
                 };
                  reader.onerror = function() {
                      fileCounter.innerHTML = `<span class="text-danger">Error reading file.</span>`;
                      fileLineCount = 0;
-                     if (textAreaCount === 0) submitBtn.disabled = true;
+                     if (isTextAreaEmpty) submitBtn.disabled = true;
                  };
                 reader.readAsText(file);
             } else {
                 fileLineCount = 0;
                 fileCounter.textContent = "File contains: 0 proxies";
-                if (textAreaCount === 0) submitBtn.disabled = true;
+                if (isTextAreaEmpty) submitBtn.disabled = true;
                 else submitBtn.disabled = (textAreaCount > MAX_LINES);
             }
         }
@@ -217,7 +232,7 @@
                 navigator.clipboard.writeText(fullProxy).then(() => {
                     showCopiedMessage(element, clickedButton);
                 }).catch(err => {
-                    console.error('Async: Could not copy text: ', err);
+                    console.error('Async Clipboard API failed: ', err);
                     copyUsingExecCommand(fullProxy, element, clickedButton);
                 });
             } else {
@@ -228,9 +243,9 @@
         function copyUsingExecCommand(textToCopy, element, clickedButton) {
             const textArea = document.createElement("textarea");
             textArea.value = textToCopy;
-            textArea.style.top = "0";
-            textArea.style.left = "0";
             textArea.style.position = "fixed";
+            textArea.style.top = "-9999px";
+            textArea.style.left = "-9999px";
             document.body.appendChild(textArea);
             textArea.focus();
             textArea.select();
@@ -240,57 +255,61 @@
                     showCopiedMessage(element, clickedButton);
                 }
             } catch (err) {
-                console.error('Fallback: Oops, unable to copy', err);
+                console.error('Fallback execCommand exception:', err);
             }
             document.body.removeChild(textArea);
         }
 
        function showCopiedMessage(element, clickedButton) {
-            // Disable just the clicked button temporarily
+            const isPermanentlyDisabled = clickedButton.classList.contains('disabled');
             clickedButton.disabled = true;
             clickedButton.textContent = 'Copied!';
             clickedButton.classList.remove('btn-outline-secondary');
             clickedButton.classList.add('btn-success');
-
-            // Re-enable the button after a delay, only if it wasn't permanently disabled
             setTimeout(() => {
-                 if (!clickedButton.classList.contains('disabled')) {
+                 if (!isPermanentlyDisabled) {
                     clickedButton.disabled = false;
                     clickedButton.textContent = 'Copy';
                     clickedButton.classList.remove('btn-success');
                     clickedButton.classList.add('btn-outline-secondary');
                  }
-             }, 3000); // Re-enable after 3 seconds
+             }, 3000);
        }
 
-
         function trackUsedProxy(proxy) {
-            console.log("Tracking used:", proxy);
+            if (trackedProxiesThisSession.has(proxy)) {
+                console.log("Already tracked in this session:", proxy);
+                return;
+            }
+            console.log("Tracking used via API:", proxy);
             fetch('/track-used', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', },
                 body: JSON.stringify({proxy: proxy})
             })
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    console.error(`Error tracking used proxy: ${response.status} ${response.statusText}`);
+                    return response.json().then(errData => { console.error("Server error details:", errData); });
+                }
+                return response.json();
+            })
             .then(data => {
-                if (data.status !== 'success') {
-                    console.error('Error tracking used proxy:', data.message);
-                    // Optionally provide user feedback here if tracking fails
-                } else {
-                    console.log("Successfully tracked used proxy:", proxy);
+                if (data && data.status === 'success') {
+                    console.log("Successfully tracked used proxy via API:", proxy);
+                    trackedProxiesThisSession.add(proxy);
+                } else if (data) {
+                    console.error('API reported error tracking used proxy:', data.message || 'Unknown error');
                 }
             })
             .catch(error => {
-                console.error('Network error tracking used proxy:', error);
-                // Optionally provide user feedback here on network error
+                console.error('Network error occurred while tracking used proxy:', error);
             });
         }
 
-        // Initialize counter and button state on page load
         document.addEventListener('DOMContentLoaded', () => {
              updateProxyCounter(document.getElementById('proxytext'));
              checkFileLines(document.getElementById('proxyfile'));
-             // Note: No automatic result clearing on this admin page
          });
 
     </script>

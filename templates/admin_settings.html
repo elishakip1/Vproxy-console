@@ -1,318 +1,251 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Admin Strict Test - Proxy Checker</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        body { background-color: #f0f2f5; font-family: sans-serif; padding-bottom: 80px; }
-        .container { margin-top: 50px; max-width: 950px; /* Wider for more columns */ }
-        .textarea-box { height: 200px; }
-        .copy-btn { font-size: 12px; }
-        .proxy-masked { font-family: monospace; word-break: break-all; }
-        .copy-btn.disabled { opacity: 0.5; cursor: not-allowed; }
-        .proxy-counter { position: absolute; right: 20px; bottom: 10px; font-size: 0.85rem;
-                         color: #6c757d; background: rgba(255, 255, 255, 0.8); padding: 2px 5px; border-radius: 3px; }
-        .counter-error { color: #dc3545; font-weight: bold; }
-        .counter-warning { color: #ffc107; font-weight: bold; }
-        .counter-ok { color: #198754; }
-        .textarea-container { position: relative; }
-        .alert-dismissible .btn-close { top: 0; right: 0; z-index: 2; padding: 1.25rem 1rem;}
-        /* Table specific styles */
-        .table th, .table td { vertical-align: middle; padding: 0.4rem; /* Adjust padding */ }
-        .table th { font-size: 0.8rem; white-space: nowrap; /* Prevent headers wrapping */ }
-        .table td { font-size: 0.75rem; /* Slightly smaller data */ }
-        .table .text-end { text-align: right !important; }
-        .table .text-center { text-align: center !important; }
-    </style>
+  <meta charset="UTF-8">
+  <title>Settings - Proxy Checker</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { padding-bottom: 80px; } /* Add padding for notepad */
+
+    /* Notepad Widget Styles */
+    #notepad-widget {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        z-index: 1050;
+    }
+    #notepad-toggle-btn {
+        background-color: #0d6efd; /* Primary color */
+        color: white;
+        border: none;
+        border-radius: 50%;
+        width: 50px;
+        height: 50px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+    #notepad-toggle-btn:hover {
+        background-color: #0b5ed7;
+    }
+    #notepad-container {
+        position: absolute;
+        bottom: 65px; /* Above the toggle button */
+        right: 0;
+        width: 300px;
+        height: 350px;
+        background-color: #ffffff;
+        border-radius: 8px;
+        box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        transition: all 0.3s ease-in-out;
+        opacity: 1;
+        transform: translateY(0);
+        pointer-events: auto;
+    }
+    #notepad-container.hidden {
+        /* Use opacity and transform for smooth hide/show */
+        opacity: 0;
+        transform: translateY(10px);
+        pointer-events: none;
+        /* Keep display: flex, just control visibility with opacity/transform */
+    }
+    #notepad-header {
+        background-color: #f8f9fa;
+        padding: 10px 15px;
+        border-bottom: 1px solid #dee2e6;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-weight: bold;
+        cursor: grab; /* Indicate draggable */
+    }
+    #notepad-close-btn {
+        background: none;
+        border: none;
+        font-size: 1.5rem;
+        line-height: 1;
+        padding: 0 5px;
+        cursor: pointer;
+        color: #6c757d;
+    }
+    #notepad-close-btn:hover {
+        color: #343a40;
+    }
+    #notepad-textarea {
+        flex-grow: 1;
+        border: none;
+        padding: 15px;
+        resize: none;
+        font-family: sans-serif;
+        font-size: 14px;
+        color: #212529;
+    }
+    #notepad-textarea:focus {
+        outline: none;
+    }
+  </style>
 </head>
 <body>
-    <div class="container bg-white p-4 rounded shadow-sm">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h2 class="mb-0">🛡️ Admin Strict Tester</h2>
-            <div> <a href="{{ url_for('admin') }}" class="btn btn-outline-primary btn-sm">Admin Panel</a>
-                <a href="{{ url_for('logout') }}" class="btn btn-outline-secondary btn-sm">Logout ({{ current_user.username }})</a>
+  <div class="container py-4">
+    <h2 class="mb-4">⚙️ Application Settings</h2>
+
+    <!-- Flash messages for settings page -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+            <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
-        </div>
-
-        <div class="alert alert-warning">
-          <strong>Note:</strong> This page uses advanced filtering (low risk, score <= {{ settings.STRICT_FRAUD_SCORE_LEVEL }}, no datacenter/vpn/blacklist flags, etc.) and updates API credit counts.
-        </div>
-
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-                    {{ message }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                </div>
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
-
-        {% if message is defined and message %}
-        <div class="alert alert-info">{{ message }}</div>
+            {% endfor %}
         {% endif %}
+    {% endwith %}
 
-        <div class="accordion" id="proxyAccordion">
-            <div class="accordion-item">
-                <h2 class="accordion-header" id="formHeading">
-                     <button class="accordion-button {% if results is defined and results %}collapsed{% endif %}" type="button"
-                            data-bs-toggle="collapse" data-bs-target="#proxyForm"
-                            aria-expanded="{{ 'false' if results is defined and results else 'true' }}" aria-controls="proxyForm">
-                        Paste or Upload Proxies (Max {{ max_paste }})
-                    </button>
-                </h2>
-                <div id="proxyForm" class="accordion-collapse collapse {% if results is not defined or not results %}show{% endif %}"
-                     aria-labelledby="formHeading" data-bs-parent="#proxyAccordion">
-                    <div class="accordion-body">
-                        <form method="POST" action="{{ url_for('admin_test') }}" enctype="multipart/form-data" id="proxyFormElement">
-                            <div class="mb-3">
-                                <label for="proxyfile" class="form-label">Upload Proxy File (.txt)</label>
-                                <input type="file" class="form-control" name="proxyfile" id="proxyfile" accept=".txt" onchange="checkFileLines(this)">
-                                <div class="form-text" id="fileCounter">File contains: 0 proxies</div>
-                            </div>
-                            <div class="mb-3">
-                                <label for="proxytext" class="form-label">Or Paste Proxies (one per line)</label>
-                                <div class="textarea-container">
-                                    <textarea name="proxytext" id="proxytext" class="form-control textarea-box"
-                                              placeholder="Paste proxies here (e.g., host:port:user:pass)..."
-                                              oninput="updateProxyCounter(this)"></textarea>
-                                    <div class="proxy-counter" id="proxyCounter">0/{{ max_paste }}</div>
-                                </div>
-                            </div>
-                            <button type="submit" id="submitBtn" class="btn btn-primary w-100">Run Strict Test</button>
-                        </form>
-                    </div>
-                </div>
-            </div>
-        </div>
+    <div class="card mb-4">
+      <div class="card-header bg-primary text-white">
+        <h5 class="mb-0">Proxy Checking Settings</h5>
+      </div>
+      <div class="card-body">
+        <form method="POST">
+          <div class="mb-3">
+            <label for="max_paste" class="form-label">
+              Max Proxies Per Check
+            </label>
+            <input type="number" class="form-control" id="max_paste"
+                   name="max_paste" value="{{ settings.MAX_PASTE }}" min="5" max="100">
+            <div class="form-text">Maximum number of proxies users can submit at once (5-100)</div>
+          </div>
 
-        {% if results is defined and results is not none %} {# Check if results exist #}
-        <hr>
-        <h5 class="mt-4">✅ Good Proxies (Strict Filter - Score <= {{ settings.STRICT_FRAUD_SCORE_LEVEL }})</h5>
+          <div class="mb-3">
+            <label for="fraud_score_level" class="form-label">
+              Maximum Fraud Score (User Page)
+            </label>
+            <input type="number" class="form-control" id="fraud_score_level"
+                   name="fraud_score_level" value="{{ settings.FRAUD_SCORE_LEVEL }}" min="0" max="100">
+            <div class="form-text">For the main/public checker page (0-100)</div>
+          </div>
 
-        <div class="table-responsive mt-2">
-            <table class="table table-sm table-bordered table-hover">
-                <thead class="table-light">
-                    <tr>
-                        <th style="width: 28%;">Proxy (Masked)</th>
-                        <th style="width: 12%;">IP Address</th>
-                        <th style="width: 8%;">Country</th>
-                        <th style="width: 10%;">State</th>
-                        <th style="width: 10%;">City</th>
-                        <th style="width: 8%;">Postcode</th>
-                        <th style="width: 7%;" class="text-center">Score</th>
-                        <th style="width: 17%;" class="text-end">Action</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for item in results %}
-                    <tr>
-                        <td>
-                            <span class="proxy-masked" id="proxy-{{ loop.index }}" data-full-proxy="{{ item.proxy }}">
-                                {{ item.proxy.split(':')[0] }}:{{ item.proxy.split(':')[1] }}:********
-                            </span>
-                        </td>
-                        <td>{{ item.ip | default('N/A') }}</td>
-                        <td>{{ item.geo.country_code | default('N/A') }}</td>
-                        <td>{{ item.geo.state | default('N/A') }}</td>
-                        <td>{{ item.geo.city | default('N/A') }}</td>
-                        <td>{{ item.geo.postcode | default('N/A') }}</td>
-                        <td class="text-center">{{ item.score if item.score is not none else 'N/A' }}</td>
-                        <td class="text-end">
-                             {% if item.used %}
-                             <span class="badge bg-secondary me-1">USED IP</span>
-                             {% endif %}
-                            <button class="btn btn-sm btn-outline-secondary copy-btn {% if item.used %}disabled{% endif %}"
-                                    onclick="copyToClipboard('proxy-{{ loop.index }}', this); trackUsedProxy('{{ item.proxy }}')"
-                                    {% if item.used %}disabled{% endif %}>
-                                Copy
-                            </button>
-                        </td>
-                    </tr>
-                    {% else %} {# Use else for the loop #}
-                    <tr>
-                        <td colspan="8" class="text-center text-muted">No proxies passed the strict filter in this batch.</td>
-                    </tr>
-                    {% endfor %} {# End the loop #}
-                </tbody>
-            </table>
-        </div>
-        {% endif %} {# End check if results exist #}
+          <!-- --- Field for Strict Score --- -->
+          <div class="mb-3">
+            <label for="strict_fraud_score_level" class="form-label">
+              Maximum Fraud Score (Admin Strict Tester)
+            </label>
+            <input type="number" class="form-control" id="strict_fraud_score_level"
+                   name="strict_fraud_score_level" value="{{ settings.STRICT_FRAUD_SCORE_LEVEL }}" min="0" max="100">
+            <div class="form-text">For the admin-only strict tester page (0-100)</div>
+          </div>
+          <!-- --- End Field --- -->
+
+          <div class="mb-3">
+            <label for="max_workers" class="form-label">
+              Concurrent Workers
+            </label>
+            <input type="number" class="form-control" id="max_workers"
+                   name="max_workers" value="{{ settings.MAX_WORKERS }}" min="1" max="100">
+            <div class="form-text">Number of parallel proxy checks (1-100)</div>
+          </div>
+
+          <hr>
+          <h5 class="mt-3">API Settings</h5>
+
+          <div class="mb-3">
+            <label for="scamalytics_username" class="form-label">
+              Scamalytics Username
+            </label>
+            <input type="text" class="form-control" id="scamalytics_username"
+                   name="scamalytics_username" value="{{ settings.SCAMALYTICS_USERNAME }}" required>
+            <div class="form-text">Your API username (e.g., keishamartell329)</div>
+          </div>
+
+          <div class="mb-3">
+            <label for="scamalytics_api_key" class="form-label">
+              Scamalytics API Key
+            </label>
+            <input type="text" class="form-control" id="scamalytics_api_key"
+                   name="scamalytics_api_key" value="{{ settings.SCAMALYTICS_API_KEY }}" required>
+            <div class="form-text">API Key for Scamalytics v3</div>
+          </div>
+
+          <div class="mb-3">
+            <label for="scamalytics_api_url" class="form-label">
+              Scamalytics API URL
+            </label>
+            <input type="text" class="form-control" id="scamalytics_api_url"
+                   name="scamalytics_api_url" value="{{ settings.SCAMALYTICS_API_URL }}" required>
+            <div class="form-text">API Endpoint URL (e.g., https://api11.scamalytics.com/v3/)</div>
+          </div>
+          <button type="submit" class="btn btn-primary">Save Settings</button>
+          <a href="/admin" class="btn btn-outline-secondary">Back to Admin</a>
+        </form>
+      </div>
     </div>
 
-    <script>
-        let trackedProxiesThisSession = new Set();
-        const MAX_LINES = {{ max_paste }};
-        let fileLineCount = 0;
+    <div class="alert alert-info">
+      <strong>Note:</strong> Changes take effect immediately. Use with caution.
+    </div>
+  </div>
 
-        function updateProxyCounter(textarea) {
-            const lines = textarea.value.split('\n').filter(line => line.trim() !== '');
-            const count = lines.length;
-            const counter = document.getElementById('proxyCounter');
-            counter.textContent = `${count}/${MAX_LINES}`;
-            const submitBtn = document.getElementById('submitBtn');
+  <!-- Notepad Widget HTML -->
+  <div id="notepad-widget">
+      <!-- Start hidden using class -->
+      <div id="notepad-container" class="hidden">
+          <div id="notepad-header">
+              <span>Quick Notes</span>
+              <button id="notepad-close-btn">&times;</button>
+          </div>
+          <textarea id="notepad-textarea" placeholder="Write notes here..."></textarea>
+      </div>
+      <button id="notepad-toggle-btn">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 20h9"></path>
+              <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+          </svg>
+      </button>
+  </div>
 
-            const isTextAreaTooLong = count > MAX_LINES;
-            const isFileTooLong = fileLineCount > MAX_LINES;
-            const isTextAreaEmpty = count === 0;
-            const isFileEmpty = fileLineCount === 0;
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <!-- Notepad Widget Script -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const toggleBtn = document.getElementById('notepad-toggle-btn');
+        const notepad = document.getElementById('notepad-container');
+        const closeBtn = document.getElementById('notepad-close-btn');
+        const textarea = document.getElementById('notepad-textarea');
+        const storageKey = 'userNotepadContent'; // Key for local storage
 
-            if (isTextAreaTooLong) {
-                counter.className = 'proxy-counter counter-error';
-                textarea.classList.add('is-invalid');
-            } else if (count === MAX_LINES) {
-                counter.className = 'proxy-counter counter-warning';
-                 textarea.classList.remove('is-invalid');
-            } else {
-                counter.className = 'proxy-counter counter-ok';
-                 textarea.classList.remove('is-invalid');
-            }
-
-            if (isTextAreaTooLong || (isFileTooLong && isTextAreaEmpty)) {
-                 submitBtn.disabled = true;
-            } else if (isTextAreaEmpty && isFileEmpty) {
-                 submitBtn.disabled = true;
-            }
-             else {
-                 submitBtn.disabled = false;
-             }
-
-
-             if (!isTextAreaEmpty) {
-                 document.getElementById('fileCounter').textContent = "File upload will be ignored if text is present.";
-             } else {
-                 checkFileLines(document.getElementById('proxyfile'));
-             }
+        // Load saved notes from local storage
+        if (textarea) {
+            textarea.value = localStorage.getItem(storageKey) || '';
         }
 
-        function checkFileLines(input) {
-            const file = input.files[0];
-            const fileCounter = document.getElementById('fileCounter');
-            const submitBtn = document.getElementById('submitBtn');
-            const textAreaCount = document.getElementById('proxytext').value.split('\n').filter(line => line.trim() !== '').length;
-            const isTextAreaEmpty = textAreaCount === 0;
-
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    const lines = e.target.result.split('\n').filter(line => line.trim() !== '');
-                    fileLineCount = lines.length;
-                    const isFileTooLong = fileLineCount > MAX_LINES;
-
-                    if (isFileTooLong) {
-                        fileCounter.innerHTML = `<span class="text-danger">File contains: ${fileLineCount} proxies (max ${MAX_LINES})</span>`;
-                        if(isTextAreaEmpty) submitBtn.disabled = true;
-                    } else {
-                        fileCounter.innerHTML = `File contains: <span class="text-success">${fileLineCount}</span> proxies`;
-                         if (isTextAreaEmpty || textAreaCount <= MAX_LINES) submitBtn.disabled = false;
-                    }
-                };
-                 reader.onerror = function() {
-                     fileCounter.innerHTML = `<span class="text-danger">Error reading file.</span>`;
-                     fileLineCount = 0;
-                     if (isTextAreaEmpty) submitBtn.disabled = true;
-                 };
-                reader.readAsText(file);
-            } else {
-                fileLineCount = 0;
-                fileCounter.textContent = "File contains: 0 proxies";
-                if (isTextAreaEmpty) submitBtn.disabled = true;
-                else submitBtn.disabled = (textAreaCount > MAX_LINES);
-            }
-        }
-
-       function copyToClipboard(elementId, clickedButton) {
-            const element = document.getElementById(elementId);
-            const fullProxy = element.getAttribute('data-full-proxy');
-
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(fullProxy).then(() => {
-                    showCopiedMessage(element, clickedButton);
-                }).catch(err => {
-                    console.error('Async Clipboard API failed: ', err);
-                    copyUsingExecCommand(fullProxy, element, clickedButton);
-                });
-            } else {
-                copyUsingExecCommand(fullProxy, element, clickedButton);
-            }
-       }
-
-        function copyUsingExecCommand(textToCopy, element, clickedButton) {
-            const textArea = document.createElement("textarea");
-            textArea.value = textToCopy;
-            textArea.style.position = "fixed";
-            textArea.style.top = "-9999px";
-            textArea.style.left = "-9999px";
-            document.body.appendChild(textArea);
-            textArea.focus();
-            textArea.select();
-            try {
-                const successful = document.execCommand('copy');
-                if (successful) {
-                    showCopiedMessage(element, clickedButton);
-                }
-            } catch (err) {
-                console.error('Fallback execCommand exception:', err);
-            }
-            document.body.removeChild(textArea);
-        }
-
-       function showCopiedMessage(element, clickedButton) {
-            const isPermanentlyDisabled = clickedButton.classList.contains('disabled');
-            clickedButton.disabled = true;
-            clickedButton.textContent = 'Copied!';
-            clickedButton.classList.remove('btn-outline-secondary');
-            clickedButton.classList.add('btn-success');
-            setTimeout(() => {
-                 if (!isPermanentlyDisabled) {
-                    clickedButton.disabled = false;
-                    clickedButton.textContent = 'Copy';
-                    clickedButton.classList.remove('btn-success');
-                    clickedButton.classList.add('btn-outline-secondary');
-                 }
-             }, 3000);
-       }
-
-        function trackUsedProxy(proxy) {
-            if (trackedProxiesThisSession.has(proxy)) {
-                console.log("Already tracked in this session:", proxy);
-                return;
-            }
-            console.log("Tracking used via API:", proxy);
-            fetch('/track-used', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', },
-                body: JSON.stringify({proxy: proxy})
-            })
-            .then(response => {
-                if (!response.ok) {
-                    console.error(`Error tracking used proxy: ${response.status} ${response.statusText}`);
-                    return response.json().then(errData => { console.error("Server error details:", errData); });
-                }
-                return response.json();
-            })
-            .then(data => {
-                if (data && data.status === 'success') {
-                    console.log("Successfully tracked used proxy via API:", proxy);
-                    trackedProxiesThisSession.add(proxy);
-                } else if (data) {
-                    console.error('API reported error tracking used proxy:', data.message || 'Unknown error');
-                }
-            })
-            .catch(error => {
-                console.error('Network error occurred while tracking used proxy:', error);
+        // Save notes to local storage on input
+        if (textarea) {
+            textarea.addEventListener('input', () => {
+                localStorage.setItem(storageKey, textarea.value);
             });
         }
 
-        document.addEventListener('DOMContentLoaded', () => {
-             updateProxyCounter(document.getElementById('proxytext'));
-             checkFileLines(document.getElementById('proxyfile'));
-         });
+        // Toggle notepad visibility
+        if (toggleBtn && notepad) {
+            toggleBtn.addEventListener('click', () => {
+                notepad.classList.toggle('hidden');
+            });
+        }
 
-    </script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    </body>
+        // Close notepad
+        if (closeBtn && notepad) {
+            closeBtn.addEventListener('click', () => {
+                notepad.classList.add('hidden'); // Always hide on close click
+            });
+        }
+    });
+  </script>
+</body>
 </html>
