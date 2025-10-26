@@ -24,6 +24,7 @@
         .table th { font-size: 0.9rem; }
         .table td { font-size: 0.85rem; }
         .table .text-end { text-align: right !important; }
+        .table .text-center { text-align: center !important; }
     </style>
 </head>
 <body>
@@ -34,7 +35,7 @@
                 <a href="{{ url_for('logout') }}" class="btn btn-outline-secondary btn-sm">Logout ({{ current_user.username }})</a>
             </div>
         </div>
-        
+
         <div class="alert alert-warning">
           <strong>Note:</strong> This page uses advanced filtering (low risk, no datacenter/vpn, etc.) and updates API credit counts.
         </div>
@@ -57,9 +58,9 @@
         <div class="accordion" id="proxyAccordion">
             <div class="accordion-item">
                 <h2 class="accordion-header" id="formHeading">
-                    <button class="accordion-button {% if results is not defined or not results %}show{% else %}collapsed{% endif %}" type="button"
+                    <button class="accordion-button {% if results is defined and results %}collapsed{% endif %}" type="button"
                             data-bs-toggle="collapse" data-bs-target="#proxyForm"
-                            aria-expanded="{{ 'true' if results is not defined or not results else 'false' }}" aria-controls="proxyForm">
+                            aria-expanded="{{ 'false' if results is defined and results else 'true' }}" aria-controls="proxyForm">
                         Paste or Upload Proxies (Max {{ max_paste }})
                     </button>
                 </h2>
@@ -91,16 +92,17 @@
         {% if results is defined and results is not none %}
         <hr>
         <h5 class="mt-4">✅ Good Proxies (Strict Filter - Score <= {{ settings.STRICT_FRAUD_SCORE_LEVEL }})</h5>
-        
+
         <div class="table-responsive mt-2">
             <table class="table table-sm table-bordered table-hover">
                 <thead class="table-light">
                     <tr>
-                        <th style="width: 40%;">Proxy (Masked)</th>
+                        <th style="width: 35%;">Proxy (Masked)</th>
                         <th style="width: 8%;">Country</th>
-                        <th style="width: 15%;">State</th>
-                        <th style="width: 15%;">City</th>
-                        <th style="width: 10%;">Postcode</th>
+                        <th style="width: 14%;">State</th>
+                        <th style="width: 14%;">City</th>
+                        <th style="width: 9%;">Postcode</th>
+                        <th style="width: 8%;" class="text-center">Score</th>
                         <th style="width: 12%;" class="text-end">Action</th>
                     </tr>
                 </thead>
@@ -116,6 +118,7 @@
                         <td>{{ item.geo.state | default('N/A') }}</td>
                         <td>{{ item.geo.city | default('N/A') }}</td>
                         <td>{{ item.geo.postcode | default('N/A') }}</td>
+                        <td class="text-center">{{ item.score if item.score is not none else 'N/A' }}</td>
                         <td class="text-end">
                              {% if item.used %}
                              <span class="badge bg-secondary me-1">USED IP</span>
@@ -129,7 +132,7 @@
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="6" class="text-center text-muted">No proxies passed the strict filter in this batch.</td>
+                        <td colspan="7" class="text-center text-muted">No proxies passed the strict filter in this batch.</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -243,19 +246,21 @@
         }
 
        function showCopiedMessage(element, clickedButton) {
+            // Disable just the clicked button temporarily
             clickedButton.disabled = true;
             clickedButton.textContent = 'Copied!';
             clickedButton.classList.remove('btn-outline-secondary');
             clickedButton.classList.add('btn-success');
 
+            // Re-enable the button after a delay, only if it wasn't permanently disabled
             setTimeout(() => {
-                 if (!clickedButton.classList.contains('disabled')) { // Check if not permanently disabled by server
+                 if (!clickedButton.classList.contains('disabled')) {
                     clickedButton.disabled = false;
                     clickedButton.textContent = 'Copy';
                     clickedButton.classList.remove('btn-success');
                     clickedButton.classList.add('btn-outline-secondary');
                  }
-             }, 3000);
+             }, 3000); // Re-enable after 3 seconds
        }
 
 
@@ -270,16 +275,22 @@
             .then(data => {
                 if (data.status !== 'success') {
                     console.error('Error tracking used proxy:', data.message);
+                    // Optionally provide user feedback here if tracking fails
                 } else {
                     console.log("Successfully tracked used proxy:", proxy);
                 }
             })
-            .catch(error => console.error('Network error tracking used proxy:', error));
+            .catch(error => {
+                console.error('Network error tracking used proxy:', error);
+                // Optionally provide user feedback here on network error
+            });
         }
 
+        // Initialize counter and button state on page load
         document.addEventListener('DOMContentLoaded', () => {
              updateProxyCounter(document.getElementById('proxytext'));
              checkFileLines(document.getElementById('proxyfile'));
+             // Note: No automatic result clearing on this admin page
          });
 
     </script>
