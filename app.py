@@ -284,6 +284,7 @@ def single_check_proxy(proxy_line, fraud_score_level, api_key, api_url, api_user
 def single_check_proxy_detailed(proxy_line, fraud_score_level, api_key, api_url, api_user):
     """
     Checks a single proxy with detailed criteria, extracts geo info + score.
+    Applies extensive checks based on Scamalytics and external datasource flags.
     Always returns a dict: {'proxy': str|None, 'ip': str|None, 'credits': dict, 'geo': dict, 'score': int|None}
     'proxy' is only non-None if all checks pass.
     """
@@ -295,10 +296,9 @@ def single_check_proxy_detailed(proxy_line, fraud_score_level, api_key, api_url,
         return base_result
 
     ip = get_ip_from_proxy(proxy_line)
-    base_result["ip"] = ip # Store IP even if check fails later
+    base_result["ip"] = ip
     if not ip:
-        # get_ip_from_proxy logs the error
-        return base_result
+        return base_result # get_ip_from_proxy logs error
 
     data = get_fraud_score_detailed(ip, proxy_line, api_key, api_url, api_user)
 
@@ -306,7 +306,7 @@ def single_check_proxy_detailed(proxy_line, fraud_score_level, api_key, api_url,
     if data and data.get("credits"):
         base_result["credits"] = data.get("credits")
 
-    # Always try to extract geo if the response exists
+    # Always try to extract geo (dbip source)
     try:
         if data and data.get("external_datasources", {}).get("dbip"):
             dbip_data = data["external_datasources"]["dbip"]
@@ -316,73 +316,149 @@ def single_check_proxy_detailed(proxy_line, fraud_score_level, api_key, api_url,
                 "city": dbip_data.get("ip_city", "N/A"),
                 "postcode": dbip_data.get("ip_postcode", "N/A")
             }
+        else:
+             # Set default N/A if dbip section is missing
+             base_result["geo"] = {"country_code": "N/A", "state": "N/A", "city": "N/A", "postcode": "N/A"}
     except Exception as e:
         logger.warning(f"Could not extract geo data for {ip}: {e}")
         base_result["geo"] = {"country_code": "ERR", "state": "ERR", "city": "ERR", "postcode": "ERR"}
 
+    score_val = None
+    score_int = None
     # Process Scamalytics data if available
     if data and data.get("scamalytics"):
         scam_data = data.get("scamalytics", {})
         score_val = scam_data.get("scamalytics_score")
-        base_result["score"] = score_val # Store score regardless of checks
+        base_result["score"] = score_val # Store original score value (could be None or string)
 
         # Check API status first
         if scam_data.get("status") != "ok":
             logger.warning(f"❓ [Strict] API Error: {scam_data.get('status')} for {proxy_line}")
-            return base_result # Return with available info (IP, credits, geo, score)
+            return base_result # Return with available info
 
-        # --- Apply Strict Filtering ---
+        # --- Apply ALL Strict Filters ---
         try:
             passed = True
-            score_int = None
+            fail_reason = "" # Store the first failure reason
 
-            # Convert score to int, handle None or non-integer
+            # 0. Convert Score safely
             if score_val is None:
                 passed = False
+                fail_reason = "Score is missing"
             else:
                 try:
                     score_int = int(score_val)
+                    base_result["score"] = score_int # Update result with integer score if conversion succeeds
                 except (ValueError, TypeError):
                     logger.warning(f"❓ [Strict] Non-integer score received: {score_val} for {proxy_line}")
                     passed = False
+                    fail_reason = f"Non-integer score ({score_val})"
 
-            # 1. Score check
+            # 1. Score check (<= fraud_score_level)
             if passed and not (score_int <= fraud_score_level):
-                logger.info(f"❌ [Strict] Score fail: {proxy_line} (Score: {score_int})")
                 passed = False
+                fail_reason = f"Score ({score_int} > {fraud_score_level})"
 
-            # 2. Risk check
+            # 2. Risk check (must be "low")
             if passed and not (scam_data.get("scamalytics_risk") == "low"):
-                logger.info(f"❌ [Strict] Risk fail: {proxy_line} (Risk: {scam_data.get('scamalytics_risk')})")
                 passed = False
+                fail_reason = f"Risk is not low ({scam_data.get('scamalytics_risk')})"
 
-            # 3. Boolean checks
+            # 3. Scamalytics Proxy Flags (all must be false)
             if passed:
-                flags_to_check = [
-                    "is_datacenter", "is_vpn", "ip_blacklisted",
-                    "is_apple_icloud_private_relay", "is_amazon_aws",
-                    "is_google", "is_blacklisted_external"
+                proxy_flags = scam_data.get("scamalytics_proxy", {})
+                scam_flags_to_check = [
+                    "is_datacenter", "is_vpn",
+                    "is_apple_icloud_private_relay", "is_amazon_aws", "is_google"
                 ]
-                for flag in flags_to_check:
-                    if scam_data.get(flag) is True:
-                        logger.info(f"❌ [Strict] Flag fail: {proxy_line} ({flag} is True)")
+                for flag in scam_flags_to_check:
+                    # Explicitly check for True, as False or None should pass
+                    if proxy_flags.get(flag) is True:
                         passed = False
+                        fail_reason = f"Scamalytics flag '{flag}' is true"
                         break
 
+            # 4. Scamalytics External Blacklist (must be false)
+            if passed and scam_data.get("is_blacklisted_external") is True:
+                 passed = False
+                 fail_reason = "Scamalytics flag 'is_blacklisted_external' is true"
+
+            # --- External Datasource Checks (Safely access nested dicts) ---
+            ext_data = data.get("external_datasources", {})
+
+            # 5. ip2proxy_lite Blacklist (must be false)
+            if passed and ext_data.get("ip2proxy_lite", {}).get("ip_blacklisted") is True:
+                passed = False
+                fail_reason = "ip2proxy_lite flag 'ip_blacklisted' is true"
+
+            # 6. Firehol Blacklists & Proxy flag (all must be false)
+            if passed:
+                firehol_data = ext_data.get("firehol", {})
+                firehol_flags = ["ip_blacklisted_30", "ip_blacklisted_1day", "is_proxy"]
+                for flag in firehol_flags:
+                     if firehol_data.get(flag) is True:
+                          passed = False
+                          fail_reason = f"Firehol flag '{flag}' is true"
+                          break
+
+            # 7. Ipsum Blacklist (must be false) and num_blacklists (must be 0)
+            if passed:
+                 ipsum_data = ext_data.get("ipsum", {})
+                 if ipsum_data.get("ip_blacklisted") is True:
+                      passed = False
+                      fail_reason = "Ipsum flag 'ip_blacklisted' is true"
+                 # Ensure num_blacklists exists and is exactly 0
+                 elif ipsum_data.get("num_blacklists") != 0:
+                      passed = False
+                      fail_reason = f"Ipsum num_blacklists is not 0 ({ipsum_data.get('num_blacklists', 'N/A')})"
+
+            # 8. Spamhaus Drop Blacklist (must be false)
+            if passed and ext_data.get("spamhaus_drop", {}).get("ip_blacklisted") is True:
+                 passed = False
+                 fail_reason = "Spamhaus Drop flag 'ip_blacklisted' is true"
+
+            # 9. x4bnet Flags (all must be false)
+            if passed:
+                 x4b_data = ext_data.get("x4bnet", {})
+                 x4b_flags = [
+                     "is_vpn", "is_datacenter", "is_tor", "is_blacklisted_spambot",
+                     "is_bot_operamini", "is_bot_semrush"
+                 ]
+                 for flag in x4b_flags:
+                      if x4b_data.get(flag) is True:
+                           passed = False
+                           fail_reason = f"x4bnet flag '{flag}' is true"
+                           break
+
+            # 10. Google Flags (all must be false)
+            if passed:
+                 google_data = ext_data.get("google", {})
+                 google_flags = [
+                     "is_google_general", "is_googlebot",
+                     "is_special_crawler", "is_user_triggered_fetcher"
+                 ]
+                 for flag in google_flags:
+                      if google_data.get(flag) is True:
+                           passed = False
+                           fail_reason = f"Google flag '{flag}' is true"
+                           break
+
+            # --- Final Decision ---
             if passed:
                 logger.info(f"✅ [Strict] Good: {proxy_line} (IP: {ip}, Score: {score_int})")
                 base_result["proxy"] = proxy_line # Set proxy only if all checks passed
                 return base_result
             else:
-                # Log to bad proxies if score was the primary failure reason
-                if score_int is not None and score_int > fraud_score_level:
+                logger.info(f"❌ [Strict] Fail: {proxy_line} (Reason: {fail_reason})")
+                # Log to bad proxies if score was the *original* failure reason
+                if score_int is not None and score_int > fraud_score_level and fail_reason.startswith("Score"):
                     try: log_bad_proxy(proxy_line, ip, score_int)
                     except Exception as e: logger.error(f"Error logging bad proxy '{proxy_line}': {e}")
                 # Return result without proxy set
                 return base_result
 
         except Exception as e:
-            logger.error(f"Error during strict check logic for {proxy_line}: {e}", exc_info=False)
+            logger.error(f"Error during strict check logic evaluation for {proxy_line}: {e}", exc_info=False)
             return base_result # Return with available info
 
     else:
@@ -400,12 +476,7 @@ def before_request_func():
        request.path.endswith(('.ico', '.png')) or \
        request.path == url_for('admin_test'): # Check specifically for the test route
         return
-    # Apply checks/redirects for other routes if needed (removed original 'pass')
-    # Example: If you wanted all non-admin users redirected from '/admin/*'
-    # if request.path.startswith('/admin') and not request.path.startswith('/admin/test') \
-    #    and current_user.is_authenticated and not current_user.is_admin:
-    #     flash("Admin access required.", "danger")
-    #     return redirect(url_for('index'))
+    pass # No specific action needed for other routes here
 # --- END BEFORE REQUEST HANDLER ---
 
 
@@ -844,7 +915,7 @@ def admin_test():
                 try:
                     result = future.result() # result is always a dict now
                     if result:
-                        # Store the latest credit info received
+                        # Store the latest credit info received, if present
                         if result.get("credits"):
                             last_credits = result.get("credits")
 
@@ -1082,3 +1153,4 @@ if __name__ == "__main__":
     # Use Gunicorn or another WSGI server in production instead of app.run()
     # For local development:
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False) # Use PORT env var if available
+

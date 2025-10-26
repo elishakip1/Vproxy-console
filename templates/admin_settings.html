@@ -7,10 +7,10 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body { background-color: #f0f2f5; font-family: sans-serif; padding-bottom: 80px; }
-        .container { margin-top: 50px; max-width: 900px; /* Increased max-width for table */ }
+        .container { margin-top: 50px; max-width: 950px; /* Wider for more columns */ }
         .textarea-box { height: 200px; }
-        .copy-btn { font-size: 12px; } /* Removed float */
-        .proxy-masked { font-family: monospace; word-break: break-all; /* Prevent long proxies breaking layout */ }
+        .copy-btn { font-size: 12px; }
+        .proxy-masked { font-family: monospace; word-break: break-all; }
         .copy-btn.disabled { opacity: 0.5; cursor: not-allowed; }
         .proxy-counter { position: absolute; right: 20px; bottom: 10px; font-size: 0.85rem;
                          color: #6c757d; background: rgba(255, 255, 255, 0.8); padding: 2px 5px; border-radius: 3px; }
@@ -20,9 +20,9 @@
         .textarea-container { position: relative; }
         .alert-dismissible .btn-close { top: 0; right: 0; z-index: 2; padding: 1.25rem 1rem;}
         /* Table specific styles */
-        .table th, .table td { vertical-align: middle; padding: 0.5rem; /* Adjust padding */ }
-        .table th { font-size: 0.85rem; /* Slightly smaller header */ }
-        .table td { font-size: 0.8rem; /* Slightly smaller data */ }
+        .table th, .table td { vertical-align: middle; padding: 0.4rem; /* Adjust padding */ }
+        .table th { font-size: 0.8rem; white-space: nowrap; /* Prevent headers wrapping */ }
+        .table td { font-size: 0.75rem; /* Slightly smaller data */ }
         .table .text-end { text-align: right !important; }
         .table .text-center { text-align: center !important; }
     </style>
@@ -31,17 +31,15 @@
     <div class="container bg-white p-4 rounded shadow-sm">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h2 class="mb-0">🛡️ Admin Strict Tester</h2>
-            <div> <!-- Wrapper div for buttons -->
-                <a href="{{ url_for('admin') }}" class="btn btn-outline-primary btn-sm">Admin Panel</a>
+            <div> <a href="{{ url_for('admin') }}" class="btn btn-outline-primary btn-sm">Admin Panel</a>
                 <a href="{{ url_for('logout') }}" class="btn btn-outline-secondary btn-sm">Logout ({{ current_user.username }})</a>
             </div>
         </div>
 
         <div class="alert alert-warning">
-          <strong>Note:</strong> This page uses advanced filtering (low risk, no datacenter/vpn, etc.) based on the 'Admin Strict Score' setting and updates API credit counts.
+          <strong>Note:</strong> This page uses advanced filtering (low risk, score <= {{ settings.STRICT_FRAUD_SCORE_LEVEL }}, no datacenter/vpn/blacklist flags, etc.) and updates API credit counts.
         </div>
 
-        <!-- Display Flash Messages -->
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
                 {% for category, message in messages %}
@@ -53,7 +51,6 @@
             {% endif %}
         {% endwith %}
 
-        <!-- Display message from POST request -->
         {% if message is defined and message %}
         <div class="alert alert-info">{{ message }}</div>
         {% endif %}
@@ -70,7 +67,6 @@
                 <div id="proxyForm" class="accordion-collapse collapse {% if results is not defined or not results %}show{% endif %}"
                      aria-labelledby="formHeading" data-bs-parent="#proxyAccordion">
                     <div class="accordion-body">
-                        <!-- Form posts to /admin/test -->
                         <form method="POST" action="{{ url_for('admin_test') }}" enctype="multipart/form-data" id="proxyFormElement">
                             <div class="mb-3">
                                 <label for="proxyfile" class="form-label">Upload Proxy File (.txt)</label>
@@ -97,19 +93,18 @@
         <hr>
         <h5 class="mt-4">✅ Good Proxies (Strict Filter - Score <= {{ settings.STRICT_FRAUD_SCORE_LEVEL }})</h5>
 
-        <!-- --- Updated Table --- -->
         <div class="table-responsive mt-2">
             <table class="table table-sm table-bordered table-hover">
                 <thead class="table-light">
                     <tr>
-                        <th style="width: 30%;">Proxy (Masked)</th>
+                        <th style="width: 28%;">Proxy (Masked)</th>
                         <th style="width: 12%;">IP Address</th>
                         <th style="width: 8%;">Country</th>
                         <th style="width: 10%;">State</th>
                         <th style="width: 10%;">City</th>
                         <th style="width: 8%;">Postcode</th>
                         <th style="width: 7%;" class="text-center">Score</th>
-                        <th style="width: 15%;" class="text-end">Action</th>
+                        <th style="width: 17%;" class="text-end">Action</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -145,20 +140,14 @@
                 </tbody>
             </table>
         </div>
-        <!-- --- END TABLE --- -->
         {% endif %} {# End check if results exist #}
     </div>
 
-    <!-- --- FULL JAVASCRIPT BLOCK --- -->
     <script>
-        // Store proxies whose usage has been tracked in this session to prevent re-tracking UI updates
         let trackedProxiesThisSession = new Set();
-        // Get max lines from Flask template variable
         const MAX_LINES = {{ max_paste }};
-        // Keep track of lines read from file
         let fileLineCount = 0;
 
-        // Function to update the counter below the textarea and enable/disable submit button
         function updateProxyCounter(textarea) {
             const lines = textarea.value.split('\n').filter(line => line.trim() !== '');
             const count = lines.length;
@@ -171,7 +160,6 @@
             const isTextAreaEmpty = count === 0;
             const isFileEmpty = fileLineCount === 0;
 
-            // Update counter style based on text area count
             if (isTextAreaTooLong) {
                 counter.className = 'proxy-counter counter-error';
                 textarea.classList.add('is-invalid');
@@ -183,9 +171,6 @@
                  textarea.classList.remove('is-invalid');
             }
 
-            // Determine submit button state
-            // Disable if EITHER text area OR file is too long
-            // Also disable if BOTH are empty
             if (isTextAreaTooLong || (isFileTooLong && isTextAreaEmpty)) {
                  submitBtn.disabled = true;
             } else if (isTextAreaEmpty && isFileEmpty) {
@@ -196,16 +181,13 @@
              }
 
 
-            // Update file counter message if text is entered
              if (!isTextAreaEmpty) {
                  document.getElementById('fileCounter').textContent = "File upload will be ignored if text is present.";
              } else {
-                 // If text area becomes empty, re-evaluate file status
                  checkFileLines(document.getElementById('proxyfile'));
              }
         }
 
-        // Function to read the selected file, count lines, and update UI
         function checkFileLines(input) {
             const file = input.files[0];
             const fileCounter = document.getElementById('fileCounter');
@@ -222,54 +204,45 @@
 
                     if (isFileTooLong) {
                         fileCounter.innerHTML = `<span class="text-danger">File contains: ${fileLineCount} proxies (max ${MAX_LINES})</span>`;
-                        // Disable submit only if text area is also empty or valid (file takes precedence if text is empty)
                         if(isTextAreaEmpty) submitBtn.disabled = true;
                     } else {
                         fileCounter.innerHTML = `File contains: <span class="text-success">${fileLineCount}</span> proxies`;
-                        // Enable submit if file is valid AND text area is empty or valid
                          if (isTextAreaEmpty || textAreaCount <= MAX_LINES) submitBtn.disabled = false;
                     }
                 };
                  reader.onerror = function() {
                      fileCounter.innerHTML = `<span class="text-danger">Error reading file.</span>`;
-                     fileLineCount = 0; // Reset count on error
-                     if (isTextAreaEmpty) submitBtn.disabled = true; // Disable if error and no text
+                     fileLineCount = 0;
+                     if (isTextAreaEmpty) submitBtn.disabled = true;
                  };
                 reader.readAsText(file);
             } else {
-                // No file selected
                 fileLineCount = 0;
                 fileCounter.textContent = "File contains: 0 proxies";
-                // Disable button only if text area is also empty or invalid
                 if (isTextAreaEmpty) submitBtn.disabled = true;
                 else submitBtn.disabled = (textAreaCount > MAX_LINES);
             }
         }
 
-       // Function to copy proxy string to clipboard
        function copyToClipboard(elementId, clickedButton) {
             const element = document.getElementById(elementId);
             const fullProxy = element.getAttribute('data-full-proxy');
 
-            // Use modern Clipboard API if available
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(fullProxy).then(() => {
                     showCopiedMessage(element, clickedButton);
                 }).catch(err => {
                     console.error('Async Clipboard API failed: ', err);
-                    copyUsingExecCommand(fullProxy, element, clickedButton); // Fallback
+                    copyUsingExecCommand(fullProxy, element, clickedButton);
                 });
             } else {
-                // Fallback for older browsers or insecure contexts (like http)
                 copyUsingExecCommand(fullProxy, element, clickedButton);
             }
        }
 
-        // Fallback copy method using deprecated execCommand
         function copyUsingExecCommand(textToCopy, element, clickedButton) {
             const textArea = document.createElement("textarea");
             textArea.value = textToCopy;
-            // Style to prevent scrolling and visual disruption
             textArea.style.position = "fixed";
             textArea.style.top = "-9999px";
             textArea.style.left = "-9999px";
@@ -280,29 +253,19 @@
                 const successful = document.execCommand('copy');
                 if (successful) {
                     showCopiedMessage(element, clickedButton);
-                } else {
-                     console.error('Fallback execCommand failed.');
-                     // Optionally alert user here if even fallback fails
                 }
             } catch (err) {
                 console.error('Fallback execCommand exception:', err);
-                 // Optionally alert user here
             }
             document.body.removeChild(textArea);
         }
 
-       // Update button text/style after copy, handles re-enabling
        function showCopiedMessage(element, clickedButton) {
-            // Check if this button was already permanently disabled (e.g., 'USED IP')
             const isPermanentlyDisabled = clickedButton.classList.contains('disabled');
-
-            // Temporarily disable the clicked button and change text/style
             clickedButton.disabled = true;
             clickedButton.textContent = 'Copied!';
             clickedButton.classList.remove('btn-outline-secondary');
             clickedButton.classList.add('btn-success');
-
-            // Re-enable the button after 3 seconds ONLY if it wasn't permanently disabled initially
             setTimeout(() => {
                  if (!isPermanentlyDisabled) {
                     clickedButton.disabled = false;
@@ -310,20 +273,14 @@
                     clickedButton.classList.remove('btn-success');
                     clickedButton.classList.add('btn-outline-secondary');
                  }
-                 // If it was permanently disabled, it remains disabled with 'Copied!' text temporarily
-                 // which might be slightly confusing, but prevents enabling a USED IP proxy button.
              }, 3000);
        }
 
-
-        // Function to send the used proxy to the backend
         function trackUsedProxy(proxy) {
-            // Prevent duplicate tracking calls for the same proxy in this session
             if (trackedProxiesThisSession.has(proxy)) {
                 console.log("Already tracked in this session:", proxy);
                 return;
             }
-
             console.log("Tracking used via API:", proxy);
             fetch('/track-used', {
                 method: 'POST',
@@ -331,34 +288,28 @@
                 body: JSON.stringify({proxy: proxy})
             })
             .then(response => {
-                if (!response.ok) { // Check for HTTP errors (like 500)
+                if (!response.ok) {
                     console.error(`Error tracking used proxy: ${response.status} ${response.statusText}`);
-                    // Optionally: Display feedback to the user that tracking failed
-                    return response.json().then(errData => { // Try to get error message from body
-                        console.error("Server error details:", errData);
-                    });
+                    return response.json().then(errData => { console.error("Server error details:", errData); });
                 }
-                return response.json(); // Parse JSON body for success/error message
+                return response.json();
             })
             .then(data => {
                 if (data && data.status === 'success') {
                     console.log("Successfully tracked used proxy via API:", proxy);
-                    trackedProxiesThisSession.add(proxy); // Add to session set on success
-                } else if (data) { // Handle application-level errors reported in JSON
+                    trackedProxiesThisSession.add(proxy);
+                } else if (data) {
                     console.error('API reported error tracking used proxy:', data.message || 'Unknown error');
                 }
             })
-            .catch(error => { // Handle network errors
+            .catch(error => {
                 console.error('Network error occurred while tracking used proxy:', error);
-                 // Optionally: Display feedback to the user
             });
         }
 
-        // Initialize counters and button state when the page loads
         document.addEventListener('DOMContentLoaded', () => {
              updateProxyCounter(document.getElementById('proxytext'));
              checkFileLines(document.getElementById('proxyfile'));
-             // No automatic result clearing needed on admin page
          });
 
     </script>
