@@ -1,6 +1,5 @@
 Flask
 requests
-# beautifulsoup4 # No longer needed if not scraping scamalytics
 gspread
 oauth2client
 gunicorn

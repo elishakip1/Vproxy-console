@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <title>Settings - Proxy Checker</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"> <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
     body { padding-bottom: 80px; } /* Add padding for notepad */
 
@@ -94,12 +95,6 @@
   <div class="container py-4">
     <h2 class="mb-4">⚙️ Application Settings</h2>
 
-    {% if message %}
-    <div class="alert alert-{{ 'success' if 'success' in message else 'danger' }} mb-4">
-      {{ message }}
-    </div>
-    {% endif %}
-
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
             {% for category, message in messages %}
@@ -128,13 +123,21 @@
 
           <div class="mb-3">
             <label for="fraud_score_level" class="form-label">
-              Maximum Fraud Score
+              Maximum Fraud Score (User Page)
             </label>
             <input type="number" class="form-control" id="fraud_score_level"
                    name="fraud_score_level" value="{{ settings.FRAUD_SCORE_LEVEL }}" min="0" max="100">
-            <div class="form-text">0 = most strict (only perfect proxies), 100 = least strict</div>
+            <div class="form-text">For the main/public checker page (0-100)</div>
           </div>
 
+          <div class="mb-3">
+            <label for="strict_fraud_score_level" class="form-label">
+              Maximum Fraud Score (Admin Strict Tester)
+            </label>
+            <input type="number" class="form-control" id="strict_fraud_score_level"
+                   name="strict_fraud_score_level" value="{{ settings.STRICT_FRAUD_SCORE_LEVEL }}" min="0" max="100">
+            <div class="form-text">For the admin-only strict tester page (0-100)</div>
+          </div>
           <div class="mb-3">
             <label for="max_workers" class="form-label">
               Concurrent Workers
