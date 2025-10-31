@@ -526,23 +526,8 @@ def index():
         truncation_warning = ""
         results = [] # Initialize as empty list for POST
 
-        # --- Handle Input (File or Text) ---
-        if 'proxyfile' in request.files and request.files['proxyfile'].filename:
-            try:
-                file = request.files['proxyfile']
-                all_lines = file.read().decode("utf-8", errors='ignore').strip().splitlines()
-                input_count = len(all_lines)
-                if input_count > MAX_PASTE:
-                    truncation_warning = f" Input file truncated to first {MAX_PASTE} lines."
-                    proxies_input = all_lines[:MAX_PASTE]
-                else:
-                    proxies_input = all_lines
-                logger.info(f"Received {input_count} proxies via file upload.")
-            except Exception as e:
-                logger.error(f"Error reading uploaded file: {e}", exc_info=True)
-                message = "Error processing uploaded file. Please ensure it's a valid text file."
-                return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings, announcement=announcement)
-        elif 'proxytext' in request.form and request.form.get("proxytext", "").strip():
+        # --- Handle Input (Text) ---
+        if 'proxytext' in request.form and request.form.get("proxytext", "").strip():
             proxytext = request.form.get("proxytext", "")
             all_lines = proxytext.strip().splitlines()
             input_count = len(all_lines)
@@ -553,7 +538,7 @@ def index():
                 proxies_input = all_lines
             logger.info(f"Received {input_count} proxies via text area.")
         else:
-            message = "No proxies submitted. Please paste proxies or upload a file."
+            message = "No proxies submitted. Please paste proxies."
             return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings, announcement=announcement)
 
         # --- Load Caches (Used IPs and Bad Proxies) ---
@@ -792,14 +777,7 @@ def admin_test():
     results = []
 
     # --- Handle Input ---
-    if 'proxyfile' in request.files and request.files['proxyfile'].filename:
-        try:
-            file = request.files['proxyfile']; all_lines = file.read().decode("utf-8", errors='ignore').strip().splitlines(); input_count = len(all_lines)
-            if input_count > MAX_PASTE: truncation_warning = f" Input file truncated to first {MAX_PASTE} lines."; proxies_input = all_lines[:MAX_PASTE]
-            else: proxies_input = all_lines
-            logger.info(f"[Strict] Received {input_count} proxies via file upload.")
-        except Exception as e: logger.error(f"[Strict] File read error: {e}", exc_info=True); message = "Error processing uploaded file."; return render_template("admin_test.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings)
-    elif 'proxytext' in request.form and request.form.get("proxytext", "").strip():
+    if 'proxytext' in request.form and request.form.get("proxytext", "").strip():
         proxytext = request.form.get("proxytext", ""); all_lines = proxytext.strip().splitlines(); input_count = len(all_lines)
         if input_count > MAX_PASTE: truncation_warning = f" Input text truncated to first {MAX_PASTE} lines."; proxies_input = all_lines[:MAX_PASTE]
         else: proxies_input = all_lines
