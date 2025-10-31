@@ -61,7 +61,7 @@
                      <button class="accordion-button {% if results is defined and results %}collapsed{% endif %}" type="button"
                             data-bs-toggle="collapse" data-bs-target="#proxyForm"
                             aria-expanded="{{ 'false' if results is defined and results else 'true' }}" aria-controls="proxyForm">
-                        Paste or Upload Proxies (Max {{ max_paste }})
+                        Paste or Upload Proxies (Max {{ max_paste }} Lines)
                     </button>
                 </h2>
                 <div id="proxyForm" class="accordion-collapse collapse {% if results is not defined or not results %}show{% endif %}"
@@ -71,7 +71,7 @@
                             <div class="mb-3">
                                 <label for="proxyfile" class="form-label">Upload Proxy File (.txt)</label>
                                 <input type="file" class="form-control" name="proxyfile" id="proxyfile" accept=".txt" onchange="checkFileLines(this)">
-                                <div class="form-text" id="fileCounter">File contains: 0 proxies</div>
+                                <div class="form-text" id="fileCounter">File contains: 0 lines</div>
                             </div>
                             <div class="mb-3">
                                 <label for="proxytext" class="form-label">Or Paste Proxies (one per line)</label>
@@ -148,66 +148,112 @@
         const MAX_LINES = {{ max_paste }};
         let fileLineCount = 0;
 
+        /**
+         * Updates the proxy counter, truncates text area content if over MAX_LINES,
+         * and manages the submit button state based on raw line counts.
+         */
         function updateProxyCounter(textarea) {
-            const lines = textarea.value.split('\n').filter(line => line.trim() !== '');
-            const count = lines.length;
+            const text = textarea.value;
+            let lines;
+            let rawLineCount;
+
+            // Correctly count raw lines
+            if (text === "") {
+                lines = [];
+                rawLineCount = 0;
+            } else {
+                lines = text.split('\n');
+                rawLineCount = lines.length;
+            }
+
             const counter = document.getElementById('proxyCounter');
-            counter.textContent = `${count}/${MAX_LINES}`;
             const submitBtn = document.getElementById('submitBtn');
+            
+            const isTooLong = rawLineCount > MAX_LINES; // Check against raw line count
 
-            const isTextAreaTooLong = count > MAX_LINES;
-            const isFileTooLong = fileLineCount > MAX_LINES;
-            const isTextAreaEmpty = count === 0;
-            const isFileEmpty = fileLineCount === 0;
-
-            if (isTextAreaTooLong) {
+            if (isTooLong) {
+                // Truncate based on raw line count
+                lines = lines.slice(0, MAX_LINES);
+                textarea.value = lines.join('\n');
+                // Update count to the new, truncated count
+                rawLineCount = lines.length;
+            }
+            
+            // Update counter text with the raw count
+            counter.textContent = `${rawLineCount}/${MAX_LINES}`;
+            
+            // Update counter style
+            if (isTooLong) { // If we *just* truncated
                 counter.className = 'proxy-counter counter-error';
                 textarea.classList.add('is-invalid');
-            } else if (count === MAX_LINES) {
+            } else if (rawLineCount === MAX_LINES) {
                 counter.className = 'proxy-counter counter-warning';
-                 textarea.classList.remove('is-invalid');
+                textarea.classList.remove('is-invalid');
             } else {
                 counter.className = 'proxy-counter counter-ok';
-                 textarea.classList.remove('is-invalid');
+                textarea.classList.remove('is-invalid');
             }
 
-            if (isTextAreaTooLong || (isFileTooLong && isTextAreaEmpty)) {
-                 submitBtn.disabled = true;
-            } else if (isTextAreaEmpty && isFileEmpty) {
-                 submitBtn.disabled = true;
+            // --- Submit Button Logic ---
+            const isFileTooLong = fileLineCount > MAX_LINES;
+            const isTextAreaEmpty = rawLineCount === 0;
+            const isFileEmpty = fileLineCount === 0;
+
+            // Disable if:
+            // 1. File is too long AND text area is empty
+            // 2. Text area is empty AND file is empty
+            if ((isFileTooLong && isTextAreaEmpty) || (isTextAreaEmpty && isFileEmpty)) {
+                submitBtn.disabled = true;
+            } else {
+                submitBtn.disabled = false; // Enable otherwise
             }
-             else {
-                 submitBtn.disabled = false;
-             }
-
-
-             if (!isTextAreaEmpty) {
-                 document.getElementById('fileCounter').textContent = "File upload will be ignored if text is present.";
-             } else {
-                 checkFileLines(document.getElementById('proxyfile'));
-             }
+            
+            if (!isTextAreaEmpty) {
+                document.getElementById('fileCounter').textContent = "File upload will be ignored if text is present.";
+            } else {
+                // If text area is empty, re-run file check to update message
+                checkFileLines(document.getElementById('proxyfile'));
+            }
         }
 
+        /**
+         * Reads the selected file, counts raw lines, and updates the UI
+         * and submit button state.
+         */
         function checkFileLines(input) {
             const file = input.files[0];
             const fileCounter = document.getElementById('fileCounter');
             const submitBtn = document.getElementById('submitBtn');
-            const textAreaCount = document.getElementById('proxytext').value.split('\n').filter(line => line.trim() !== '').length;
+
+            // Get raw count from text area
+            const textAreaText = document.getElementById('proxytext').value;
+            let textAreaCount;
+            if (textAreaText === "") {
+                textAreaCount = 0;
+            } else {
+                textAreaCount = textAreaText.split('\n').length;
+            }
             const isTextAreaEmpty = textAreaCount === 0;
 
             if (file) {
                 const reader = new FileReader();
                 reader.onload = function(e) {
-                    const lines = e.target.result.split('\n').filter(line => line.trim() !== '');
-                    fileLineCount = lines.length;
+                    const text = e.target.result;
+                    // Correctly count raw lines from file
+                    if (text === "") {
+                        fileLineCount = 0;
+                    } else {
+                        fileLineCount = text.split('\n').length;
+                    }
+                    
                     const isFileTooLong = fileLineCount > MAX_LINES;
 
                     if (isFileTooLong) {
-                        fileCounter.innerHTML = `<span class="text-danger">File contains: ${fileLineCount} proxies (max ${MAX_LINES})</span>`;
+                        fileCounter.innerHTML = `<span class="text-danger">File contains: ${fileLineCount} lines (max ${MAX_LINES})</span>`;
                         if(isTextAreaEmpty) submitBtn.disabled = true;
                     } else {
-                        fileCounter.innerHTML = `File contains: <span class="text-success">${fileLineCount}</span> proxies`;
-                         if (isTextAreaEmpty || textAreaCount <= MAX_LINES) submitBtn.disabled = false;
+                        fileCounter.innerHTML = `File contains: <span class="text-success">${fileLineCount}</span> lines`;
+                        if (isTextAreaEmpty) submitBtn.disabled = false;
                     }
                 };
                  reader.onerror = function() {
@@ -217,10 +263,11 @@
                  };
                 reader.readAsText(file);
             } else {
+                // No file selected
                 fileLineCount = 0;
-                fileCounter.textContent = "File contains: 0 proxies";
+                fileCounter.textContent = "File contains: 0 lines";
                 if (isTextAreaEmpty) submitBtn.disabled = true;
-                else submitBtn.disabled = (textAreaCount > MAX_LINES);
+                // if text area is not empty, submitBtn state is already set by updateProxyCounter
             }
         }
 
