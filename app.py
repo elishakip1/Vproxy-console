@@ -952,9 +952,11 @@ def delete_used_ip_route(ip):
     return redirect(url_for("admin"))
 
 
-# --- REMOVED REDUNDANT STATIC ROUTE ---
-# The @app.route('/static/<path:path>') function was here.
-# It is not needed because Flask handles this automatically.
+# --- THIS SECTION IS NOW REMOVED ---
+# @app.route('/static/<path:path>')
+# def send_static(path):
+#    """Serves static files (if any)."""
+#    return send_from_directory('static', path)
 
 
 # --- Error Handling ---
