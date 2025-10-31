@@ -2,9 +2,17 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Proxy Checker</title>
+    
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <link rel="icon" href="{{ url_for('static', filename='img/favicon.ico') }}" type="image/x-icon">
+    <link rel="shortcut icon" href="{{ url_for('static', filename='img/favicon.ico') }}" type="image/x-icon">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='img/favicon-32x32.png') }}">
+    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='img/favicon-16x16.png') }}">
+    <link rel="manifest" href="{{ url_for('static', filename='img/site.webmanifest') }}">
+    
     <style>
         body { background-color: #f0f2f5; font-family: sans-serif; padding-bottom: 80px; }
         .container { margin-top: 50px; max-width: 950px; /* Wider for table */ }
@@ -38,12 +46,25 @@
         #notepad-close-btn:hover { color: #343a40; }
         #notepad-textarea { flex-grow: 1; border: none; padding: 15px; resize: none; font-family: sans-serif; font-size: 14px; color: #212529; }
         #notepad-textarea:focus { outline: none; }
+
+        /* Custom style for the header logo */
+        .header-logo {
+            height: 50px; /* Adjust as needed */
+            margin-right: 15px; /* Spacing between logo and text */
+        }
+        .header-title-container {
+            display: flex;
+            align-items: center;
+        }
     </style>
 </head>
 <body>
     <div class="container bg-white p-4 rounded shadow-sm">
         <div class="d-flex justify-content-between align-items-center mb-3">
-            <h2 class="mb-0">Proxy Checker</h2>
+            <div class="header-title-container">
+                <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Proxy Checker Logo" class="header-logo">
+                <h2 class="mb-0">Proxy Checker</h2> 
+            </div>
             <div>
                 {% if current_user.is_authenticated and current_user.is_admin %}
                     <a href="{{ url_for('admin') }}" class="btn btn-outline-primary btn-sm">Admin Panel</a>
@@ -56,8 +77,8 @@
 
         {% if announcement %}
         <div class="alert alert-primary alert-dismissible fade show" role="alert">
-          <strong>Notice:</strong> {{ announcement }}
-          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            <strong>Notice:</strong> {{ announcement }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
         {% endif %}
 
@@ -79,7 +100,7 @@
         <div class="accordion" id="proxyAccordion">
             <div class="accordion-item">
                 <h2 class="accordion-header" id="formHeading">
-                     <button class="accordion-button {% if results is defined and results %}collapsed{% endif %}" type="button"
+                   <button class="accordion-button {% if results is defined and results %}collapsed{% endif %}" type="button"
                             data-bs-toggle="collapse" data-bs-target="#proxyForm"
                             aria-expanded="{{ 'false' if results is defined and results else 'true' }}" aria-controls="proxyForm">
                         Paste or Upload Proxies (Max {{ max_paste }} Lines)
@@ -302,11 +323,11 @@
                         // if text area is not empty, updateProxyCounter controls the button
                     }
                 };
-                 reader.onerror = function() {
-                     fileCounter.innerHTML = `<span class="text-danger">Error reading file.</span>`;
-                     fileLineCount = 0;
-                     if (isTextAreaEmpty) submitBtn.disabled = true;
-                 };
+                   reader.onerror = function() {
+                       fileCounter.innerHTML = `<span class="text-danger">Error reading file.</span>`;
+                       fileLineCount = 0;
+                       if (isTextAreaEmpty) submitBtn.disabled = true;
+                   };
                 reader.readAsText(file);
             } else {
                 // No file selected
@@ -354,12 +375,12 @@
                 if (successful) {
                     showCopiedMessage(element, clickedButton);
                 } else {
-                     console.error('Fallback execCommand failed.');
-                     // Optionally alert user here if even fallback fails
+                    console.error('Fallback execCommand failed.');
+                    // Optionally alert user here if even fallback fails
                 }
             } catch (err) {
                 console.error('Fallback execCommand exception:', err);
-                 // Optionally alert user here
+                // Optionally alert user here
             }
             document.body.removeChild(textArea);
         }
@@ -377,15 +398,15 @@
 
             // Re-enable the button after 3 seconds ONLY if it wasn't permanently disabled initially
             setTimeout(() => {
-                 if (!isPermanentlyDisabled) {
-                    clickedButton.disabled = false;
-                    clickedButton.textContent = 'Copy';
-                    clickedButton.classList.remove('btn-success');
-                    clickedButton.classList.add('btn-outline-secondary');
-                 }
-                 // If it was permanently disabled, it remains disabled with 'Copied!' text temporarily
-                 // which might be slightly confusing, but prevents enabling a USED IP proxy button.
-             }, 3000); // Re-enable after 3 seconds
+                   if (!isPermanentlyDisabled) {
+                     clickedButton.disabled = false;
+                     clickedButton.textContent = 'Copy';
+                     clickedButton.classList.remove('btn-success');
+                     clickedButton.classList.add('btn-outline-secondary');
+                   }
+                   // If it was permanently disabled, it remains disabled with 'Copied!' text temporarily
+                   // which might be slightly confusing, but prevents enabling a USED IP proxy button.
+                 }, 3000); // Re-enable after 3 seconds
        }
 
 
@@ -426,23 +447,23 @@
             })
             .catch(error => { // Handle network errors
                 console.error('Network error occurred while tracking used proxy:', error);
-                 // Optionally: Display feedback to the user
+                // Optionally: Display feedback to the user
             });
         }
 
         // Initialize counters and button state when the page loads
         document.addEventListener('DOMContentLoaded', () => {
-             updateProxyCounter(document.getElementById('proxytext'));
-             checkFileLines(document.getElementById('proxyfile'));
-             // Clear results after a delay only if results were generated by a POST
-             {% if results is defined and results is not none %}
-             setTimeout(() => {
-                 // Redirect to the same page using GET to clear results
-                 window.location.href = window.location.pathname;
-             }, 300000); // 5 minutes (300,000 milliseconds)
-             {% endif %}
+              updateProxyCounter(document.getElementById('proxytext'));
+              checkFileLines(document.getElementById('proxyfile'));
+              // Clear results after a delay only if results were generated by a POST
+              {% if results is defined and results is not none %}
+              setTimeout(() => {
+                  // Redirect to the same page using GET to clear results
+                  window.location.href = window.location.pathname;
+              }, 300000); // 5 minutes (300,000 milliseconds)
+              {% endif %}
 
-             // --- Notepad Widget ---
+              // --- Notepad Widget ---
             const toggleBtn = document.getElementById('notepad-toggle-btn');
             const notepad = document.getElementById('notepad-container');
             const closeBtn = document.getElementById('notepad-close-btn');
@@ -458,7 +479,7 @@
             // Close notepad
             if (closeBtn && notepad) { closeBtn.addEventListener('click', () => { notepad.classList.add('hidden'); }); }
             // --- End Notepad Widget ---
-         });
+           });
 
     </script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
