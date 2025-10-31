@@ -436,7 +436,7 @@ def single_check_proxy_detailed(proxy_line, fraud_score_level, api_key, api_url,
     else:
         # Handle case where Scamalytics API call failed completely or returned invalid structure
         logger.warning(f"❓ {mode_prefix}No valid Scamalytics data block for: {proxy_line} (IP: {ip})")
-        return base_result # Return with available info (IP, credits, geo)
+        return base_result # Return with available info
 # --- END HELPER FUNCTIONS ---
 
 
@@ -952,10 +952,9 @@ def delete_used_ip_route(ip):
     return redirect(url_for("admin"))
 
 
-@app.route('/static/<path:path>')
-def send_static(path):
-    """Serves static files (if any)."""
-    return send_from_directory('static', path)
+# --- REMOVED REDUNDANT STATIC ROUTE ---
+# The @app.route('/static/<path:path>') function was here.
+# It is not needed because Flask handles this automatically.
 
 
 # --- Error Handling ---
