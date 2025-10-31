@@ -97,7 +97,9 @@
                             <div class="mb-3">
                                 <label for="proxytext" class="form-label">Or Paste Proxies (one per line)</label>
                                 <div class="textarea-container">
-                                    <textarea name="proxytext" id="proxytext" class="form-control textarea-box"
+                                    <textarea name="proxytext" id="proxytext_hidden" style="display: none;"></textarea>
+                                    
+                                    <textarea id="proxytext" class="form-control textarea-box"
                                               placeholder="Paste proxies here (e.g., host:port:user:pass)..."
                                               oninput="updateProxyCounter(this)"></textarea>
                                     <div class="proxy-counter" id="proxyCounter">0/{{ max_paste }}</div>
@@ -189,11 +191,13 @@
         let fileLineCount = 0;
 
         /**
-         * Updates the proxy counter, truncates text area content if over MAX_LINES,
-         * and manages the submit button state based on raw line counts.
+         * Updates counter, validates input length, sets visual feedback,
+         * and populates the hidden textarea with the (truncated) value.
+         * Disables submit button if input is invalid.
          */
         function updateProxyCounter(textarea) {
             const text = textarea.value;
+            const hiddenTextarea = document.getElementById('proxytext_hidden');
             let lines;
             let rawLineCount;
 
@@ -209,29 +213,26 @@
             const counter = document.getElementById('proxyCounter');
             const submitBtn = document.getElementById('submitBtn');
             
-            const isTooLong = rawLineCount > MAX_LINES; // Check against raw line count
+            const isTextAreaTooLong = rawLineCount > MAX_LINES;
 
-            if (isTooLong) {
-                // Truncate based on raw line count
-                lines = lines.slice(0, MAX_LINES);
-                textarea.value = lines.join('\n');
-                // Update count to the new, truncated count
-                rawLineCount = lines.length;
-            }
-            
-            // Update counter text with the raw count
+            // Update counter text
             counter.textContent = `${rawLineCount}/${MAX_LINES}`;
             
-            // Update counter style
-            if (isTooLong) { // If we *just* truncated
+            // Update counter style, set hidden value, and apply/remove invalid class
+            if (isTextAreaTooLong) {
                 counter.className = 'proxy-counter counter-error';
-                textarea.classList.add('is-invalid');
-            } else if (rawLineCount === MAX_LINES) {
-                counter.className = 'proxy-counter counter-warning';
-                textarea.classList.remove('is-invalid');
+                textarea.classList.add('is-invalid'); // Add red border
+                // Set hidden value to truncated text
+                hiddenTextarea.value = lines.slice(0, MAX_LINES).join('\n');
             } else {
-                counter.className = 'proxy-counter counter-ok';
-                textarea.classList.remove('is-invalid');
+                if (rawLineCount === MAX_LINES) {
+                    counter.className = 'proxy-counter counter-warning';
+                } else {
+                    counter.className = 'proxy-counter counter-ok';
+                }
+                textarea.classList.remove('is-invalid'); // Remove red border
+                // Set hidden value to full (valid) text
+                hiddenTextarea.value = text;
             }
 
             // --- Submit Button Logic ---
@@ -240,12 +241,13 @@
             const isFileEmpty = fileLineCount === 0;
 
             // Disable if:
-            // 1. File is too long AND text area is empty
-            // 2. Text area is empty AND file is empty
-            if ((isFileTooLong && isTextAreaEmpty) || (isTextAreaEmpty && isFileEmpty)) {
+            // 1. Text area is too long (new rule)
+            // 2. File is too long AND text area is empty
+            // 3. Text area is empty AND file is empty
+            if (isTextAreaTooLong || (isFileTooLong && isTextAreaEmpty) || (isTextAreaEmpty && isFileEmpty)) {
                 submitBtn.disabled = true;
             } else {
-                submitBtn.disabled = false; // Enable otherwise
+                submitBtn.disabled = false;
             }
             
             if (!isTextAreaEmpty) {
@@ -265,8 +267,9 @@
             const fileCounter = document.getElementById('fileCounter');
             const submitBtn = document.getElementById('submitBtn');
 
-            // Get raw count from text area
-            const textAreaText = document.getElementById('proxytext').value;
+            // Get raw count from VISIBLE text area
+            const textArea = document.getElementById('proxytext');
+            const textAreaText = textArea.value;
             let textAreaCount;
             if (textAreaText === "") {
                 textAreaCount = 0;
@@ -274,6 +277,7 @@
                 textAreaCount = textAreaText.split('\n').length;
             }
             const isTextAreaEmpty = textAreaCount === 0;
+            const isTextAreaTooLong = textAreaCount > MAX_LINES; // Check if text area is invalid
 
             if (file) {
                 const reader = new FileReader();
@@ -293,7 +297,9 @@
                         if(isTextAreaEmpty) submitBtn.disabled = true;
                     } else {
                         fileCounter.innerHTML = `File contains: <span class="text-success">${fileLineCount}</span> lines`;
+                        // Enable *only if* text area is empty (and not too long, which it is)
                         if (isTextAreaEmpty) submitBtn.disabled = false;
+                        // if text area is not empty, updateProxyCounter controls the button
                     }
                 };
                  reader.onerror = function() {
@@ -306,8 +312,10 @@
                 // No file selected
                 fileLineCount = 0;
                 fileCounter.textContent = "File contains: 0 lines";
-                if (isTextAreaEmpty) submitBtn.disabled = true;
-                // if text area is not empty, submitBtn state is already set by updateProxyCounter
+                // Disable if text area is empty OR text area is too long
+                if (isTextAreaEmpty || isTextAreaTooLong) {
+                    submitBtn.disabled = true;
+                }
             }
         }
 
