@@ -503,7 +503,7 @@ def logout():
 @app.route("/", methods=["GET", "POST"])
 @login_required
 def index():
-    """Main proxy checker page. Now uses detailed check with strict mode."""
+    """Main proxy checker page. Now uses detailed check with strict mode (silently)."""
     try:
         settings = get_app_settings()
     except Exception as e:
@@ -601,7 +601,7 @@ def index():
             actual_workers = min(MAX_WORKERS, processed_count)
             logger.info(f"Starting detailed check for {processed_count} proxies using {actual_workers} workers (target: {target_good_proxies} usable good proxies)...")
             with ThreadPoolExecutor(max_workers=actual_workers) as executor:
-                # MODIFIED: is_strict_mode is now True to activate all checks
+                # MODIFIED: is_strict_mode is now True to activate all checks silently for the end user.
                 for proxy in proxies_to_check:
                     futures.add(executor.submit(single_check_proxy_detailed, proxy, FRAUD_SCORE_LEVEL, API_KEY, API_URL, API_USER, is_strict_mode=True)) 
 
