@@ -123,7 +123,7 @@
                              <span class="badge bg-secondary me-1">USED IP</span>
                              {% endif %}
                             <button class="btn btn-sm btn-outline-secondary copy-btn {% if item.used %}disabled{% endif %}"
-                                    onclick="copyToClipboard('proxy-{{ loop.index }}', this); trackUsedProxy('{{ item.proxy }}')"
+                                    onclick="copyToClipboard('proxy-{{ loop.index }}', this); trackUsedProxy('{{ item.proxy }}', '{{ item.ip | default('') }}')"
                                     {% if item.used %}disabled{% endif %}>
                                 Copy
                             </button>
@@ -253,16 +253,23 @@
              }, 3000);
        }
 
-        function trackUsedProxy(proxy) {
+        function trackUsedProxy(proxy, ip) { // <-- MODIFIED: Added ip argument
             if (trackedProxiesThisSession.has(proxy)) {
                 console.log("Already tracked in this session:", proxy);
                 return;
             }
+
+            // Add a client-side check for IP validity before making API call
+            if (!ip || ip === 'N/A' || ip === 'ERR') {
+                console.error("Tracking failed: IP address is invalid or missing.", ip);
+                return;
+            }
+
             console.log("Tracking used via API:", proxy);
             fetch('/track-used', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', },
-                body: JSON.stringify({proxy: proxy})
+                body: JSON.stringify({proxy: proxy, ip: ip}) // <-- MODIFIED: Include IP
             })
             .then(response => {
                 if (!response.ok) {
