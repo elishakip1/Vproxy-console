@@ -401,11 +401,8 @@ def add_log_entry(level, message):
         # Append new row
         try:
             # Add at the top by inserting a row, then updating its cells
-            # This is slow, but keeps the latest logs at the top for viewing
+            # This keeps the latest logs at the top for viewing (index=2 means second row, after header)
             sheet.insert_row([get_eat_time(), level, message], index=2)
-            # The row headers are now shifted, we need to ensure they are on row 1
-            # A full implementation would manage this better, but for simplicity:
-            # We assume gspread handles header row preservation on insert at index 2 (row 1 is header).
             logger.debug(f"Logged system event: {level} - {message}")
             return True
         except gspread.exceptions.APIError as api_e:
