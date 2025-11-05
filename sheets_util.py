@@ -36,15 +36,24 @@ SHEET_CONFIG = {
                 "headers": ["Setting", "Value"]
             }
         }
+    },
+    "system_logs": { # <-- NEW CONFIG
+        "name": "System Logs",
+        "worksheets": {
+            "logs": {
+                "name": "ApplicationLogs",
+                "headers": ["Timestamp", "Level", "Message"]
+            }
+        }
     }
 }
 
 def get_eat_time():
-    """Get current time in EAT (East Africa Time) and format as YYYY-MM-DD HH:MM"""
+    """Get current time in EAT (East Africa Time) and format as YYYY-MM-DD HH:MM:SS"""
     utc_now = datetime.utcnow()
     eat_timezone = pytz.timezone('Africa/Nairobi') # EAT Timezone
     eat_now = utc_now.replace(tzinfo=pytz.utc).astimezone(eat_timezone)
-    return eat_now.strftime("%Y-%m-%d %H:%M")
+    return eat_now.strftime("%Y-%m-%d %H:%M:%S") # MODIFIED: Added Seconds
 
 def get_spreadsheet(sheet_type):
     """Get the entire spreadsheet by type"""
@@ -377,3 +386,56 @@ def update_setting(setting_name, value):
     except Exception as e:
         logger.error(f"Error in update_setting function: {e}", exc_info=True)
         return False
+
+
+# --- NEW SYSTEM LOGGING FUNCTIONS ---
+
+def add_log_entry(level, message):
+    """Add a system log entry to the ApplicationLogs worksheet."""
+    try:
+        sheet = get_worksheet("system_logs", "logs")
+        if not sheet:
+            logger.error("Could not get 'ApplicationLogs' worksheet to add log entry.")
+            return False
+        
+        # Append new row
+        try:
+            # Add at the top by inserting a row, then updating its cells
+            # This is slow, but keeps the latest logs at the top for viewing
+            sheet.insert_row([get_eat_time(), level, message], index=2)
+            # The row headers are now shifted, we need to ensure they are on row 1
+            # A full implementation would manage this better, but for simplicity:
+            # We assume gspread handles header row preservation on insert at index 2 (row 1 is header).
+            logger.debug(f"Logged system event: {level} - {message}")
+            return True
+        except gspread.exceptions.APIError as api_e:
+            logger.error(f"API Error logging system event: {api_e}")
+            return False
+        except Exception as append_e:
+            logger.error(f"Unexpected error logging system event: {append_e}")
+            return False
+    except Exception as e:
+        logger.error(f"Error in add_log_entry function: {e}", exc_info=True)
+        return False
+
+def get_all_system_logs():
+    """Get all system log records from the ApplicationLogs worksheet."""
+    try:
+        sheet = get_worksheet("system_logs", "logs")
+        if not sheet:
+            logger.error("Could not get 'ApplicationLogs' worksheet to get logs.")
+            return []
+        try:
+            # Fetch all records (skips the header row)
+            data = sheet.get_all_records()
+            return data
+        except gspread.exceptions.APIError as api_e:
+             logger.error(f"API Error getting system logs: {api_e}")
+             return []
+        except Exception as get_e:
+            logger.error(f"Unexpected error getting system logs: {get_e}", exc_info=True)
+            return []
+
+    except Exception as e:
+        logger.error(f"Error in get_all_system_logs function: {e}", exc_info=True)
+        return []
