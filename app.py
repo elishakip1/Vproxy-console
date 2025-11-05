@@ -364,6 +364,11 @@ def single_check_proxy_detailed(proxy_line, fraud_score_level, api_key, api_url,
                 # --- External Datasource Checks (Safely access nested dicts) ---
                 ext_data = data.get("external_datasources", {})
 
+                # 4.5. ip2proxy Proxy Type (must not be VPN) <-- NEW CHECK
+                if passed and ext_data.get("ip2proxy", {}).get("proxy_type") == "VPN":
+                    passed = False
+                    fail_reason = "Strict: ip2proxy proxy_type is 'VPN'"
+
                 # 5. ip2proxy_lite Blacklist (must be false)
                 if passed and ext_data.get("ip2proxy_lite", {}).get("ip_blacklisted") is True:
                     passed = False
