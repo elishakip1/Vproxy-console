@@ -671,32 +671,29 @@ def index():
 @app.route("/track-used", methods=["POST"])
 @login_required
 def track_used():
-    """Endpoint called by JS to mark a proxy's IP as used."""
+    """Endpoint called by JS to mark a proxy's IP as used. OPTIMIZED: Accepts IP from client."""
     data = request.get_json()
     proxy_line = data.get("proxy") if data else None
+    ip = data.get("ip") if data else None  # <-- MODIFIED: Get IP from request data
 
-    if not proxy_line:
-        logger.warning("Track-used request received without proxy data.")
-        return jsonify({"status": "error", "message": "Invalid request data"}), 400
+    # Validate both proxy and IP presence and format
+    if not proxy_line or not ip or ip in ('N/A', 'ERR'): # MODIFIED: Check for proxy, ip, and invalid ip placeholders
+        logger.warning(f"Track-used request received without proxy or a valid IP. Proxy: {proxy_line}, IP: {ip}")
+        return jsonify({"status": "error", "message": "Invalid request data (missing or invalid IP)"}), 400
 
     if not validate_proxy_format(proxy_line):
         logger.warning(f"Track-used request received with invalid proxy format: {proxy_line}")
         return jsonify({"status": "error", "message": "Invalid proxy format"}), 400
 
     try:
-        ip = get_ip_from_proxy(proxy_line)
-        if ip:
-            if add_used_ip(ip, proxy_line):
-                logger.info(f"Successfully marked IP {ip} as used for proxy: {proxy_line}")
-                return jsonify({"status": "success"})
-            else:
-                # add_used_ip logs its own errors
-                logger.error(f"Failed to add used IP/Proxy to Google Sheet: {proxy_line} (IP: {ip})")
-                return jsonify({"status": "error", "message": "Failed to update usage status"}), 500
+        # Direct call using the passed IP, eliminating the slow get_ip_from_proxy call.
+        if add_used_ip(ip, proxy_line):
+            logger.info(f"Successfully marked IP {ip} as used for proxy: {proxy_line}")
+            return jsonify({"status": "success"})
         else:
-            # get_ip_from_proxy logs its own errors
-            logger.warning(f"Could not retrieve IP to mark proxy as used: {proxy_line}")
-            return jsonify({"status": "error", "message": "Could not verify proxy IP before marking used"}), 400
+            # add_used_ip logs its own errors
+            logger.error(f"Failed to add used IP/Proxy to Google Sheet: {proxy_line} (IP: {ip})")
+            return jsonify({"status": "error", "message": "Failed to update usage status"}), 500
     except Exception as e:
         logger.error(f"Unexpected error in /track-used for proxy '{proxy_line}': {e}", exc_info=True)
         return jsonify({"status": "error", "message": "Internal server error during usage tracking"}), 500
