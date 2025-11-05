@@ -8,7 +8,7 @@
   <style>
     body { padding-bottom: 80px; } /* Add padding for notepad */
 
-    /* Notepad Widget Styles */
+    /* Notepad Widget Styles (Reverted to original behavior/style) */
     #notepad-widget {
         position: fixed;
         bottom: 20px;
@@ -50,7 +50,7 @@
         pointer-events: auto;
     }
     #notepad-container.hidden {
-        display: none;
+        display: none; /* Reverted to display: none */
         opacity: 0;
         transform: translateY(10px);
         pointer-events: none;
@@ -164,8 +164,8 @@
       <div class="col-md-6">
         <div class="card p-3 mb-4">
           <h4>🧠 Admin Actions</h4>
-          <a href="/admin/test" class="btn btn-warning mb-2 w-100">🛡️ Run Strict Proxy Tester</a>
-          <a href="/admin/settings" class="btn btn-outline-primary mb-2 w-100">Configure Settings</a>
+          <a href="{{ url_for('admin_test') }}" class="btn btn-warning mb-2 w-100">🛡️ Run Strict Proxy Tester</a>
+          <a href="{{ url_for('admin_logs') }}" class="btn btn-info mb-2 w-100">📋 View System Logs</a> <a href="{{ url_for('admin_settings') }}" class="btn btn-outline-primary mb-2 w-100">Configure Settings</a>
           <a href="/" class="btn btn-outline-secondary w-100">Go to Checker</a>
         </div>
       </div>
@@ -190,7 +190,7 @@
               <td><code>{{ row["Proxy"] }}</code></td>
               <td>{{ row["Date"] }}</td>
               <td>
-                <a href="/delete-used-ip/{{ row['IP'] }}" class="btn btn-sm btn-outline-danger">Delete</a>
+                <a href="{{ url_for('delete_used_ip_route', ip=row['IP']) }}" class="btn btn-sm btn-outline-danger">Delete</a>
               </td>
             </tr>
             {% endfor %}
