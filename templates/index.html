@@ -37,7 +37,7 @@
 
         /* Notepad Widget Styles */
         #notepad-widget { position: fixed; bottom: 20px; right: 20px; z-index: 1050; }
-        #notepad-toggle-btn { background-color: #0d6efd; color: white; border: none; border-radius: 50%; width: 50px; height: 50px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 8px rgba(0,0,0,0.2); cursor: pointer; transition: background-color 0.2s; }
+        #notepad-toggle-btn { background-color: #0d6efd; color: white; border: none; border-radius: 50%; w`id`th: 50px; height: 50px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 8px rgba(0,0,0,0.2); cursor: pointer; transition: background-color 0.2s; }
         #notepad-toggle-btn:hover { background-color: #0b5ed7; }
         #notepad-container { position: absolute; bottom: 65px; right: 0; width: 300px; height: 350px; background-color: #ffffff; border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); display: flex; flex-direction: column; overflow: hidden; transition: all 0.3s ease-in-out; opacity: 1; transform: translateY(0); pointer-events: auto; }
         #notepad-container.hidden { opacity: 0; transform: translateY(10px); pointer-events: none; }
@@ -130,7 +130,7 @@
 
         {% if results is defined and results is not none %} {# Check if results exist #}
         <hr>
-        <h5 class="mt-4">✅ Good Proxies Found (Score <= {{ settings.FRAUD_SCORE_LEVEL }})</h5>
+        <h5 class="mt-4">✅ Good Proxies Found (Score $\le$ {{ settings.FRAUD_SCORE_LEVEL }} & Strict Filter Applied)</h5> <!-- MODIFIED HEADER TEXT -->
 
         <div class="table-responsive mt-2">
             <table class="table table-sm table-bordered table-hover">
