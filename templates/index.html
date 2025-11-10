@@ -315,120 +315,145 @@
             }
         }
 
-       // --- NEW COMBINED FUNCTION (from admin_test.html) ---
+       
+        // --- NEW: Global Save Queue and Worker ---
+        let saveQueue = []; // Queue for items to be saved
+        let isQueueWorkerRunning = false; // Flag to prevent multiple workers
+        const WORKER_INTERVAL = 10000; // Check queue every 10 seconds
+
+        /**
+         * The main worker. Checks the queue and attempts to save the first item.
+         * It will retry the same item indefinitely until it succeeds.
+         */
+        async function processSaveQueue() {
+            if (isQueueWorkerRunning) return; // Prevent multiple instances
+            if (saveQueue.length === 0) {
+                // Queue is empty, just check again later
+                setTimeout(processSaveQueue, WORKER_INTERVAL);
+                return;
+            }
+
+            isQueueWorkerRunning = true;
+            const item = saveQueue[0]; // Get the *first* item without removing it
+
+            try {
+                const response = await fetch('/track-used', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ proxy: item.proxy, ip: item.ip })
+                });
+
+                if (!response.ok) {
+                    const errData = await response.json().catch(() => ({}));
+                    throw new Error(errData.message || `HTTP error ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                if (data && data.status === 'success') {
+                    // --- SUCCESS ---
+                    console.log("Successfully saved from queue:", item.proxy);
+                    trackedProxiesThisSession.add(item.proxy);
+                    saveQueue.shift(); // Remove item from queue *only on success*
+                } else {
+                    // --- API-LEVEL FAILURE ---
+                    throw new Error(data.message || 'API reported an unknown error');
+                }
+            } catch (error) {
+                // --- NETWORK OR THROWN FAILURE ---
+                // The item stays in the queue.
+                console.warn(`Save failed for ${item.proxy}, will retry in ${WORKER_INTERVAL/1000}s. Error:`, error.message);
+            }
+
+            // --- FINALLY ---
+            isQueueWorkerRunning = false;
+            // Schedule the next check
+            setTimeout(processSaveQueue, WORKER_INTERVAL);
+        }
+
+        /**
+         * Click handler. Copies text, updates UI, and adds to queue.
+         */
         function handleCopyAndTrack(elementId, clickedButton, proxy, ip) {
             // --- 1. Get Full Proxy Text ---
             const element = document.getElementById(elementId);
             const fullProxy = element.getAttribute('data-full-proxy');
 
-            // --- 2. Check for invalid IP ---
+            // --- 2. Copy to clipboard immediately ---
+            copyTextToClipboard(fullProxy, clickedButton);
+
+            // --- 3. Check for invalid IP ---
             if (!ip || ip === 'N/A' || ip === 'ERR') {
                 console.error("Tracking failed: IP address is invalid or missing.", ip);
-                const originalText = clickedButton.textContent;
+                // Show brief error on button, but it's already copied
                 clickedButton.textContent = 'Bad IP!';
-                clickedButton.disabled = true;
                 setTimeout(() => {
-                    clickedButton.textContent = originalText;
+                    clickedButton.textContent = 'Copy';
                     if (!clickedButton.classList.contains('disabled')) {
                          clickedButton.disabled = false;
                     }
                 }, 2000);
+                return; // Don't try to save
+            }
+
+            // --- 4. Check if already processed (in session or in queue) ---
+            if (trackedProxiesThisSession.has(proxy) || saveQueue.some(item => item.proxy === proxy)) {
+                console.log("Already processed:", proxy);
+                // Ensure UI is correct just in case
+                clickedButton.textContent = 'Saved!';
+                clickedButton.disabled = true;
                 return;
             }
 
-            // --- 3. Check session cache ---
-            if (trackedProxiesThisSession.has(proxy)) {
-                console.log("Already tracked in this session:", proxy);
-                copyTextToClipboard(fullProxy, clickedButton, true); // true = already saved
-                return;
+            // --- 5. Update UI and Add to Queue ---
+            console.log("Adding to save queue:", proxy);
+            
+            // Add "USED IP" badge dynamically
+            // Check if one already exists first (to prevent duplicates on re-render)
+            const parent = clickedButton.parentNode;
+            if (!parent.querySelector('.badge.bg-secondary')) {
+                const badge = document.createElement('span');
+                badge.className = 'badge bg-secondary me-1';
+                badge.textContent = 'USED IP';
+                parent.insertBefore(badge, clickedButton);
             }
 
-            // --- 4. Disable button and show saving state ---
-            clickedButton.disabled = true;
-            clickedButton.textContent = 'Saving...';
+            // Permanently update button
+            clickedButton.textContent = 'Saved!';
             clickedButton.classList.remove('btn-outline-secondary');
-            clickedButton.classList.add('btn-secondary');
+            clickedButton.classList.add('btn-success');
+            clickedButton.disabled = true;
+            clickedButton.classList.add('disabled');
 
-            // --- 5. Perform the API call (fetch) ---
-            fetch('/track-used', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', },
-                body: JSON.stringify({proxy: proxy, ip: ip})
-            })
-            .then(response => {
-                if (!response.ok) {
-                    return response.json().then(errData => {
-                        throw new Error(errData.message || `HTTP error ${response.status}`);
-                    });
-                }
-                return response.json();
-            })
-            .then(data => {
-                if (data && data.status === 'success') {
-                    // --- SUCCESS ---
-                    console.log("Successfully tracked used proxy via API:", proxy);
-                    trackedProxiesThisSession.add(proxy);
-
-                    copyTextToClipboard(fullProxy, clickedButton, true); // true = saved
-
-                    clickedButton.textContent = 'Saved!'; // Permanent text
-                    clickedButton.classList.remove('btn-secondary');
-                    clickedButton.classList.add('btn-success');
-                    clickedButton.disabled = true; // Keep disabled
-                    clickedButton.classList.add('disabled'); // Add class
-
-                    // Add "USED IP" badge dynamically
-                    const badge = document.createElement('span');
-                    badge.className = 'badge bg-secondary me-1';
-                    badge.textContent = 'USED IP';
-                    clickedButton.parentNode.insertBefore(badge, clickedButton);
-
-                } else {
-                    // --- API-LEVEL FAILURE ---
-                    throw new Error(data.message || 'API reported an unknown error');
-                }
-            })
-            .catch(error => {
-                // --- NETWORK OR THROWN FAILURE ---
-                console.error('Error tracking used proxy:', error.message);
-                
-                copyTextToClipboard(fullProxy, clickedButton, false); // false = not saved
-
-                clickedButton.textContent = 'Save Failed!';
-                clickedButton.classList.remove('btn-secondary');
-                clickedButton.classList.add('btn-danger');
-                
-                setTimeout(() => {
-                    clickedButton.disabled = false;
-                    clickedButton.textContent = 'Copy';
-                    clickedButton.classList.remove('btn-danger');
-                    clickedButton.classList.add('btn-outline-secondary');
-                }, 3000);
-            });
+            // Add to queue
+            saveQueue.push({ proxy: proxy, ip: ip });
         }
 
+
         // --- HELPER for clipboard copy ---
-        function copyTextToClipboard(textToCopy, clickedButton, saved) {
+        function copyTextToClipboard(textToCopy, clickedButton) {
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(textToCopy).then(() => {
-                    if (!saved) { 
-                        const originalText = clickedButton.textContent;
-                        if (originalText !== 'Save Failed!') {
-                            clickedButton.textContent = 'Copied!';
-                            setTimeout(() => { clickedButton.textContent = originalText; }, 1500);
-                        }
+                    const originalText = clickedButton.textContent;
+                    if (originalText === 'Copy') { // Only show "Copied!" if it's the first click
+                        clickedButton.textContent = 'Copied!';
+                        setTimeout(() => {
+                            if (clickedButton.textContent === 'Copied!') {
+                                clickedButton.textContent = 'Copy';
+                            }
+                        }, 1500);
                     }
                 }).catch(err => {
                     console.error('Async Clipboard API failed: ', err);
-                    copyUsingExecCommand(textToCopy, clickedButton, saved); // Fallback
+                    copyUsingExecCommand(textToCopy, clickedButton); // Fallback
                 });
             } else {
-                copyUsingExecCommand(textToCopy, clickedButton, saved);
+                copyUsingExecCommand(textToCopy, clickedButton);
             }
         }
 
         // Fallback copy method
-        function copyUsingExecCommand(textToCopy, clickedButton, saved) {
+        function copyUsingExecCommand(textToCopy, clickedButton) {
             const textArea = document.createElement("textarea");
             textArea.value = textToCopy;
             textArea.style.position = "fixed";
@@ -439,25 +464,29 @@
             textArea.select();
             try {
                 const successful = document.execCommand('copy');
-                if (successful && !saved) {
-                    const originalText = clickedButton.textContent;
-                    if (originalText !== 'Save Failed!') {
+                if (successful) {
+                     const originalText = clickedButton.textContent;
+                     if (originalText === 'Copy') {
                         clickedButton.textContent = 'Copied!';
-                        setTimeout(() => { clickedButton.textContent = originalText; }, 1500);
-                    }
+                        setTimeout(() => {
+                            if (clickedButton.textContent === 'Copied!') {
+                                clickedButton.textContent = 'Copy';
+                            }
+                        }, 1500);
+                     }
                 }
             } catch (err) {
                 console.error('Fallback execCommand exception:', err);
             }
             document.body.removeChild(textArea);
         }
-
         // --- END NEW/MODIFIED FUNCTIONS ---
 
 
         // Initialize counters and button state when the page loads
         document.addEventListener('DOMContentLoaded', () => {
               updateProxyCounter(document.getElementById('proxytext'));
+              
               // Clear results after a delay only if results were generated by a POST
               {% if results is defined and results is not none %}
               setTimeout(() => {
@@ -482,6 +511,9 @@
             // Close notepad
             if (closeBtn && notepad) { closeBtn.addEventListener('click', () => { notepad.classList.add('hidden'); }); }
             // --- End Notepad Widget ---
+
+            // --- NEW: Start the queue worker ---
+            processSaveQueue();
            });
 
     </script>
