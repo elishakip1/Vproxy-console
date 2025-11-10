@@ -788,7 +788,7 @@ def admin_test():
         logger.critical(f"CRITICAL ERROR getting app settings for admin test: {e}", exc_info=True)
         return render_template("error.html", error="Could not load critical application settings."), 500
 
-    MAX_PASTE = settings["MAX_PASTE"]
+    MAX_PASTE = settings["MAX_PASTE"] # Still needed for render_template
     STRICT_FRAUD_SCORE_LEVEL = settings["STRICT_FRAUD_SCORE_LEVEL"]
     MAX_WORKERS = settings["MAX_WORKERS"]
     API_KEY = settings["SCAMALYTICS_API_KEY"]
@@ -809,11 +809,18 @@ def admin_test():
 
     # --- Handle Input ---
     if 'proxytext' in request.form and request.form.get("proxytext", "").strip():
-        proxytext = request.form.get("proxytext", ""); all_lines = proxytext.strip().splitlines(); input_count = len(all_lines)
-        if input_count > MAX_PASTE: truncation_warning = f" Input text truncated to first {MAX_PASTE} lines."; proxies_input = all_lines[:MAX_PASTE]
-        else: proxies_input = all_lines
+        proxytext = request.form.get("proxytext", "")
+        all_lines = proxytext.strip().splitlines()
+        input_count = len(all_lines)
+        
+        # --- MODIFICATION: No truncation ---
+        truncation_warning = "" # No truncation
+        proxies_input = all_lines # Use all lines
+        # --- END MODIFICATION ---
+        
         logger.info(f"[Strict] Received {input_count} proxies via text area.")
     else: message = "No proxies submitted."; return render_template("admin_test.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings)
+
 
     # --- Load Caches ---
     used_ips_list = set(); used_proxy_cache = set(); bad_proxy_cache = set(); cache_load_warnings = []
