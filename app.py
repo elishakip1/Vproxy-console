@@ -843,26 +843,56 @@ def admin_test():
     logger.info(f"[Strict] Prefiltering complete: {len(unique_proxies_input)} unique -> {len(invalid_format_proxies)} invalid, {used_count_prefilter} skipped (used cache), {bad_count_prefilter} skipped (bad cache). {processed_count} proxies remaining.")
 
     # --- Execute Checks Concurrently ---
-    good_proxy_results = []; futures = set(); last_credits = {}
+    good_proxy_results = []
+    target_good_proxies = 2 # <--- MODIFICATION: Set target
+    futures = set()
+    cancelled_count = 0 # <--- MODIFICATION: Add counter
+    last_credits = {}
+    
     if proxies_to_check:
         actual_workers = min(MAX_WORKERS, processed_count)
-        logger.info(f"[Strict] Starting check for {processed_count} proxies using {actual_workers} workers...")
+        # MODIFIED Log
+        logger.info(f"[Strict] Starting check for {processed_count} proxies using {actual_workers} workers (target: {target_good_proxies} usable good proxies)...")
         add_log_entry("INFO", f"Strict test started by {current_user.username} for {processed_count} proxies.")
+        
         with ThreadPoolExecutor(max_workers=actual_workers) as executor:
             for proxy in proxies_to_check:
                  # Use detailed check with is_strict_mode=True
                 futures.add(executor.submit(single_check_proxy_detailed, proxy, STRICT_FRAUD_SCORE_LEVEL, API_KEY, API_URL, API_USER, is_strict_mode=True))
-            for future in as_completed(futures):
-                try:
-                    result = future.result()
-                    if result:
-                        if result.get("credits"): last_credits = result.get("credits")
-                        if result.get("proxy"):
-                            result['used'] = result.get('ip') in used_ips_list
-                            good_proxy_results.append(result)
-                except Exception as exc: logger.error(f'[Strict] A proxy check task generated an exception: {exc}', exc_info=False)
-        logger.info(f"[Strict] Finished checking. Found {len(good_proxy_results)} proxies passing strict filter.")
-    else: logger.info("[Strict] No valid proxies left to check after prefiltering.")
+            
+            # --- MODIFICATION: Replaced as_completed with while/wait logic ---
+            while futures:
+                done, futures = wait(futures, return_when=FIRST_COMPLETED)
+                for future in done:
+                    try:
+                        result = future.result()
+                        if result:
+                            if result.get("credits"): 
+                                last_credits = result.get("credits")
+                            if result.get("proxy"):
+                                result['used'] = result.get('ip') in used_ips_list
+                                good_proxy_results.append(result)
+
+                                # Check if target is met (counting only non-used proxies)
+                                if len([r for r in good_proxy_results if not r['used']]) >= target_good_proxies:
+                                    logger.info(f"[Strict] Target of {target_good_proxies} usable proxies reached. Cancelling remaining tasks.")
+                                    for f in futures:
+                                        if f.cancel(): cancelled_count += 1
+                                    futures = set() # Clear the set to stop the loop
+                                    break # Exit inner loop
+                                    
+                    except Exception as exc: 
+                        logger.error(f'[Strict] A proxy check task generated an exception: {exc}', exc_info=False)
+                
+                if not futures: # Break outer loop if futures set is empty
+                    break
+            # --- END MODIFICATION ---
+
+        # MODIFIED Log
+        logger.info(f"[Strict] Finished checking. Found {len(good_proxy_results)} proxies passing strict filter. Cancelled {cancelled_count} tasks.")
+    else: 
+        logger.info("[Strict] No valid proxies left to check after prefiltering.")
+
 
     # --- Update API Credits ---
     credit_msg = ""
@@ -883,16 +913,25 @@ def admin_test():
     good_count_final = len([r for r in final_results_display if not r['used']])
     used_count_final = len([r for r in final_results_display if r['used']])
     invalid_format_count = len(invalid_format_proxies)
-    checks_attempted = processed_count
+    
+    checks_attempted = processed_count - cancelled_count # <--- MODIFICATION
+    
     format_warning = f" ({invalid_format_count} invalid format)" if invalid_format_count > 0 else ""
     prefilter_msg = f" (Skipped {used_count_prefilter} used, {bad_count_prefilter} bad cache)." if used_count_prefilter > 0 or bad_count_prefilter > 0 else ""
+
+    # --- MODIFICATION: Add cancel message ---
+    cancel_msg = ""
+    if cancelled_count > 0:
+        cancel_msg = f" Stopped early after finding {good_count_final} usable proxies (checked {checks_attempted})."
+    # --- END MODIFICATION ---
 
     if good_count_final > 0 or used_count_final > 0: main_message = f"✅ Checked {checks_attempted} proxies ({input_count} submitted{format_warning}). Found {good_count_final} usable proxies passing strict filter ({used_count_final} used IPs found)."
     else: main_message = f"⚠️ Checked {checks_attempted} proxies ({input_count} submitted{format_warning}). No new usable proxies found passing strict filter."
     
     add_log_entry("INFO", f"Strict test finished by {current_user.username}. Found {good_count_final} good proxies. {credit_msg}")
 
-    message = main_message + truncation_warning + prefilter_msg + credit_msg
+    # MODIFICATION: Add cancel_msg
+    message = main_message + truncation_warning + prefilter_msg + credit_msg + cancel_msg
     message = ("Warning: " + " ".join(cache_load_warnings) + " " + message) if cache_load_warnings else message
     results = final_results_display
     end_time = time.time()
