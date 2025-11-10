@@ -61,7 +61,7 @@
                      <button class="accordion-button {% if results is defined and results %}collapsed{% endif %}" type="button"
                             data-bs-toggle="collapse" data-bs-target="#proxyForm"
                             aria-expanded="{{ 'false' if results is defined and results else 'true' }}" aria-controls="proxyForm">
-                        Paste Proxies (Max {{ max_paste }} Lines)
+                        Paste Proxies
                     </button>
                 </h2>
                 <div id="proxyForm" class="accordion-collapse collapse {% if results is not defined or not results %}show{% endif %}"
@@ -76,7 +76,7 @@
                                     <textarea id="proxytext" class="form-control textarea-box"
                                               placeholder="Paste proxies here (e.g., host:port:user:pass)..."
                                               oninput="updateProxyCounter(this)"></textarea>
-                                    <div class="proxy-counter" id="proxyCounter">0/{{ max_paste }}</div>
+                                    <div class="proxy-counter" id="proxyCounter">0 Lines</div>
                                 </div>
                             </div>
                             <button type="submit" id="submitBtn" class="btn btn-primary w-100">Run Strict Test</button>
@@ -123,7 +123,7 @@
                              <span class="badge bg-secondary me-1">USED IP</span>
                              {% endif %}
                             <button class="btn btn-sm btn-outline-secondary copy-btn {% if item.used %}disabled{% endif %}"
-                                    onclick="copyToClipboard('proxy-{{ loop.index }}', this); trackUsedProxy('{{ item.proxy }}', '{{ item.ip | default('') }}')"
+                                    onclick="handleCopyAndTrack('proxy-{{ loop.index }}', this, '{{ item.proxy }}', '{{ item.ip | default('') }}')"
                                     {% if item.used %}disabled{% endif %}>
                                 Copy
                             </button>
@@ -142,7 +142,7 @@
 
     <script>
         let trackedProxiesThisSession = new Set();
-        const MAX_LINES = {{ max_paste }};
+        // const MAX_LINES = {{ max_paste }}; // <-- REMOVED
 
         /**
          * Updates counter, validates input length, sets visual feedback,
@@ -167,57 +167,161 @@
             const counter = document.getElementById('proxyCounter');
             const submitBtn = document.getElementById('submitBtn');
             
-            const isTextAreaTooLong = rawLineCount > MAX_LINES;
             const isTextAreaEmpty = rawLineCount === 0;
 
-            // Update counter text
-            counter.textContent = `${rawLineCount}/${MAX_LINES}`;
-            
-            // Update counter style, set hidden value, and apply/remove invalid class
-            if (isTextAreaTooLong) {
-                counter.className = 'proxy-counter counter-error';
-                textarea.classList.add('is-invalid'); // Add red border
-                // Set hidden value to truncated text
-                hiddenTextarea.value = lines.slice(0, MAX_LINES).join('\n');
-            } else {
-                if (rawLineCount === MAX_LINES) {
-                    counter.className = 'proxy-counter counter-warning';
-                } else {
-                    counter.className = 'proxy-counter counter-ok';
-                }
-                textarea.classList.remove('is-invalid'); // Remove red border
-                // Set hidden value to full (valid) text
-                hiddenTextarea.value = text;
-            }
+            // --- MODIFIED: Simplified counter logic ---
+            counter.textContent = `${rawLineCount} Lines`;
+            counter.className = 'proxy-counter counter-ok';
+            textarea.classList.remove('is-invalid');
+            hiddenTextarea.value = text;
+            // --- END MODIFIED ---
 
-            // --- Submit Button Logic ---
-            // Disable if:
-            // 1. Text area is too long
-            // 2. Text area is empty
-            if (isTextAreaTooLong || isTextAreaEmpty) {
+            // Disable only if empty
+            if (isTextAreaEmpty) {
                 submitBtn.disabled = true;
             } else {
                 submitBtn.disabled = false;
             }
         }
 
-       function copyToClipboard(elementId, clickedButton) {
+       
+        // --- NEW: Global Save Queue and Worker ---
+        let saveQueue = []; // Queue for items to be saved
+        let isQueueWorkerRunning = false; // Flag to prevent multiple workers
+        const WORKER_INTERVAL = 10000; // Check queue every 10 seconds
+
+        /**
+         * The main worker. Checks the queue and attempts to save the first item.
+         * It will retry the same item indefinitely until it succeeds.
+         */
+        async function processSaveQueue() {
+            if (isQueueWorkerRunning) return; // Prevent multiple instances
+            if (saveQueue.length === 0) {
+                // Queue is empty, just check again later
+                setTimeout(processSaveQueue, WORKER_INTERVAL);
+                return;
+            }
+
+            isQueueWorkerRunning = true;
+            const item = saveQueue[0]; // Get the *first* item without removing it
+
+            try {
+                const response = await fetch('/track-used', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ proxy: item.proxy, ip: item.ip })
+                });
+
+                if (!response.ok) {
+                    const errData = await response.json().catch(() => ({}));
+                    throw new Error(errData.message || `HTTP error ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                if (data && data.status === 'success') {
+                    // --- SUCCESS ---
+                    console.log("Successfully saved from queue:", item.proxy);
+                    trackedProxiesThisSession.add(item.proxy);
+                    saveQueue.shift(); // Remove item from queue *only on success*
+                } else {
+                    // --- API-LEVEL FAILURE ---
+                    throw new Error(data.message || 'API reported an unknown error');
+                }
+            } catch (error) {
+                // --- NETWORK OR THROWN FAILURE ---
+                // The item stays in the queue.
+                console.warn(`Save failed for ${item.proxy}, will retry in ${WORKER_INTERVAL/1000}s. Error:`, error.message);
+            }
+
+            // --- FINALLY ---
+            isQueueWorkerRunning = false;
+            // Schedule the next check
+            setTimeout(processSaveQueue, WORKER_INTERVAL);
+        }
+
+        /**
+         * Click handler. Copies text, updates UI, and adds to queue.
+         */
+        function handleCopyAndTrack(elementId, clickedButton, proxy, ip) {
+            // --- 1. Get Full Proxy Text ---
             const element = document.getElementById(elementId);
             const fullProxy = element.getAttribute('data-full-proxy');
 
+            // --- 2. Copy to clipboard immediately ---
+            copyTextToClipboard(fullProxy, clickedButton);
+
+            // --- 3. Check for invalid IP ---
+            if (!ip || ip === 'N/A' || ip === 'ERR') {
+                console.error("Tracking failed: IP address is invalid or missing.", ip);
+                // Show brief error on button, but it's already copied
+                clickedButton.textContent = 'Bad IP!';
+                setTimeout(() => {
+                    clickedButton.textContent = 'Copy';
+                    if (!clickedButton.classList.contains('disabled')) {
+                         clickedButton.disabled = false;
+                    }
+                }, 2000);
+                return; // Don't try to save
+            }
+
+            // --- 4. Check if already processed (in session or in queue) ---
+            if (trackedProxiesThisSession.has(proxy) || saveQueue.some(item => item.proxy === proxy)) {
+                console.log("Already processed:", proxy);
+                // Ensure UI is correct just in case
+                clickedButton.textContent = 'Saved!';
+                clickedButton.disabled = true;
+                return;
+            }
+
+            // --- 5. Update UI and Add to Queue ---
+            console.log("Adding to save queue:", proxy);
+            
+            // Add "USED IP" badge dynamically
+            const parent = clickedButton.parentNode;
+            if (!parent.querySelector('.badge.bg-secondary')) {
+                const badge = document.createElement('span');
+                badge.className = 'badge bg-secondary me-1';
+                badge.textContent = 'USED IP';
+                parent.insertBefore(badge, clickedButton);
+            }
+
+            // Permanently update button
+            clickedButton.textContent = 'Saved!';
+            clickedButton.classList.remove('btn-outline-secondary');
+            clickedButton.classList.add('btn-success');
+            clickedButton.disabled = true;
+            clickedButton.classList.add('disabled');
+
+            // Add to queue
+            saveQueue.push({ proxy: proxy, ip: ip });
+        }
+
+
+        // --- HELPER for clipboard copy ---
+        function copyTextToClipboard(textToCopy, clickedButton) {
             if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(fullProxy).then(() => {
-                    showCopiedMessage(element, clickedButton);
+                navigator.clipboard.writeText(textToCopy).then(() => {
+                    const originalText = clickedButton.textContent;
+                    if (originalText === 'Copy') { // Only show "Copied!" if it's the first click
+                        clickedButton.textContent = 'Copied!';
+                        setTimeout(() => {
+                            if (clickedButton.textContent === 'Copied!') {
+                                clickedButton.textContent = 'Copy';
+                            }
+                        }, 1500);
+                    }
                 }).catch(err => {
                     console.error('Async Clipboard API failed: ', err);
-                    copyUsingExecCommand(fullProxy, element, clickedButton);
+                    copyUsingExecCommand(textToCopy, clickedButton); // Fallback
                 });
             } else {
-                copyUsingExecCommand(fullProxy, element, clickedButton);
+                copyUsingExecCommand(textToCopy, clickedButton);
             }
-       }
+        }
 
-        function copyUsingExecCommand(textToCopy, element, clickedButton) {
+        // Fallback copy method
+        function copyUsingExecCommand(textToCopy, clickedButton) {
             const textArea = document.createElement("textarea");
             textArea.value = textToCopy;
             textArea.style.position = "fixed";
@@ -229,70 +333,28 @@
             try {
                 const successful = document.execCommand('copy');
                 if (successful) {
-                    showCopiedMessage(element, clickedButton);
+                     const originalText = clickedButton.textContent;
+                     if (originalText === 'Copy') {
+                        clickedButton.textContent = 'Copied!';
+                        setTimeout(() => {
+                            if (clickedButton.textContent === 'Copied!') {
+                                clickedButton.textContent = 'Copy';
+                            }
+                        }, 1500);
+                     }
                 }
             } catch (err) {
                 console.error('Fallback execCommand exception:', err);
             }
             document.body.removeChild(textArea);
         }
-
-       function showCopiedMessage(element, clickedButton) {
-            const isPermanentlyDisabled = clickedButton.classList.contains('disabled');
-            clickedButton.disabled = true;
-            clickedButton.textContent = 'Copied!';
-            clickedButton.classList.remove('btn-outline-secondary');
-            clickedButton.classList.add('btn-success');
-            setTimeout(() => {
-                 if (!isPermanentlyDisabled) {
-                    clickedButton.disabled = false;
-                    clickedButton.textContent = 'Copy';
-                    clickedButton.classList.remove('btn-success');
-                    clickedButton.classList.add('btn-outline-secondary');
-                 }
-             }, 3000);
-       }
-
-        function trackUsedProxy(proxy, ip) { // <-- MODIFIED: Added ip argument
-            if (trackedProxiesThisSession.has(proxy)) {
-                console.log("Already tracked in this session:", proxy);
-                return;
-            }
-
-            // Add a client-side check for IP validity before making API call
-            if (!ip || ip === 'N/A' || ip === 'ERR') {
-                console.error("Tracking failed: IP address is invalid or missing.", ip);
-                return;
-            }
-
-            console.log("Tracking used via API:", proxy);
-            fetch('/track-used', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', },
-                body: JSON.stringify({proxy: proxy, ip: ip}) // <-- MODIFIED: Include IP
-            })
-            .then(response => {
-                if (!response.ok) {
-                    console.error(`Error tracking used proxy: ${response.status} ${response.statusText}`);
-                    return response.json().then(errData => { console.error("Server error details:", errData); });
-                }
-                return response.json();
-            })
-            .then(data => {
-                if (data && data.status === 'success') {
-                    console.log("Successfully tracked used proxy via API:", proxy);
-                    trackedProxiesThisSession.add(proxy);
-                } else if (data) {
-                    console.error('API reported error tracking used proxy:', data.message || 'Unknown error');
-                }
-            })
-            .catch(error => {
-                console.error('Network error occurred while tracking used proxy:', error);
-            });
-        }
+        // --- END NEW/MODIFIED FUNCTIONS ---
 
         document.addEventListener('DOMContentLoaded', () => {
              updateProxyCounter(document.getElementById('proxytext'));
+             
+             // --- NEW: Start the queue worker ---
+             processSaveQueue();
          });
 
     </script>
