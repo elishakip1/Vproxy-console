@@ -568,9 +568,12 @@ def index():
             all_lines = proxytext.strip().splitlines()
             input_count = len(all_lines)
             
-            # --- MODIFICATION: No truncation ---
-            truncation_warning = "" # No truncation
-            proxies_input = all_lines # Use all lines
+            # --- MODIFICATION: Re-added limit ---
+            if input_count > MAX_PASTE:
+                truncation_warning = f" Input text truncated to first {MAX_PASTE} lines."
+                proxies_input = all_lines[:MAX_PASTE]
+            else:
+                proxies_input = all_lines
             # --- END MODIFICATION ---
 
             logger.info(f"Received {input_count} proxies via text area.")
@@ -907,9 +910,12 @@ def admin_test():
         all_lines = proxytext.strip().splitlines()
         input_count = len(all_lines)
         
-        # --- MODIFICATION: No truncation ---
-        truncation_warning = "" # No truncation
-        proxies_input = all_lines # Use all lines
+        # --- MODIFICATION: Re-added limit ---
+        if input_count > MAX_PASTE:
+            truncation_warning = f" Input text truncated to first {MAX_PASTE} lines."
+            proxies_input = all_lines[:MAX_PASTE]
+        else:
+            proxies_input = all_lines
         # --- END MODIFICATION ---
         
         logger.info(f"[Strict] Received {input_count} proxies via text area.")
