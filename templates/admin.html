@@ -121,16 +121,22 @@
           <h4>📊 API Stats</h4>
           <ul class="list-group">
             <li class="list-group-item d-flex justify-content-between align-items-center">
-              API Credits Used
+              Total Logged API Calls
+              <span class="badge bg-info">{{ stats.total_api_calls_logged }}</span>
+            </li>
+            <li class="list-group-item d-flex justify-content-between align-items-center">
+              API Credits Used (from API)
               <span class="badge bg-secondary">{{ stats.api_credits_used }}</span>
             </li>
             <li class="list-group-item d-flex justify-content-between align-items-center">
-              API Credits Remaining
+              API Credits Remaining (from API)
               <span class="badge bg-primary">{{ stats.api_credits_remaining }}</span>
             </li>
           </ul>
-           <div class="form-text p-1">Note: Credits are updated after running the 'Strict Tester'.</div>
-        </div>
+           <div class="form-text p-1">
+               Note: 'Total Logged' sums all checks from the usage log. 'Credits (from API)' is from the provider (updates after running the 'Strict Tester').
+            </div>
+           </div>
       </div>
       <div class="col-md-6">
         <div class="card p-3 mb-4">
