@@ -37,15 +37,26 @@ SHEET_CONFIG = {
             }
         }
     },
-    "system_logs": { # <-- NEW CONFIG
+    "system_logs": { 
         "name": "System Logs",
         "worksheets": {
             "logs": {
                 "name": "ApplicationLogs",
-                "headers": ["Timestamp", "Level", "Message"]
+                "headers": ["Timestamp", "Level", "Message", "IP"]
+            }
+        }
+    },
+    # --- NEW: API USAGE LOG ---
+    "api_usage": {
+        "name": "ApiUsageLog",
+        "worksheets": {
+            "logs": {
+                "name": "UsageLogs",
+                "headers": ["Timestamp", "Username", "User IP", "Proxies Submitted", "API Calls Made"]
             }
         }
     }
+    # --- END NEW ---
 }
 
 def get_eat_time():
@@ -128,8 +139,10 @@ def get_worksheet(sheet_type, worksheet_key):
 
             if existing_headers != expected_headers:
                 logger.warning(f"Worksheet '{config['name']}' headers mismatch. Expected: {expected_headers}, Found: {existing_headers}. Resetting headers.")
-                worksheet.clear() # Clear might be too destructive, consider updating instead if needed
+                # --- MODIFIED: Clear and re-apply headers ---
+                worksheet.clear() 
                 worksheet.append_row(expected_headers)
+                # --- END MODIFIED ---
         except IndexError: # Happens if sheet is completely empty
              logger.warning(f"Worksheet '{config['name']}' was empty. Setting headers.")
              worksheet.append_row(expected_headers)
@@ -388,9 +401,9 @@ def update_setting(setting_name, value):
         return False
 
 
-# --- NEW SYSTEM LOGGING FUNCTIONS ---
+# --- SYSTEM LOGGING FUNCTIONS ---
 
-def add_log_entry(level, message):
+def add_log_entry(level, message, ip="N/A"):
     """Add a system log entry to the ApplicationLogs worksheet."""
     try:
         sheet = get_worksheet("system_logs", "logs")
@@ -400,10 +413,8 @@ def add_log_entry(level, message):
         
         # Append new row
         try:
-            # Add at the top by inserting a row, then updating its cells
-            # This keeps the latest logs at the top for viewing (index=2 means second row, after header)
-            sheet.insert_row([get_eat_time(), level, message], index=2)
-            logger.debug(f"Logged system event: {level} - {message}")
+            sheet.insert_row([get_eat_time(), level, message, ip], index=2)
+            logger.debug(f"Logged system event: {level} - {message} - {ip}")
             return True
         except gspread.exceptions.APIError as api_e:
             logger.error(f"API Error logging system event: {api_e}")
@@ -423,7 +434,6 @@ def get_all_system_logs():
             logger.error("Could not get 'ApplicationLogs' worksheet to get logs.")
             return []
         try:
-            # Fetch all records (skips the header row)
             data = sheet.get_all_records()
             return data
         except gspread.exceptions.APIError as api_e:
@@ -435,4 +445,67 @@ def get_all_system_logs():
 
     except Exception as e:
         logger.error(f"Error in get_all_system_logs function: {e}", exc_info=True)
+        return []
+
+def clear_all_system_logs():
+    """Clears all rows *except* the header from the ApplicationLogs worksheet."""
+    try:
+        sheet_type = "system_logs"
+        worksheet_key = "logs"
+        sheet = get_worksheet(sheet_type, worksheet_key)
+        
+        if not sheet:
+            logger.error("Could not get 'ApplicationLogs' worksheet to clear logs.")
+            return False
+        
+        sheet.clear()
+        
+        headers = SHEET_CONFIG[sheet_type]["worksheets"][worksheet_key]["headers"]
+        sheet.append_row(headers)
+        
+        logger.info("Successfully cleared all system logs and reset headers.")
+        return True
+    except gspread.exceptions.APIError as api_e:
+        logger.error(f"API Error clearing system logs: {api_e}")
+        return False
+    except Exception as e:
+        logger.error(f"Error in clear_all_system_logs function: {e}", exc_info=True)
+        return False
+
+# --- NEW: API USAGE LOG FUNCTIONS ---
+
+def add_api_usage_log(username, ip, submitted_count, api_calls_count):
+    """Add a new entry to the ApiUsageLog worksheet."""
+    try:
+        sheet = get_worksheet("api_usage", "logs")
+        if not sheet:
+            logger.error("Could not get 'ApiUsageLog' worksheet to add usage log.")
+            return False
+        
+        # Insert at the top (after header)
+        sheet.insert_row([get_eat_time(), username, ip, submitted_count, api_calls_count], index=2)
+        logger.info(f"Logged API usage for {username}: {api_calls_count} calls.")
+        return True
+    except gspread.exceptions.APIError as api_e:
+        logger.error(f"API Error logging API usage: {api_e}")
+        return False
+    except Exception as e:
+        logger.error(f"Error in add_api_usage_log function: {e}", exc_info=True)
+        return False
+
+def get_all_api_usage_logs():
+    """Get all records from the ApiUsageLog worksheet."""
+    try:
+        sheet = get_worksheet("api_usage", "logs")
+        if not sheet:
+            logger.error("Could not get 'ApiUsageLog' worksheet to get usage logs.")
+            return []
+        
+        data = sheet.get_all_records()
+        return data
+    except gspread.exceptions.APIError as api_e:
+         logger.error(f"API Error getting API usage logs: {api_e}")
+         return []
+    except Exception as get_e:
+        logger.error(f"Unexpected error getting API usage logs: {get_e}", exc_info=True)
         return []
