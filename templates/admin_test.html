@@ -61,7 +61,7 @@
                      <button class="accordion-button {% if results is defined and results %}collapsed{% endif %}" type="button"
                             data-bs-toggle="collapse" data-bs-target="#proxyForm"
                             aria-expanded="{{ 'false' if results is defined and results else 'true' }}" aria-controls="proxyForm">
-                        Paste Proxies
+                        Paste Proxies (Max {{ max_paste }} Lines)
                     </button>
                 </h2>
                 <div id="proxyForm" class="accordion-collapse collapse {% if results is not defined or not results %}show{% endif %}"
@@ -76,7 +76,7 @@
                                     <textarea id="proxytext" class="form-control textarea-box"
                                               placeholder="Paste proxies here (e.g., host:port:user:pass)..."
                                               oninput="updateProxyCounter(this)"></textarea>
-                                    <div class="proxy-counter" id="proxyCounter">0 Lines</div>
+                                    <div class="proxy-counter" id="proxyCounter">0/{{ max_paste }}</div>
                                 </div>
                             </div>
                             <button type="submit" id="submitBtn" class="btn btn-primary w-100">Run Strict Test</button>
@@ -142,7 +142,8 @@
 
     <script>
         let trackedProxiesThisSession = new Set();
-        // const MAX_LINES = {{ max_paste }}; // <-- REMOVED
+        // --- MODIFICATION: Re-added MAX_LINES ---
+        const MAX_LINES = {{ max_paste }};
 
         /**
          * Updates counter, validates input length, sets visual feedback,
@@ -167,21 +168,40 @@
             const counter = document.getElementById('proxyCounter');
             const submitBtn = document.getElementById('submitBtn');
             
+            // --- MODIFICATION: Re-added limit logic ---
+            const isTextAreaTooLong = rawLineCount > MAX_LINES;
             const isTextAreaEmpty = rawLineCount === 0;
 
-            // --- MODIFIED: Simplified counter logic ---
-            counter.textContent = `${rawLineCount} Lines`;
-            counter.className = 'proxy-counter counter-ok';
-            textarea.classList.remove('is-invalid');
-            hiddenTextarea.value = text;
-            // --- END MODIFIED ---
+            // Update counter text
+            counter.textContent = `${rawLineCount}/${MAX_LINES}`;
+            
+            // Update counter style, set hidden value, and apply/remove invalid class
+            if (isTextAreaTooLong) {
+                counter.className = 'proxy-counter counter-error';
+                textarea.classList.add('is-invalid'); // Add red border
+                // Set hidden value to truncated text
+                hiddenTextarea.value = lines.slice(0, MAX_LINES).join('\n');
+            } else {
+                if (rawLineCount === MAX_LINES) {
+                    counter.className = 'proxy-counter counter-warning';
+                } else {
+                    counter.className = 'proxy-counter counter-ok';
+                }
+                textarea.classList.remove('is-invalid'); // Remove red border
+                // Set hidden value to full (valid) text
+                hiddenTextarea.value = text;
+            }
 
-            // Disable only if empty
-            if (isTextAreaEmpty) {
+            // --- Submit Button Logic ---
+            // Disable if:
+            // 1. Text area is too long
+            // 2. Text area is empty
+            if (isTextAreaTooLong || isTextAreaEmpty) {
                 submitBtn.disabled = true;
             } else {
                 submitBtn.disabled = false;
             }
+            // --- END MODIFICATION ---
         }
 
        
@@ -351,6 +371,7 @@
         // --- END NEW/MODIFIED FUNCTIONS ---
 
         document.addEventListener('DOMContentLoaded', () => {
+             // --- MODIFICATION: Call counter update ---
              updateProxyCounter(document.getElementById('proxytext'));
              
              // --- NEW: Start the queue worker ---
