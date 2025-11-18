@@ -129,6 +129,32 @@ def get_app_settings():
         "API_CREDITS_REMAINING": settings.get("API_CREDITS_REMAINING", DEFAULT_SETTINGS["API_CREDITS_REMAINING"])
     }
 
+def parse_api_credentials(settings):
+    """
+    Parses comma-separated keys, usernames, and URLs from settings into a list of dicts.
+    Handles cases where one URL might be used for multiple keys.
+    """
+    raw_keys = settings.get("SCAMALYTICS_API_KEY", "")
+    raw_users = settings.get("SCAMALYTICS_USERNAME", "")
+    raw_urls = settings.get("SCAMALYTICS_API_URL", "")
+
+    keys = [k.strip() for k in raw_keys.split(',') if k.strip()]
+    users = [u.strip() for u in raw_users.split(',') if u.strip()]
+    urls = [u.strip() for u in raw_urls.split(',') if u.strip()]
+
+    if not keys: return []
+
+    # If only one user/url provided but multiple keys, use it for all
+    if len(users) == 1 and len(keys) > 1: users = users * len(keys)
+    if len(urls) == 1 and len(keys) > 1: urls = urls * len(keys)
+
+    credentials = []
+    # Zip stops at the shortest list, so ensure you provide enough for all keys
+    for k, u, url in zip(keys, users, urls):
+        credentials.append({"key": k, "user": u, "url": url})
+    
+    return credentials
+
 def validate_proxy_format(proxy_line):
     """Validate proxy format: host:port:username:password"""
     try:
@@ -189,93 +215,64 @@ def get_ip_from_proxy(proxy_line):
         logger.error(f"❌ Unexpected error getting IP from proxy {proxy_line} using {ip_check_url}: {e}", exc_info=False)
         return None
 
-def get_fraud_score(ip, proxy_line, api_key, api_url, api_user):
-    """Get fraud score via Scamalytics v3 API. Returns score (int) or None."""
-    # This function remains useful as a fallback or simpler check if needed elsewhere.
-    if not validate_proxy_format(proxy_line): return None
-    if not ip: return None # Need IP to check score
-    try:
-        host, port, user, pw = proxy_line.strip().split(":")
-        proxy_url = f"http://{user}:{pw}@{host}:{port}"
-        proxies = { "http": proxy_url, "https": proxy_url }
-        session = requests.Session()
-        retries = Retry(total=1, backoff_factor=0.3, status_forcelist=[429, 500, 502, 503, 504])
-        session.mount('http://', HTTPAdapter(max_retries=retries))
-        session.mount('https://', HTTPAdapter(max_retries=retries))
-
-        url = f"{api_url.rstrip('/')}/{api_user}/?key={api_key}&ip={ip}"
-        headers = { "User-Agent": random.choice(USER_AGENTS), "Accept": "application/json", }
-
-        response = session.get(url, headers=headers, proxies=proxies, timeout=REQUEST_TIMEOUT)
-
-        if response.status_code == 200:
-            try:
-                data = response.json()
-                if data.get("scamalytics", {}).get("status") == "ok":
-                    score = data.get("scamalytics", {}).get("scamalytics_score")
-                    if score is not None:
-                        return int(score)
-                    else:
-                        logger.warning(f"API status OK but no score found for IP {ip} via {proxy_line}")
-                else:
-                    api_status = data.get('scamalytics', {}).get('status', 'N/A')
-                    logger.error(f"Scamalytics API error '{api_status}' for IP {ip} via {proxy_line}")
-            except ValueError: # Handle case where score is not an integer
-                 logger.error(f"Could not convert score to int for IP {ip}. Response: {data}")
-            except requests.exceptions.JSONDecodeError:
-                logger.error(f"JSON decode error checking score for IP {ip} via {proxy_line}. Response: {response.text[:100]}")
-        else:
-            logger.error(f"API request failed (HTTP {response.status_code}) checking score for IP {ip} via {proxy_line}: {response.text[:100]}")
-
-    except requests.exceptions.Timeout:
-         logger.error(f"⚠️ Timeout checking API for IP {ip} via {proxy_line}")
-    except requests.exceptions.ProxyError as pe:
-        logger.error(f"⚠️ Proxy error checking API for IP {ip} via {proxy_line}: {pe}")
-    except requests.exceptions.RequestException as e:
-        logger.error(f"⚠️ Network error checking API for IP {ip} via {proxy_line}: {e}")
-    except Exception as e:
-        logger.error(f"⚠️ Unexpected error checking API for IP {ip} via {proxy_line}: {e}", exc_info=False)
-    return None
-
-def get_fraud_score_detailed(ip, proxy_line, api_key, api_url, api_user):
-    """Get detailed fraud score report via Scamalytics v3 API. Returns full response dict or None."""
+def get_fraud_score_detailed(ip, proxy_line, credentials_list):
+    """
+    Get detailed fraud score report via Scamalytics v3 API. 
+    Iterates through the provided credentials list if 'out of credits' occurs.
+    Returns full response dict or None.
+    """
     if not validate_proxy_format(proxy_line): return None
     if not ip: return None
-    try:
-        host, port, user, pw = proxy_line.strip().split(":")
-        proxy_url = f"http://{user}:{pw}@{host}:{port}"
-        proxies = { "http": proxy_url, "https": proxy_url }
-        session = requests.Session()
-        retries = Retry(total=1, backoff_factor=0.3, status_forcelist=[429, 500, 502, 503, 504])
-        session.mount('http://', HTTPAdapter(max_retries=retries))
-        session.mount('https://', HTTPAdapter(max_retries=retries))
+    
+    if not credentials_list:
+        logger.error("No API credentials available to check score.")
+        return None
 
-        url = f"{api_url.rstrip('/')}/{api_user}/?key={api_key}&ip={ip}"
-        headers = { "User-Agent": random.choice(USER_AGENTS), "Accept": "application/json", }
+    for idx, cred in enumerate(credentials_list):
+        api_key = cred['key']
+        api_user = cred['user']
+        api_url = cred['url']
 
-        response = session.get(url, headers=headers, proxies=proxies, timeout=REQUEST_TIMEOUT)
+        try:
+            host, port, user, pw = proxy_line.strip().split(":")
+            proxy_url = f"http://{user}:{pw}@{host}:{port}"
+            proxies = { "http": proxy_url, "https": proxy_url }
+            session = requests.Session()
+            retries = Retry(total=1, backoff_factor=0.3, status_forcelist=[429, 500, 502, 503, 504])
+            session.mount('http://', HTTPAdapter(max_retries=retries))
+            session.mount('https://', HTTPAdapter(max_retries=retries))
 
-        if response.status_code == 200:
-            try:
-                data = response.json()
-                return data # Return the full dict
-            except requests.exceptions.JSONDecodeError:
-                logger.error(f"JSON decode error getting detailed score for IP {ip} via {proxy_line}. Response: {response.text[:100]}")
-                return None
-        else:
-            logger.error(f"API request failed (HTTP {response.status_code}) getting detailed score for IP {ip} via {proxy_line}: {response.text[:100]}")
-            return None
-    except requests.exceptions.Timeout:
-        logger.error(f"⚠️ Timeout getting detailed score for IP {ip} via {proxy_line}")
-    except requests.exceptions.ProxyError as pe:
-        logger.error(f"⚠️ Proxy error getting detailed score for IP {ip} via {proxy_line}: {pe}")
-    except requests.exceptions.RequestException as e:
-        logger.error(f"⚠️ Network error getting detailed score for IP {ip} via {proxy_line}: {e}")
-    except Exception as e:
-        logger.error(f"⚠️ Unexpected error getting detailed score for IP {ip} via {proxy_line}: {e}", exc_info=False)
+            url = f"{api_url.rstrip('/')}/{api_user}/?key={api_key}&ip={ip}"
+            headers = { "User-Agent": random.choice(USER_AGENTS), "Accept": "application/json", }
+
+            response = session.get(url, headers=headers, proxies=proxies, timeout=REQUEST_TIMEOUT)
+
+            if response.status_code == 200:
+                try:
+                    data = response.json()
+                    
+                    # --- CHECK FOR OUT OF CREDITS ---
+                    scam_block = data.get("scamalytics", {})
+                    if scam_block.get("status") == "error" and scam_block.get("error") == "out of credits":
+                        logger.warning(f"⚠️ Credential Set #{idx+1} ({api_user}) is out of credits. Rotating...")
+                        continue # Try next credential in loop
+                    
+                    return data # Success or other error
+                except requests.exceptions.JSONDecodeError:
+                    logger.error(f"JSON decode error checking IP {ip} with user {api_user}. Response: {response.text[:100]}")
+                    continue # Try next credential just in case? Or fail?
+            else:
+                logger.error(f"API request failed (HTTP {response.status_code}) with user {api_user}: {response.text[:100]}")
+                # If 401/403, maybe rotate? For now, we only rotate on explicit "out of credits".
+        
+        except Exception as e:
+             logger.error(f"⚠️ Unexpected error checking API for IP {ip} with user {api_user}: {e}")
+             continue # Try next credential
+    
+    logger.error(f"❌ All API credentials failed or out of credits for IP {ip}")
     return None
 
-def single_check_proxy_detailed(proxy_line, fraud_score_level, api_key, api_url, api_user, is_strict_mode=False):
+def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list, is_strict_mode=False):
     """
     Checks a single proxy with detailed criteria, extracts geo info + score.
     Applies extensive checks if is_strict_mode is True.
@@ -295,8 +292,8 @@ def single_check_proxy_detailed(proxy_line, fraud_score_level, api_key, api_url,
     if not ip:
         return base_result # get_ip_from_proxy logs error
 
-    # --- Fetch Detailed Data Always ---
-    data = get_fraud_score_detailed(ip, proxy_line, api_key, api_url, api_user)
+    # --- Fetch Detailed Data Always (With Key Rotation) ---
+    data = get_fraud_score_detailed(ip, proxy_line, credentials_list)
 
     # Always try to extract credits if the response exists
     if data and data.get("credits"):
@@ -304,7 +301,7 @@ def single_check_proxy_detailed(proxy_line, fraud_score_level, api_key, api_url,
 
     # --- MODIFIED: Smart Geo Extraction (Prioritize MaxMind, Fallback to DBIP) ---
     try:
-        ext_sources = data.get("external_datasources", {})
+        ext_sources = data.get("external_datasources", {}) if data else {}
         geo_data = {}
 
         # 1. Try MaxMind first (It works on free tier)
@@ -570,9 +567,9 @@ def index():
     # Use the standard user fraud score level for this page
     FRAUD_SCORE_LEVEL = settings["FRAUD_SCORE_LEVEL"]
     MAX_WORKERS = settings["MAX_WORKERS"]
-    API_KEY = settings["SCAMALYTICS_API_KEY"]
-    API_URL = settings["SCAMALYTICS_API_URL"]
-    API_USER = settings["SCAMALYTICS_USERNAME"]
+    # --- Parse Credentials List ---
+    api_credentials = parse_api_credentials(settings)
+    
     announcement = settings.get("ANNOUNCEMENT")
 
     results = None # Use None for GET to distinguish from empty POST results
@@ -661,9 +658,9 @@ def index():
             actual_workers = min(MAX_WORKERS, processed_count)
             logger.info(f"Starting detailed check for {processed_count} proxies using {actual_workers} workers (target: {target_good_proxies} usable good proxies)...")
             with ThreadPoolExecutor(max_workers=actual_workers) as executor:
-                # MODIFIED: is_strict_mode is now True to activate all checks silently for the end user.
+                # MODIFIED: Pass list of credentials
                 for proxy in proxies_to_check:
-                    futures.add(executor.submit(single_check_proxy_detailed, proxy, FRAUD_SCORE_LEVEL, API_KEY, API_URL, API_USER, is_strict_mode=True)) 
+                    futures.add(executor.submit(single_check_proxy_detailed, proxy, FRAUD_SCORE_LEVEL, api_credentials, is_strict_mode=True)) 
 
                 # Process results as they complete, implement early exit
                 while futures:
@@ -919,9 +916,8 @@ def admin_test():
     MAX_PASTE = settings["MAX_PASTE"] # Still needed for render_template
     STRICT_FRAUD_SCORE_LEVEL = settings["STRICT_FRAUD_SCORE_LEVEL"]
     MAX_WORKERS = settings["MAX_WORKERS"]
-    API_KEY = settings["SCAMALYTICS_API_KEY"]
-    API_URL = settings["SCAMALYTICS_API_URL"]
-    API_USER = settings["SCAMALYTICS_USERNAME"]
+    # --- Parse Credentials List ---
+    api_credentials = parse_api_credentials(settings)
 
     results = None
     message = None
@@ -990,9 +986,10 @@ def admin_test():
         add_log_entry("INFO", f"Strict test started by {current_user.username} for {processed_count} proxies.", ip=user_ip)
         
         with ThreadPoolExecutor(max_workers=actual_workers) as executor:
+            # MODIFIED: Pass credentials list
             for proxy in proxies_to_check:
                  # Use detailed check with is_strict_mode=True
-                futures.add(executor.submit(single_check_proxy_detailed, proxy, STRICT_FRAUD_SCORE_LEVEL, API_KEY, API_URL, API_USER, is_strict_mode=True))
+                futures.add(executor.submit(single_check_proxy_detailed, proxy, STRICT_FRAUD_SCORE_LEVEL, api_credentials, is_strict_mode=True))
             
             # --- MODIFICATION: Replaced as_completed with while/wait logic ---
             while futures:
@@ -1053,7 +1050,7 @@ def admin_test():
     
     final_results_display = sorted(unique_results, key=lambda x: x['used'])
     # --- END MODIFIED ---
-
+    
     good_count_final = len([r for r in final_results_display if not r['used']])
     used_count_final = len([r for r in final_results_display if r['used']])
     invalid_format_count = len(invalid_format_proxies)
@@ -1122,9 +1119,22 @@ def admin_settings():
             elif not (0 <= form_settings["FRAUD_SCORE_LEVEL"] <= 100): error_msg = "User Fraud score must be between 0 and 100."
             elif not (0 <= form_settings["STRICT_FRAUD_SCORE_LEVEL"] <= 100): error_msg = "Strict Fraud score must be between 0 and 100."
             elif not (1 <= form_settings["MAX_WORKERS"] <= 100): error_msg = "Max workers must be between 1 and 100."
-            elif len(form_settings["SCAMALYTICS_API_KEY"]) < 5: error_msg = "API Key seems too short."
-            elif not form_settings["SCAMALYTICS_API_URL"].startswith("http"): error_msg = "API URL must start with http or https."
-            elif len(form_settings["SCAMALYTICS_USERNAME"]) < 3: error_msg = "Username seems too short."
+            
+            # MODIFIED Validation: Check all comma-separated keys
+            keys_check = [k.strip() for k in form_settings["SCAMALYTICS_API_KEY"].split(',') if k.strip()]
+            for k in keys_check:
+                 if len(k) < 5: error_msg = f"API Key '{k}' seems too short."
+            
+            # MODIFIED Validation: Check all URLs
+            urls_check = [u.strip() for u in form_settings["SCAMALYTICS_API_URL"].split(',') if u.strip()]
+            for u in urls_check:
+                 if not u.startswith("http"): error_msg = f"API URL '{u}' must start with http or https."
+
+            # MODIFIED Validation: Check all Usernames
+            users_check = [u.strip() for u in form_settings["SCAMALYTICS_USERNAME"].split(',') if u.strip()]
+            for u in users_check:
+                 if len(u) < 3: error_msg = f"Username '{u}' seems too short."
+
         except ValueError: error_msg = "Invalid input: Score levels, Max Proxies, and Max Workers must be whole numbers."
 
         if not error_msg:
