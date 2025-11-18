@@ -97,7 +97,9 @@ DEFAULT_SETTINGS = {
     "ANNOUNCEMENT": "",
     "API_CREDITS_USED": "N/A",
     "API_CREDITS_REMAINING": "N/A",
-    "STRICT_FRAUD_SCORE_LEVEL": 20 # <-- Default strict score
+    "STRICT_FRAUD_SCORE_LEVEL": 20, # <-- Default strict score
+    "CONSECUTIVE_FAILS": 0,         # <-- NEW: Track consecutive bad checks
+    "SYSTEM_PAUSED": "FALSE"        # <-- NEW: Master kill switch
 }
 
 # User agents for requests
@@ -126,7 +128,10 @@ def get_app_settings():
         "SCAMALYTICS_USERNAME": settings.get("SCAMALYTICS_USERNAME", DEFAULT_SETTINGS["SCAMALYTICS_USERNAME"]),
         "ANNOUNCEMENT": settings.get("ANNOUNCEMENT", DEFAULT_SETTINGS["ANNOUNCEMENT"]),
         "API_CREDITS_USED": settings.get("API_CREDITS_USED", DEFAULT_SETTINGS["API_CREDITS_USED"]),
-        "API_CREDITS_REMAINING": settings.get("API_CREDITS_REMAINING", DEFAULT_SETTINGS["API_CREDITS_REMAINING"])
+        "API_CREDITS_REMAINING": settings.get("API_CREDITS_REMAINING", DEFAULT_SETTINGS["API_CREDITS_REMAINING"]),
+        # --- NEW SETTINGS ---
+        "CONSECUTIVE_FAILS": int(settings.get("CONSECUTIVE_FAILS", DEFAULT_SETTINGS["CONSECUTIVE_FAILS"])),
+        "SYSTEM_PAUSED": settings.get("SYSTEM_PAUSED", DEFAULT_SETTINGS["SYSTEM_PAUSED"])
     }
 
 def parse_api_credentials(settings):
@@ -254,7 +259,10 @@ def get_fraud_score_detailed(ip, proxy_line, credentials_list):
                     # --- CHECK FOR OUT OF CREDITS ---
                     scam_block = data.get("scamalytics", {})
                     if scam_block.get("status") == "error" and scam_block.get("error") == "out of credits":
-                        logger.warning(f"⚠️ Credential Set #{idx+1} ({api_user}) is out of credits. Rotating...")
+                        # --- NEW: Log the failure clearly for Admin ---
+                        msg = f"⚠️ API Key for user '{api_user}' is OUT OF CREDITS. Rotating to next key."
+                        logger.warning(msg)
+                        add_log_entry("WARNING", msg, ip="System") 
                         continue # Try next credential in loop
                     
                     return data # Success or other error
@@ -571,12 +579,24 @@ def index():
     api_credentials = parse_api_credentials(settings)
     
     announcement = settings.get("ANNOUNCEMENT")
-
+    
+    # --- NEW: CHECK IF SYSTEM IS PAUSED ---
+    system_paused = str(settings.get("SYSTEM_PAUSED", "FALSE")).upper() == "TRUE"
+    
     results = None # Use None for GET to distinguish from empty POST results
     message = None
     user_ip = get_user_ip() # Get IP for POST logic
 
+    # If paused, prevent POST processing
+    if system_paused:
+        message = "⚠️ System Paused: Too many consecutive failures. Please contact admin."
+
     if request.method == "POST":
+        if system_paused:
+             # If they try to bypass the UI disabling
+             flash("System is currently paused for maintenance. Please contact admin.", "danger")
+             return render_template("index.html", results=None, message=message, max_paste=MAX_PASTE, settings=settings, announcement=announcement, system_paused=True)
+
         start_time = time.time()
         proxies_input = []
         input_count = 0
@@ -600,7 +620,7 @@ def index():
             logger.info(f"Received {input_count} proxies via text area.")
         else:
             message = "No proxies submitted. Please paste proxies."
-            return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings, announcement=announcement)
+            return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings, announcement=announcement, system_paused=system_paused)
 
         # --- Load Caches (Used IPs and Bad Proxies) ---
         used_ips_list = set()
@@ -714,6 +734,35 @@ def index():
         invalid_format_count = len(invalid_format_proxies)
         checks_attempted = processed_count - cancelled_count
 
+        # --- NEW: LOGIC FOR CONSECUTIVE FAILURES & AUTO-PAUSE ---
+        try:
+            current_fails = settings.get("CONSECUTIVE_FAILS", 0)
+            
+            if good_count_final > 0:
+                # Success! Reset counter if it wasn't already 0
+                if current_fails > 0:
+                    update_setting("CONSECUTIVE_FAILS", "0")
+                    logger.info("Good proxies found. Resetting consecutive failure counter to 0.")
+            
+            elif checks_attempted > 0:
+                # Failure. Increment counter.
+                new_fails = current_fails + checks_attempted
+                update_setting("CONSECUTIVE_FAILS", str(new_fails))
+                logger.warning(f"Batch failed. Consecutive failures updated: {current_fails} -> {new_fails}")
+                
+                # Check Threshold
+                if new_fails > 1000:
+                    logger.critical(f"CRITICAL: Consecutive failures ({new_fails}) exceeded 1000. PAUSING SYSTEM.")
+                    update_setting("SYSTEM_PAUSED", "TRUE")
+                    add_log_entry("CRITICAL", f"System PAUSED due to {new_fails} consecutive failed checks.", ip=user_ip)
+                    # Set local var for immediate display
+                    system_paused = True
+                    message = "⚠️ System Paused: Too many consecutive failures. Please contact admin."
+
+        except Exception as e:
+            logger.error(f"Error updating consecutive failure logic: {e}")
+        # --- END NEW LOGIC ---
+
         # --- NEW: Log API Usage ---
         try:
             add_api_usage_log(
@@ -751,7 +800,7 @@ def index():
         logger.info(f"Request processing took {end_time - start_time:.2f} seconds.")
 
     # Render template for both GET and POST
-    return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings, announcement=announcement)
+    return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings, announcement=announcement, system_paused=system_paused)
 
 
 @app.route("/track-used", methods=["POST"])
@@ -831,7 +880,10 @@ def admin():
             "api_credits_used": settings.get("API_CREDITS_USED", "N/A"),
             "api_credits_remaining": settings.get("API_CREDITS_REMAINING", "N/A"),
             # --- NEW STAT ---
-            "total_api_calls_logged": total_api_calls
+            "total_api_calls_logged": total_api_calls,
+            # --- SYSTEM STATUS ---
+            "consecutive_fails": settings.get("CONSECUTIVE_FAILS", 0),
+            "system_paused": settings.get("SYSTEM_PAUSED", "FALSE")
         }
         # Fetch used IPs list
         used_ips = get_all_used_ips() # Assuming this returns a list of dicts
@@ -851,9 +903,31 @@ def admin():
         stats_error = { 
             "api_credits_used": "Error", 
             "api_credits_remaining": "Error",
-            "total_api_calls_logged": "Error" # <-- NEW
+            "total_api_calls_logged": "Error",
+            "consecutive_fails": "Error",
+            "system_paused": "Error"
         }
         return render_template("admin.html", stats=stats_error, used_ips=[], announcement="")
+
+
+# --- NEW: ADMIN RESET ROUTE ---
+@app.route("/admin/reset-system", methods=["POST"])
+@admin_required
+def admin_reset_system():
+    """Resets consecutive failure counter and unpauses system."""
+    user_ip = get_user_ip()
+    try:
+        update_setting("CONSECUTIVE_FAILS", "0")
+        update_setting("SYSTEM_PAUSED", "FALSE")
+        flash("System successfully reset and unpaused.", "success")
+        logger.info(f"Admin '{current_user.username}' reset and unpaused the system.")
+        add_log_entry("INFO", f"System Unpaused by {current_user.username}.", ip=user_ip)
+    except Exception as e:
+        logger.error(f"Error resetting system: {e}")
+        flash("Failed to reset system settings.", "danger")
+    
+    return redirect(url_for("admin"))
+# --- END NEW ROUTE ---
 
 
 # --- NEW ADMIN LOGS ROUTE ---
