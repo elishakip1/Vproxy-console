@@ -1,4 +1,4 @@
-# --- IMPORTS ---
+# -- IMPORTS --
 from flask import (
     Flask, request, render_template, redirect, url_for,
     jsonify, send_from_directory, flash, session
