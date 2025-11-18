@@ -1,4 +1,4 @@
-# -- IMPORTS --
+# --- IMPORTS ---
 from flask import (
     Flask, request, render_template, redirect, url_for,
     jsonify, send_from_directory, flash, session
@@ -302,18 +302,41 @@ def single_check_proxy_detailed(proxy_line, fraud_score_level, api_key, api_url,
     if data and data.get("credits"):
         base_result["credits"] = data.get("credits")
 
-    # Always try to extract geo (dbip source)
+    # --- MODIFIED: Smart Geo Extraction (Prioritize MaxMind, Fallback to DBIP) ---
     try:
-        if data and data.get("external_datasources", {}).get("dbip"):
-            dbip_data = data["external_datasources"]["dbip"]
-            base_result["geo"] = {
-                "country_code": dbip_data.get("ip_country_code", "N/A"),
-                "state": dbip_data.get("ip_state_name", "N/A"),
-                "city": dbip_data.get("ip_city", "N/A"),
-                "postcode": dbip_data.get("ip_postcode", "N/A")
-            }
-        else:
+        ext_sources = data.get("external_datasources", {})
+        geo_data = {}
+
+        # 1. Try MaxMind first (It works on free tier)
+        if ext_sources.get("maxmind_geolite2"):
+            mm_data = ext_sources["maxmind_geolite2"]
+            # Check if it has real data (not "PREMIUM FIELD...")
+            if "PREMIUM" not in mm_data.get("ip_country_code", ""):
+                geo_data = {
+                    "country_code": mm_data.get("ip_country_code", "N/A"),
+                    "state": mm_data.get("ip_state_name", "N/A"),
+                    "city": mm_data.get("ip_city", "N/A"),
+                    "postcode": mm_data.get("ip_postcode", "N/A")
+                }
+
+        # 2. If MaxMind failed or was empty, try DBIP (Old default)
+        if not geo_data and ext_sources.get("dbip"):
+            dbip_data = ext_sources["dbip"]
+            # Only use if it doesn't say PREMIUM
+            if "PREMIUM" not in dbip_data.get("ip_country_code", ""):
+                geo_data = {
+                    "country_code": dbip_data.get("ip_country_code", "N/A"),
+                    "state": dbip_data.get("ip_state_name", "N/A"),
+                    "city": dbip_data.get("ip_city", "N/A"),
+                    "postcode": dbip_data.get("ip_postcode", "N/A")
+                }
+
+        # 3. Final Fallback
+        if not geo_data:
              base_result["geo"] = {"country_code": "N/A", "state": "N/A", "city": "N/A", "postcode": "N/A"}
+        else:
+             base_result["geo"] = geo_data
+
     except Exception as e:
         logger.warning(f"Could not extract geo data for {ip}: {e}")
         base_result["geo"] = {"country_code": "ERR", "state": "ERR", "city": "ERR", "postcode": "ERR"}
@@ -381,6 +404,7 @@ def single_check_proxy_detailed(proxy_line, fraud_score_level, api_key, api_url,
                 ext_data = data.get("external_datasources", {})
 
                 # 4.5. ip2proxy Proxy Type (must not be VPN) <-- NEW CHECK
+                # Note: On free tier, this often returns "PREMIUM FIELD", so this check may be ineffective but harmless.
                 if passed and ext_data.get("ip2proxy", {}).get("proxy_type") == "VPN":
                     passed = False
                     fail_reason = "Strict: ip2proxy proxy_type is 'VPN'"
