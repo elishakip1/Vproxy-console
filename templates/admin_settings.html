@@ -149,34 +149,47 @@
           </div>
 
           <hr>
-          <h5 class="mt-3">API Settings</h5>
+          <h5 class="mt-3">API Settings (Credential Rotation)</h5>
+          <p class="text-muted small mb-3">
+              If you have multiple accounts, enter them separated by commas. The system will automatically switch to the next one if the current one runs out of credits.
+          </p>
 
           <div class="mb-3">
-            <label for="scamalytics_username" class="form-label">
-              Scamalytics Username
+            <label for="scamalytics_username" class="form-label fw-bold">
+              Scamalytics Username(s)
             </label>
             <input type="text" class="form-control" id="scamalytics_username"
                    name="scamalytics_username" value="{{ settings.SCAMALYTICS_USERNAME }}" required>
-            <div class="form-text">Your API username (e.g., keishamartell329)</div>
+            <div class="form-text">
+                Your API username(s). For multiple, separate with commas.<br>
+                <em>Example:</em> <code>user_one, user_two, user_three</code>
+            </div>
           </div>
 
           <div class="mb-3">
-            <label for="scamalytics_api_key" class="form-label">
-              Scamalytics API Key
+            <label for="scamalytics_api_key" class="form-label fw-bold">
+              Scamalytics API Key(s)
             </label>
             <input type="text" class="form-control" id="scamalytics_api_key"
                    name="scamalytics_api_key" value="{{ settings.SCAMALYTICS_API_KEY }}" required>
-            <div class="form-text">API Key for Scamalytics v3</div>
+            <div class="form-text">
+                Your API Key(s). Must match the order of usernames above.<br>
+                <em>Example:</em> <code>key_for_user1, key_for_user2, key_for_user3</code>
+            </div>
           </div>
 
           <div class="mb-3">
-            <label for="scamalytics_api_url" class="form-label">
-              Scamalytics API URL
+            <label for="scamalytics_api_url" class="form-label fw-bold">
+              Scamalytics API URL(s)
             </label>
             <input type="text" class="form-control" id="scamalytics_api_url"
                    name="scamalytics_api_url" value="{{ settings.SCAMALYTICS_API_URL }}" required>
-            <div class="form-text">API Endpoint URL (e.g., https://api11.scamalytics.com/v3/)</div>
+            <div class="form-text">
+                API Endpoint URL. If they are all the same, just enter one.<br>
+                <em>Default:</em> <code>https://api11.scamalytics.com/v3/</code>
+            </div>
           </div>
+          
           <button type="submit" class="btn btn-primary">Save Settings</button>
           <a href="/admin" class="btn btn-outline-secondary">Back to Admin</a>
         </form>
@@ -184,7 +197,7 @@
     </div>
 
     <div class="alert alert-info">
-      <strong>Note:</strong> Changes take effect immediately. Use with caution.
+      <strong>Note:</strong> Changes take effect immediately.
     </div>
   </div>
 
