@@ -701,7 +701,16 @@ def index():
 
 
         # --- Final Processing and Message Construction ---
-        final_results_display = sorted(good_proxy_results, key=lambda x: x['used'])
+        # --- MODIFIED: Deduplicate Results by IP (keep first occurrence) ---
+        unique_results = []
+        seen_ips = set()
+        for res in good_proxy_results:
+            if res.get('ip') and res.get('ip') not in seen_ips:
+                seen_ips.add(res['ip'])
+                unique_results.append(res)
+        
+        final_results_display = sorted(unique_results, key=lambda x: x['used'])
+        # --- END MODIFIED ---
 
         good_count_final = len([r for r in final_results_display if not r['used']])
         used_count_final = len([r for r in final_results_display if r['used']])
@@ -729,7 +738,7 @@ def index():
             cancel_msg = f" Stopped early after finding {good_count_final} usable proxies (checked {checks_attempted})."
 
         if good_count_final > 0 or used_count_final > 0:
-            base_message = f"✅ Checked {checks_attempted} proxies ({input_count} submitted{format_warning}). Found {good_count_final} usable proxies ({used_count_final} previously used IPs found)."
+            base_message = f"✅ Checked {checks_attempted} proxies ({input_count} submitted{format_warning}). Found {good_count_final} unique usable proxies ({used_count_final} previously used IPs found)."
             # --- MODIFIED: Added IP ---
             add_log_entry("INFO", f"Checker run by {current_user.username}. Found {good_count_final} usable proxies.", ip=user_ip)
         else:
@@ -1034,7 +1043,17 @@ def admin_test():
     elif processed_count > 0: logger.warning("No credit information returned from API."); credit_msg = " (Could not get API credit info)"
 
     # --- Final Processing and Message ---
-    final_results_display = sorted(good_proxy_results, key=lambda x: x['used'])
+    # --- MODIFIED: Deduplicate Results by IP (keep first occurrence) ---
+    unique_results = []
+    seen_ips = set()
+    for res in good_proxy_results:
+        if res.get('ip') and res.get('ip') not in seen_ips:
+            seen_ips.add(res['ip'])
+            unique_results.append(res)
+    
+    final_results_display = sorted(unique_results, key=lambda x: x['used'])
+    # --- END MODIFIED ---
+
     good_count_final = len([r for r in final_results_display if not r['used']])
     used_count_final = len([r for r in final_results_display if r['used']])
     invalid_format_count = len(invalid_format_proxies)
@@ -1062,7 +1081,7 @@ def admin_test():
         cancel_msg = f" Stopped early after finding {good_count_final} usable proxies (checked {checks_attempted})."
     # --- END MODIFICATION ---
 
-    if good_count_final > 0 or used_count_final > 0: main_message = f"✅ Checked {checks_attempted} proxies ({input_count} submitted{format_warning}). Found {good_count_final} usable proxies passing strict filter ({used_count_final} used IPs found)."
+    if good_count_final > 0 or used_count_final > 0: main_message = f"✅ Checked {checks_attempted} proxies ({input_count} submitted{format_warning}). Found {good_count_final} unique usable proxies passing strict filter ({used_count_final} used IPs found)."
     else: main_message = f"⚠️ Checked {checks_attempted} proxies ({input_count} submitted{format_warning}). No new usable proxies found passing strict filter."
     
     # --- MODIFIED: Added IP ---
