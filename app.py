@@ -629,7 +629,9 @@ def index():
         cache_load_warnings = []
         try:
             used_ips_records = get_all_used_ips()
-            used_ips_list = {r.get('IP') for r in used_ips_records if r.get('IP')}
+            # --- FIXED: Force clean IPs from sheet (strip whitespace) ---
+            used_ips_list = {str(r.get('IP')).strip() for r in used_ips_records if r.get('IP')}
+            # --- END FIX ---
             used_proxy_cache = {r.get('Proxy') for r in used_ips_records if r.get('Proxy')}
             logger.info(f"Loaded {len(used_ips_list)} used IPs and {len(used_proxy_cache)} used proxies from cache.")
         except Exception as e:
@@ -695,7 +697,11 @@ def index():
 
                                 # Check if the 'proxy' key is set (meaning score check passed)
                                 if result.get("proxy"):
-                                    result['used'] = result.get('ip') in used_ips_list # Check against live used IP list
+                                    # --- FIXED: Robust check against used_ips_list ---
+                                    ip_clean = str(result.get('ip')).strip()
+                                    result['used'] = ip_clean in used_ips_list
+                                    # --- END FIX ---
+                                    
                                     good_proxy_results.append(result)
 
                                     # Check if target is met (counting only non-used proxies)
@@ -1027,7 +1033,7 @@ def admin_test():
 
     # --- Load Caches ---
     used_ips_list = set(); used_proxy_cache = set(); bad_proxy_cache = set(); cache_load_warnings = []
-    try: used_ips_records = get_all_used_ips(); used_ips_list = {r.get('IP') for r in used_ips_records if r.get('IP')}; used_proxy_cache = {r.get('Proxy') for r in used_ips_records if r.get('Proxy')}; logger.info(f"[Strict] Loaded {len(used_ips_list)} used IPs and {len(used_proxy_cache)} used proxies.")
+    try: used_ips_records = get_all_used_ips(); used_ips_list = {str(r.get('IP')).strip() for r in used_ips_records if r.get('IP')}; used_proxy_cache = {r.get('Proxy') for r in used_ips_records if r.get('Proxy')}; logger.info(f"[Strict] Loaded {len(used_ips_list)} used IPs and {len(used_proxy_cache)} used proxies.")
     except Exception as e: logger.error(f"[Strict] Error loading used proxy cache: {e}"); cache_load_warnings.append("Could not load used proxy cache.")
     try: bad_proxy_cache = set(get_bad_proxies_list()); logger.info(f"[Strict] Loaded {len(bad_proxy_cache)} bad proxies.")
     except Exception as e: logger.error(f"[Strict] Error loading bad proxy cache: {e}"); cache_load_warnings.append("Could not load bad proxy cache.")
@@ -1075,7 +1081,10 @@ def admin_test():
                             if result.get("credits"): 
                                 last_credits = result.get("credits")
                             if result.get("proxy"):
-                                result['used'] = result.get('ip') in used_ips_list
+                                # --- FIXED: Robust check against used_ips_list ---
+                                ip_clean = str(result.get('ip')).strip()
+                                result['used'] = ip_clean in used_ips_list
+                                # --- END FIX ---
                                 good_proxy_results.append(result)
 
                                 # Check if target is met (counting only non-used proxies)
@@ -1214,9 +1223,15 @@ def admin_settings():
         if not error_msg:
             logger.info("Attempting settings update via admin panel..."); success_count = 0
             settings_to_update = list(form_settings.items()) # Get items from validated form data
+            
             for key, value in settings_to_update:
-                if update_setting(key, str(value)): success_count += 1
-                else: logger.error(f"Failed to update setting '{key}' in Google Sheet.")
+                # --- FIX: Add delay to prevent Google API "Too Many Requests" error ---
+                time.sleep(1.1) 
+                if update_setting(key, str(value)): 
+                    success_count += 1
+                else: 
+                    logger.error(f"Failed to update setting '{key}' in Google Sheet.")
+            
             if success_count == len(settings_to_update): 
                 logger.info("All settings updated successfully."); 
                 flash("Settings updated successfully", "success"); 
