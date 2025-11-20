@@ -10,6 +10,9 @@ from functools import wraps
 import os
 import time
 import requests
+# --- NEW IMPORTS FOR URL MANIPULATION ---
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+# ----------------------------------------
 from concurrent.futures import ThreadPoolExecutor, as_completed, FIRST_COMPLETED, wait
 import datetime
 import random
@@ -307,19 +310,57 @@ def logout():
 @app.route('/api/fetch-abc-proxies')
 @login_required
 def fetch_abc_proxies():
+    """
+    Fetches proxies from the URL saved in settings.
+    Automatically overrides the 'num' parameter to match the system's 'MAX_PASTE' setting.
+    """
     settings = get_app_settings()
+    
+    # 1. Get the Base URL
     generation_url = settings.get("ABC_GENERATION_URL", "").strip()
-    if not generation_url: return jsonify({"status": "error", "message": "ABC Generation URL not set."})
+    if not generation_url: 
+        return jsonify({"status": "error", "message": "ABC Generation URL not set."})
+
+    # 2. Get the Max Limit
+    max_paste_limit = settings.get("MAX_PASTE", 30)
+
     try:
-        response = requests.get(generation_url, timeout=10)
+        # --- DYNAMIC URL LOGIC ---
+        # Parse the original URL
+        parsed_url = urlparse(generation_url)
+        
+        # Extract query parameters as a dictionary
+        query_params = parse_qs(parsed_url.query)
+        
+        # Override the 'num' parameter
+        # Note: parse_qs returns values as lists, so we wrap the new value in a list
+        query_params['num'] = [str(max_paste_limit)]
+        
+        # Rebuild the URL
+        new_query_string = urlencode(query_params, doseq=True)
+        final_url = urlunparse(parsed_url._replace(query=new_query_string))
+        
+        logger.info(f"Fetching proxies with dynamic limit ({max_paste_limit}): {final_url}")
+        # -------------------------
+
+        response = requests.get(final_url, timeout=10)
         if response.status_code == 200:
             content = response.text.strip()
+            
+            # Check if ABC returned a JSON error
             if not content or "{" in content:
                  try:
                      json_data = response.json()
-                     if json_data.get("code") != 0: return jsonify({"status": "error", "message": f"API Error: {json_data}"})
+                     if json_data.get("code") != 0 and json_data.get("code") != "success": 
+                         return jsonify({"status": "error", "message": f"API Error: {json_data}"})
                  except: pass
+            
             lines = [l.strip() for l in content.splitlines() if l.strip()]
+            
+            # Safety trim in case API ignores parameter
+            if len(lines) > max_paste_limit:
+                lines = lines[:max_paste_limit]
+
             return jsonify({"status": "success", "proxies": lines})
         return jsonify({"status": "error", "message": f"HTTP Error: {response.status_code}"})
     except Exception as e: return jsonify({"status": "error", "message": f"Server Error: {str(e)}"})
