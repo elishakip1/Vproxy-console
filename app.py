@@ -99,7 +99,8 @@ DEFAULT_SETTINGS = {
     "API_CREDITS_REMAINING": "N/A",
     "STRICT_FRAUD_SCORE_LEVEL": 20, # <-- Default strict score
     "CONSECUTIVE_FAILS": 0,         # <-- NEW: Track consecutive bad checks
-    "SYSTEM_PAUSED": "FALSE"        # <-- NEW: Master kill switch
+    "SYSTEM_PAUSED": "FALSE",       # <-- NEW: Master kill switch
+    "ABC_GENERATION_URL": ""        # <-- NEW: ABC Proxy URL
 }
 
 # User agents for requests
@@ -131,7 +132,8 @@ def get_app_settings():
         "API_CREDITS_REMAINING": settings.get("API_CREDITS_REMAINING", DEFAULT_SETTINGS["API_CREDITS_REMAINING"]),
         # --- NEW SETTINGS ---
         "CONSECUTIVE_FAILS": int(settings.get("CONSECUTIVE_FAILS", DEFAULT_SETTINGS["CONSECUTIVE_FAILS"])),
-        "SYSTEM_PAUSED": settings.get("SYSTEM_PAUSED", DEFAULT_SETTINGS["SYSTEM_PAUSED"])
+        "SYSTEM_PAUSED": settings.get("SYSTEM_PAUSED", DEFAULT_SETTINGS["SYSTEM_PAUSED"]),
+        "ABC_GENERATION_URL": settings.get("ABC_GENERATION_URL", DEFAULT_SETTINGS["ABC_GENERATION_URL"])
     }
 
 def parse_api_credentials(settings):
@@ -558,6 +560,51 @@ def logout():
     return redirect(url_for('login'))
 
 
+# --- NEW ROUTE: Fetch ABC Proxies ---
+@app.route('/api/fetch-abc-proxies')
+@login_required
+def fetch_abc_proxies():
+    """Fetches proxies from the URL saved in settings."""
+    settings = get_app_settings()
+    generation_url = settings.get("ABC_GENERATION_URL", "").strip()
+
+    if not generation_url:
+        return jsonify({"status": "error", "message": "ABC Generation URL not set in Admin Settings."})
+
+    try:
+        # Request the proxies from the URL
+        # ABC Proxy usually returns plain text list, one per line
+        response = requests.get(generation_url, timeout=10)
+        
+        if response.status_code == 200:
+            content = response.text.strip()
+            
+            # Check if content looks like an error or empty
+            if not content or "{" in content: # Simple check if it returned JSON error instead of text list
+                 # Attempt to parse JSON just in case it's a JSON error
+                 try:
+                     json_data = response.json()
+                     if json_data.get("code") != 0 and json_data.get("code") != "success":
+                          return jsonify({"status": "error", "message": f"ABC API Error: {json_data}"})
+                 except:
+                     pass # Not JSON, proceed as text
+
+            # Split into lines and filter empty
+            lines = [line.strip() for line in content.splitlines() if line.strip()]
+            
+            if not lines:
+                 return jsonify({"status": "error", "message": "ABC Proxy API returned empty result."})
+
+            return jsonify({"status": "success", "proxies": lines})
+        else:
+            return jsonify({"status": "error", "message": f"ABC API HTTP Error: {response.status_code}"})
+            
+    except Exception as e:
+        logger.error(f"Error fetching ABC proxies: {e}")
+        return jsonify({"status": "error", "message": f"Server Error: {str(e)}"})
+# --- END NEW ROUTE ---
+
+
 @app.route("/", methods=["GET", "POST"])
 @login_required
 def index():
@@ -889,7 +936,9 @@ def admin():
             "total_api_calls_logged": total_api_calls,
             # --- SYSTEM STATUS ---
             "consecutive_fails": settings.get("CONSECUTIVE_FAILS", 0),
-            "system_paused": settings.get("SYSTEM_PAUSED", "FALSE")
+            "system_paused": settings.get("SYSTEM_PAUSED", "FALSE"),
+            # --- NEW STAT ---
+            "abc_generation_url": settings.get("ABC_GENERATION_URL", "Not Set")
         }
         # Fetch used IPs list
         used_ips = get_all_used_ips() # Assuming this returns a list of dicts
@@ -911,7 +960,8 @@ def admin():
             "api_credits_remaining": "Error",
             "total_api_calls_logged": "Error",
             "consecutive_fails": "Error",
-            "system_paused": "Error"
+            "system_paused": "Error",
+             "abc_generation_url": "Error"
         }
         return render_template("admin.html", stats=stats_error, used_ips=[], announcement="")
 
@@ -1196,6 +1246,9 @@ def admin_settings():
             form_settings["SCAMALYTICS_API_KEY"] = request.form.get("scamalytics_api_key", "").strip()
             form_settings["SCAMALYTICS_API_URL"] = request.form.get("scamalytics_api_url", "").strip()
             form_settings["SCAMALYTICS_USERNAME"] = request.form.get("scamalytics_username", "").strip()
+            
+            # --- NEW: Capture ABC Generation URL ---
+            form_settings["ABC_GENERATION_URL"] = request.form.get("abc_generation_url", "").strip()
 
             # Input constraints validation
             if not (5 <= form_settings["MAX_PASTE"] <= 100): error_msg = "Max proxies must be between 5 and 100."
