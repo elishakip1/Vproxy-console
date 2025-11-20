@@ -18,7 +18,7 @@ from requests.packages.urllib3.util.retry import Retry
 import logging
 import sys
 
-# --- CHANGED: Import from db_util instead of sheets_util ---
+# Import from db_util (Supabase)
 from db_util import (
     get_settings, update_setting, add_used_ip, delete_used_ip,
     get_all_used_ips,
@@ -52,7 +52,6 @@ class User(UserMixin):
     @property
     def is_admin(self): return self.role == "admin"
 
-# Replace with DB in production if needed, currently using hardcoded dict
 users = {
     1: User(id=1, username="Boss", password="ADMIN123", role="admin"),
     2: User(id=2, username="Work", password="password"),
@@ -107,7 +106,6 @@ def get_app_settings(force_refresh=False):
     final_settings = DEFAULT_SETTINGS.copy()
     final_settings.update(db_settings)
     
-    # Type conversions
     try:
         final_settings["MAX_PASTE"] = int(final_settings["MAX_PASTE"])
         final_settings["FRAUD_SCORE_LEVEL"] = int(final_settings["FRAUD_SCORE_LEVEL"])
@@ -184,6 +182,10 @@ def get_fraud_score_detailed(ip, proxy_line, credentials_list):
     return None
 
 def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list, is_strict_mode=False):
+    """
+    RESTORED FULL STRICT LOGIC.
+    Checks every single external blacklist provided by the API.
+    """
     time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
     res = {"proxy": None, "ip": None, "credits": {}, "geo": {}, "score": None}
     if not validate_proxy_format(proxy_line): return res
@@ -195,14 +197,15 @@ def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list,
     data = get_fraud_score_detailed(ip, proxy_line, credentials_list)
     if data and data.get("credits"): res["credits"] = data.get("credits")
     
+    # Geo extraction
     try:
-        ext = data.get("external_datasources", {}) if data else {}
+        ext_src = data.get("external_datasources", {}) if data else {}
         geo = {}
-        mm = ext.get("maxmind_geolite2", {})
+        mm = ext_src.get("maxmind_geolite2", {})
         if mm and "PREMIUM" not in mm.get("ip_country_code", ""):
             geo = {"country_code": mm.get("ip_country_code"), "state": mm.get("ip_state_name"), "city": mm.get("ip_city"), "postcode": mm.get("ip_postcode")}
         if not geo:
-            db = ext.get("dbip", {})
+            db = ext_src.get("dbip", {})
             if db and "PREMIUM" not in db.get("ip_country_code", ""):
                 geo = {"country_code": db.get("ip_country_code"), "state": db.get("ip_state_name"), "city": db.get("ip_city"), "postcode": db.get("ip_postcode")}
         res["geo"] = geo if geo else {"country_code": "N/A", "state": "N/A", "city": "N/A", "postcode": "N/A"}
@@ -218,15 +221,52 @@ def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list,
             score_int = int(score)
             res["score"] = score_int
             passed = True
+            
+            # 1. Basic Score Check
             if score_int > fraud_score_level: passed = False
             
+            # 2. FULL STRICT CHECKS (Restored)
             if passed and is_strict_mode:
+                # A. Scamalytics Risk
                 if scam.get("scamalytics_risk") != "low": passed = False
+                # B. Scamalytics Blacklist
                 if scam.get("is_blacklisted_external") is True: passed = False
+                # C. Scamalytics Flags
                 pf = scam.get("scamalytics_proxy", {})
                 for f in ["is_datacenter", "is_vpn", "is_apple_icloud_private_relay", "is_amazon_aws", "is_google"]:
                     if pf.get(f) is True: passed = False
-            
+                
+                # D. External Data Sources (The missing part)
+                ext_data = data.get("external_datasources", {})
+                
+                # ip2proxy
+                if ext_data.get("ip2proxy", {}).get("proxy_type") == "VPN": passed = False
+                if ext_data.get("ip2proxy_lite", {}).get("ip_blacklisted") is True: passed = False
+
+                # Firehol
+                firehol = ext_data.get("firehol", {})
+                if firehol.get("ip_blacklisted_30") is True: passed = False
+                if firehol.get("ip_blacklisted_1day") is True: passed = False
+                if firehol.get("is_proxy") is True: passed = False
+
+                # Ipsum
+                ipsum = ext_data.get("ipsum", {})
+                if ipsum.get("ip_blacklisted") is True: passed = False
+                if ipsum.get("num_blacklists", 0) != 0: passed = False
+
+                # Spamhaus Drop
+                if ext_data.get("spamhaus_drop", {}).get("ip_blacklisted") is True: passed = False
+
+                # x4bnet
+                x4b = ext_data.get("x4bnet", {})
+                for f in ["is_vpn", "is_datacenter", "is_tor", "is_blacklisted_spambot", "is_bot_operamini", "is_bot_semrush"]:
+                    if x4b.get(f) is True: passed = False
+
+                # Google external
+                goog = ext_data.get("google", {})
+                for f in ["is_google_general", "is_googlebot", "is_special_crawler", "is_user_triggered_fetcher"]:
+                    if goog.get(f) is True: passed = False
+
             if passed: res["proxy"] = proxy_line
             elif score_int > fraud_score_level:
                 try: log_bad_proxy(proxy_line, ip, score_int)
@@ -237,6 +277,8 @@ def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list,
 @app.before_request
 def before_request_func():
     if request.path.startswith(('/static', '/login', '/logout')) or request.path.endswith(('.ico', '.png')): return
+
+# --- Routes ---
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -434,7 +476,7 @@ def admin_toggle_maintenance():
 @app.route("/admin/logs")
 @admin_required
 def admin_logs():
-    return render_template("admin_logs.html", logs=get_all_system_logs())
+    return render_template("admin_logs.html", logs=get_all_system_logs()[::-1])
 
 @app.route("/admin/clear-logs", methods=["POST"])
 @admin_required
@@ -480,6 +522,7 @@ def admin_settings():
         success = True
         for k, v in updates.items():
             if not update_setting(k, str(v)): success = False
+            time.sleep(0.5)
         if success:
             flash("Settings updated.", "success")
             current_settings = get_app_settings(force_refresh=True)
