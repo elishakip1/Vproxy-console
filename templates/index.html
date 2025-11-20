@@ -107,6 +107,11 @@
                 <div id="proxyForm" class="accordion-collapse collapse {% if results is not defined or not results %}show{% endif %}"
                      aria-labelledby="formHeading" data-bs-parent="#proxyAccordion">
                     <div class="accordion-body">
+                        <div class="d-flex justify-content-end mb-2">
+                            <button type="button" id="fetchBtn" class="btn btn-success btn-sm" onclick="fetchABCProxies()">
+                                🔄 Auto-Fetch Proxies
+                            </button>
+                        </div>
                         <form method="POST" id="proxyFormElement">
                             <div class="mb-3">
                                 <label for="proxytext" class="form-label">Paste Proxies (one per line)</label>
@@ -221,6 +226,40 @@
             }
             if (isTextAreaTooLong || isTextAreaEmpty) { submitBtn.disabled = true; } else { submitBtn.disabled = false; }
         }
+
+        // --- NEW: FUNCTION TO AUTO-FETCH PROXIES ---
+        async function fetchABCProxies() {
+            const btn = document.getElementById('fetchBtn');
+            const textarea = document.getElementById('proxytext');
+            
+            btn.disabled = true;
+            const originalText = btn.textContent;
+            btn.textContent = "Fetching...";
+            
+            try {
+                // Call our new Python route
+                const response = await fetch('/api/fetch-abc-proxies');
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    // Populate the textarea with the fetched list
+                    textarea.value = data.proxies.join('\n');
+                    
+                    // Update the counter to reflect new count
+                    updateProxyCounter(textarea);
+                    
+                    alert(`Success! Fetched ${data.proxies.length} proxies from ABC.`);
+                } else {
+                    alert("Error fetching proxies: " + data.message);
+                }
+            } catch (err) {
+                alert("Failed to fetch proxies: " + err);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        }
+        // --- END NEW FUNCTION ---
 
         let saveQueue = [];
         let isQueueWorkerRunning = false;
