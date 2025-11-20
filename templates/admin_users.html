@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>User Activity - Admin</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>👥 User Activity Monitor</h2>
+        <a href="/admin" class="btn btn-outline-secondary">Back to Admin</a>
+    </div>
+
+    <div class="card">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Username</th>
+                            <th>Status</th>
+                            <th>Last Active</th>
+                            <th>Total Sessions</th>
+                            <th>API Checks</th>
+                            <th>Good Proxies Found</th>
+                            <th>Last Known IP</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for user in stats %}
+                        <tr>
+                            <td class="fw-bold">{{ user.username }}</td>
+                            <td>
+                                {% if user.status == 'Active' %}
+                                    <span class="badge bg-success">Active</span>
+                                {% elif user.status == 'Offline' %}
+                                    <span class="badge bg-warning text-dark">Offline (>24h)</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">Inactive (>7d)</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ user.last_active | replace('T', ' ') | truncate(19, True, '') }}</td>
+                            <td>{{ user.total_sessions }}</td>
+                            <td>{{ user.total_api_calls }}</td>
+                            <td class="text-success fw-bold">{{ user.total_good_proxies }}</td>
+                            <td class="small text-muted">{{ user.last_ip }}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="7" class="text-center">No activity logs found yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+</html>
