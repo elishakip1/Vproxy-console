@@ -107,12 +107,12 @@
         {% endif %}
     {% endwith %}
 
+    <form method="POST">
     <div class="card mb-4">
       <div class="card-header bg-primary text-white">
         <h5 class="mb-0">Proxy Checking Settings</h5>
       </div>
       <div class="card-body">
-        <form method="POST">
           <div class="mb-3">
             <label for="max_paste" class="form-label">
               Max Proxies Per Check
@@ -147,9 +147,30 @@
                    name="max_workers" value="{{ settings.MAX_WORKERS }}" min="1" max="100">
             <div class="form-text">Number of parallel proxy checks (1-100)</div>
           </div>
+      </div>
+    </div>
 
-          <hr>
-          <h5 class="mt-3">API Settings (Credential Rotation)</h5>
+    <div class="card mb-4 border-success">
+        <div class="card-header bg-success text-white">
+        <h5 class="mb-0">🔄 ABC Proxy Generation</h5>
+        </div>
+        <div class="card-body">
+            <div class="mb-3">
+            <label for="abc_generation_url" class="form-label fw-bold">Full Generation URL</label>
+            <input type="text" class="form-control" id="abc_generation_url" name="abc_generation_url" value="{{ settings.ABC_GENERATION_URL }}" placeholder="https://proxyinfo.abcproxy.com/generate_proxy_list?..." >
+            <div class="form-text">
+                Paste the entire link from your ABC Proxy dashboard here. <br>
+                <strong>Important:</strong> Ensure the URL generates proxies in <code>host:port:user:pass</code> format (usually format=1 or format=2).
+            </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header bg-secondary text-white">
+        <h5 class="mb-0">API Settings (Credential Rotation)</h5>
+        </div>
+        <div class="card-body">
           <p class="text-muted small mb-3">
               If you have multiple accounts, enter them separated by commas. The system will automatically switch to the next one if the current one runs out of credits.
           </p>
@@ -189,14 +210,14 @@
                 <em>Default:</em> <code>https://api11.scamalytics.com/v3/</code>
             </div>
           </div>
-          
-          <button type="submit" class="btn btn-primary">Save Settings</button>
-          <a href="/admin" class="btn btn-outline-secondary">Back to Admin</a>
-        </form>
-      </div>
+        </div>
     </div>
+          
+    <button type="submit" class="btn btn-primary">Save Settings</button>
+    <a href="/admin" class="btn btn-outline-secondary">Back to Admin</a>
+    </form>
 
-    <div class="alert alert-info">
+    <div class="alert alert-info mt-3">
       <strong>Note:</strong> Changes take effect immediately.
     </div>
   </div>
