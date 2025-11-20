@@ -1,7 +1,7 @@
 # --- IMPORTS ---
 from flask import (
     Flask, request, render_template, redirect, url_for,
-    jsonify, send_from_directory, flash, session
+    jsonify, send_from_directory, flash, session, abort
 )
 from flask_login import (
     LoginManager, UserMixin, login_user, logout_user, login_required, current_user
@@ -27,7 +27,7 @@ from db_util import (
     get_all_system_logs, add_log_entry,
     clear_all_system_logs,
     add_api_usage_log, get_all_api_usage_logs,
-    get_user_stats_summary # <-- NEW IMPORT
+    get_user_stats_summary
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', stream=sys.stdout)
@@ -41,6 +41,14 @@ login_manager.init_app(app)
 login_manager.login_view = 'login'
 login_manager.login_message_category = "warning"
 
+# --- SILENT BLOCKLIST ---
+# Add IPs here to silently block them (They will see a 404 Page)
+BLOCKED_IPS = {
+    "192.168.1.50", 
+    "10.0.0.5"
+    # Add real IPs here as strings
+}
+
 # --- USER CLASS ---
 class User(UserMixin):
     def __init__(self, id, username, password, role="user", can_fetch=False):
@@ -48,7 +56,6 @@ class User(UserMixin):
     @property
     def is_admin(self): return self.role == "admin"
 
-# --- USERS LIST ---
 users = {
     1: User(id=1, username="Boss", password="ADMIN123", role="admin", can_fetch=True),
     2: User(id=2, username="Work", password="password", role="user", can_fetch=True),
@@ -62,7 +69,6 @@ def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if not current_user.is_authenticated or not current_user.is_admin:
-            flash("Admin access required.", "danger")
             return redirect(url_for('login', next=request.url))
         return f(*args, **kwargs)
     return decorated_function
@@ -191,6 +197,12 @@ def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list,
 
 @app.before_request
 def before_request_func():
+    # SILENT BLOCKING LOGIC
+    client_ip = get_user_ip()
+    if client_ip in BLOCKED_IPS:
+        # Return 404 immediately to look like the site is down/doesn't exist
+        abort(404)
+    
     if request.path.startswith(('/static', '/login', '/logout')) or request.path.endswith(('.ico', '.png')): return
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -263,6 +275,7 @@ def index():
         if 'proxytext' in request.form: proxies_input = request.form.get("proxytext", "").strip().splitlines()[:MAX_PASTE]
         if not proxies_input: return render_template("index.html", results=[], message="No proxies submitted.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"))
         
+        # --- API SAVING LOGIC: CACHE FIRST ---
         used_ips_list = set(); used_proxy_cache = set(); bad_proxy_cache = set()
         try:
             u_recs = get_all_used_ips()
@@ -271,22 +284,59 @@ def index():
             bad_proxy_cache = set(get_bad_proxies_list())
         except: pass
 
-        proxies_to_check = [p for p in {px.strip() for px in proxies_input if px.strip()} if validate_proxy_format(p) and p not in used_proxy_cache and p not in bad_proxy_cache]
+        # Filter locally first
+        proxies_to_check = []
+        skipped_used = 0
+        skipped_bad = 0
+        
+        for p in {px.strip() for px in proxies_input if px.strip()}:
+            if not validate_proxy_format(p): continue
+            
+            # 1. Check Used Cache
+            if p in used_proxy_cache:
+                skipped_used += 1
+                continue
+            
+            # 2. Check Bad Cache
+            if p in bad_proxy_cache:
+                skipped_bad += 1
+                continue
+                
+            proxies_to_check.append(p)
+        
+        logger.info(f"Pre-check: Skipped {skipped_used} used, {skipped_bad} bad. Checking {len(proxies_to_check)} fresh proxies.")
+        # -------------------------------------
+
         good_proxy_results = []; futures = set()
+        target_good_proxies = 2 # The goal
+
         if proxies_to_check:
             with ThreadPoolExecutor(max_workers=min(settings["MAX_WORKERS"], len(proxies_to_check))) as executor:
-                for p in proxies_to_check: futures.add(executor.submit(single_check_proxy_detailed, p, FRAUD_SCORE_LEVEL, api_credentials, is_strict_mode=True))
+                for p in proxies_to_check:
+                    futures.add(executor.submit(single_check_proxy_detailed, p, FRAUD_SCORE_LEVEL, api_credentials, is_strict_mode=True))
+                
+                # Monitor completion
                 while futures:
                     done, futures = wait(futures, return_when=FIRST_COMPLETED)
                     for f in done:
                         try:
                             res = f.result()
                             if res and res.get("proxy"):
-                                res['used'] = str(res.get('ip')).strip() in used_ips_list
+                                # We found a good proxy!
+                                ip_clean = str(res.get('ip')).strip()
+                                
+                                # Double check against used list just in case of race condition
+                                res['used'] = ip_clean in used_ips_list
+                                
                                 good_proxy_results.append(res)
-                                if len([r for r in good_proxy_results if not r['used']]) >= 2:
+                                
+                                # Check if we hit the target (2 good unused proxies)
+                                good_unused_count = len([r for r in good_proxy_results if not r['used']])
+                                if good_unused_count >= target_good_proxies:
+                                    logger.info(f"Target of {target_good_proxies} usable proxies reached. Cancelling remaining tasks to SAVE API CREDITS.")
                                     for x in futures: x.cancel()
-                                    futures = set(); break
+                                    futures = set() # Stop the while loop
+                                    break
                         except: pass
                     if not futures: break
         
@@ -302,12 +352,17 @@ def index():
             new_fails = fails + len(proxies_to_check); update_setting("CONSECUTIVE_FAILS", str(new_fails))
             if new_fails > 1000: update_setting("SYSTEM_PAUSED", "TRUE"); add_log_entry("CRITICAL", "Auto-paused.", ip="System")
         
-        # --- PASSING GOOD_COUNT TO LOG ---
         try: add_api_usage_log(current_user.username, get_user_ip(), len(proxies_input), len(proxies_to_check), good_count)
         except: pass
         
         msg_prefix = "⚠️ MAINTENANCE (Admin) - " if admin_bypass else ""
-        message = f"{msg_prefix}Found {good_count} new usable proxies."
+        
+        api_savings_msg = ""
+        if skipped_used > 0 or skipped_bad > 0:
+            api_savings_msg = f" (Saved {skipped_used + skipped_bad} API calls by checking local history first!)"
+            
+        message = f"{msg_prefix}Found {good_count} new usable proxies.{api_savings_msg}"
+        
         return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False)
 
     msg_prefix = "⚠️ MAINTENANCE (Admin)" if admin_bypass else ""
@@ -319,7 +374,6 @@ def track_used():
     data = request.get_json()
     proxy = data.get("proxy"); ip = data.get("ip")
     if not proxy or not ip or not validate_proxy_format(proxy): return jsonify({"status": "error"}), 400
-    # --- PASSING USERNAME ---
     if add_used_ip(ip, proxy, username=current_user.username):
         add_log_entry("INFO", f"Used: {ip}", ip=get_user_ip())
         return jsonify({"status": "success"})
@@ -359,12 +413,10 @@ def admin_toggle_maintenance():
     else: flash("Failed to toggle.", "danger")
     return redirect(url_for("admin"))
 
-# --- NEW ROUTE: ADMIN USERS STATS ---
 @app.route("/admin/users")
 @admin_required
 def admin_users():
     stats = get_user_stats_summary()
-    # Calculate simplified status for UI
     for s in stats:
         try:
             last = datetime.datetime.fromisoformat(s['last_active'].replace('Z', '+00:00'))
@@ -374,7 +426,6 @@ def admin_users():
             else: s['status'] = 'Active'
         except: s['status'] = 'Unknown'
     return render_template("admin_users.html", stats=stats)
-# ------------------------------------
 
 @app.route("/admin/logs")
 @admin_required
