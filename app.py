@@ -17,7 +17,9 @@ from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 import logging
 import sys
-from sheets_util import (
+
+# --- CHANGED: Import from db_util instead of sheets_util ---
+from db_util import (
     get_settings, update_setting, add_used_ip, delete_used_ip,
     get_all_used_ips,
     log_bad_proxy, get_bad_proxies_list,
@@ -50,7 +52,7 @@ class User(UserMixin):
     @property
     def is_admin(self): return self.role == "admin"
 
-# TODO: Replace with a secure user store in a real application
+# Replace with DB in production if needed, currently using hardcoded dict
 users = {
     1: User(id=1, username="Boss", password="ADMIN123", role="admin"),
     2: User(id=2, username="Work", password="password"),
@@ -70,16 +72,15 @@ def admin_required(f):
 
 def get_user_ip():
     ip = request.headers.get('X-Forwarded-For')
-    if ip:
-        return ip.split(',')[0].strip()
+    if ip: return ip.split(',')[0].strip()
     return request.remote_addr or "Unknown"
 
 # Default configuration values
 DEFAULT_SETTINGS = {
     "MAX_PASTE": 30, "FRAUD_SCORE_LEVEL": 0, "MAX_WORKERS": 5,
-    "SCAMALYTICS_API_KEY": "YOUR_API_KEY_HERE",
+    "SCAMALYTICS_API_KEY": "",
     "SCAMALYTICS_API_URL": "https://api11.scamalytics.com/v3/",
-    "SCAMALYTICS_USERNAME": "YOUR_USERNAME_HERE",
+    "SCAMALYTICS_USERNAME": "",
     "ANNOUNCEMENT": "",
     "API_CREDITS_USED": "N/A",
     "API_CREDITS_REMAINING": "N/A",
@@ -89,22 +90,24 @@ DEFAULT_SETTINGS = {
     "ABC_GENERATION_URL": ""
 }
 
-# --- CACHING SYSTEM FOR SETTINGS ---
+# --- CACHE ---
 _SETTINGS_CACHE = None
 _SETTINGS_CACHE_TIME = 0
-CACHE_DURATION = 300 # 5 Minutes
+CACHE_DURATION = 300
 
 def get_app_settings(force_refresh=False):
-    """Fetches settings with in-memory caching."""
     global _SETTINGS_CACHE, _SETTINGS_CACHE_TIME
     if not force_refresh and _SETTINGS_CACHE and (time.time() - _SETTINGS_CACHE_TIME < CACHE_DURATION):
         return _SETTINGS_CACHE
     try:
-        sheet_settings = get_settings()
+        db_settings = get_settings()
     except:
-        sheet_settings = {}
+        db_settings = {}
+    
     final_settings = DEFAULT_SETTINGS.copy()
-    final_settings.update(sheet_settings)
+    final_settings.update(db_settings)
+    
+    # Type conversions
     try:
         final_settings["MAX_PASTE"] = int(final_settings["MAX_PASTE"])
         final_settings["FRAUD_SCORE_LEVEL"] = int(final_settings["FRAUD_SCORE_LEVEL"])
@@ -112,6 +115,7 @@ def get_app_settings(force_refresh=False):
         final_settings["MAX_WORKERS"] = int(final_settings["MAX_WORKERS"])
         final_settings["CONSECUTIVE_FAILS"] = int(final_settings.get("CONSECUTIVE_FAILS", 0))
     except: pass
+
     _SETTINGS_CACHE = final_settings
     _SETTINGS_CACHE_TIME = time.time()
     return final_settings
@@ -234,8 +238,6 @@ def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list,
 def before_request_func():
     if request.path.startswith(('/static', '/login', '/logout')) or request.path.endswith(('.ico', '.png')): return
 
-# --- Routes ---
-
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if current_user.is_authenticated: return redirect(url_for('admin') if current_user.is_admin else url_for('index'))
@@ -289,19 +291,14 @@ def index():
     api_credentials = parse_api_credentials(settings)
     system_paused = str(settings.get("SYSTEM_PAUSED", "FALSE")).upper() == "TRUE"
     
-    # --- MODIFIED LOGIC FOR MAINTENANCE MODE ---
     admin_bypass = False
     if system_paused:
         if current_user.is_admin:
             admin_bypass = True
-            # Only show flash message once per session/request if needed, or just rely on the banner
-            # We won't block the admin.
         else:
-            # Block regular users
             return render_template("index.html", results=None, message="⚠️ System Under Maintenance. Please try again later.", max_paste=MAX_PASTE, settings=settings, system_paused=True, announcement=settings.get("ANNOUNCEMENT"))
 
     if request.method == "POST":
-        # Double check pause logic for POST safety
         if system_paused and not admin_bypass:
              return render_template("index.html", results=None, message="System Paused.", max_paste=MAX_PASTE, settings=settings, system_paused=True)
 
@@ -367,14 +364,11 @@ def index():
         try: add_api_usage_log(current_user.username, get_user_ip(), len(proxies_input), len(proxies_to_check))
         except: pass
         
-        # Admin Warning Message
         msg_prefix = "⚠️ MAINTENANCE MODE ACTIVE (Admin Access) - " if admin_bypass else ""
         message = f"{msg_prefix}Found {good_count} new usable proxies."
 
-        return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False) # system_paused=False to show results
+        return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False)
 
-    # GET Request
-    # Admin sees normal page with warning, Users see block page (handled at top)
     msg_prefix = "⚠️ MAINTENANCE MODE ACTIVE (Admin Access)" if admin_bypass else ""
     return render_template("index.html", results=None, message=msg_prefix, max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False)
 
@@ -422,31 +416,25 @@ def admin_reset_system():
     flash("System reset.", "success")
     return redirect(url_for("admin"))
 
-# --- NEW ROUTE: Toggle Maintenance Mode ---
 @app.route("/admin/toggle-maintenance", methods=["POST"])
 @admin_required
 def admin_toggle_maintenance():
     current_settings = get_app_settings()
     is_paused = str(current_settings.get("SYSTEM_PAUSED", "FALSE")).upper() == "TRUE"
-    
-    # Toggle Logic
     new_state = "FALSE" if is_paused else "TRUE"
-    
     if update_setting("SYSTEM_PAUSED", new_state):
-        get_app_settings(force_refresh=True) # Force cache update
+        get_app_settings(force_refresh=True)
         status_msg = "ACTIVATED" if new_state == "TRUE" else "DEACTIVATED"
         flash(f"Maintenance Mode {status_msg}.", "success" if new_state == "FALSE" else "warning")
         add_log_entry("WARNING", f"Maintenance Mode {status_msg} by {current_user.username}", ip=get_user_ip())
     else:
         flash("Failed to toggle maintenance mode.", "danger")
-        
     return redirect(url_for("admin"))
-# --- END NEW ROUTE ---
 
 @app.route("/admin/logs")
 @admin_required
 def admin_logs():
-    return render_template("admin_logs.html", logs=get_all_system_logs()[::-1])
+    return render_template("admin_logs.html", logs=get_all_system_logs())
 
 @app.route("/admin/clear-logs", methods=["POST"])
 @admin_required
@@ -492,7 +480,6 @@ def admin_settings():
         success = True
         for k, v in updates.items():
             if not update_setting(k, str(v)): success = False
-            time.sleep(0.5)
         if success:
             flash("Settings updated.", "success")
             current_settings = get_app_settings(force_refresh=True)
