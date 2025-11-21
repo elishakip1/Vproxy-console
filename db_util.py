@@ -18,6 +18,7 @@ except Exception as e:
     supabase = None
 
 def get_eat_time():
+    """Get current time formatted for display."""
     utc_now = datetime.utcnow()
     eat_timezone = pytz.timezone('Africa/Nairobi')
     return utc_now.replace(tzinfo=pytz.utc).astimezone(eat_timezone).strftime("%Y-%m-%d %H:%M:%S")
@@ -69,6 +70,7 @@ def get_all_used_ips():
     if not supabase: return []
     try:
         response = supabase.table('used_proxies').select("ip, proxy, created_at, username").order("created_at", desc=True).execute()
+        # Return standard dictionary keys matching app.py expectation
         return [{
             "IP": r['ip'], 
             "Proxy": r['proxy'], 
@@ -89,10 +91,11 @@ def log_bad_proxy(proxy, ip, score):
     except Exception: return False
 
 def get_bad_proxies_list():
+    """Returns list of dict objects to support IP extraction in app.py."""
     if not supabase: return []
     try:
         response = supabase.table('bad_proxies').select("ip, proxy").execute()
-        return response.data
+        return response.data 
     except Exception: return []
 
 # --- LOGS ---
@@ -143,71 +146,82 @@ def get_all_api_usage_logs():
 def get_user_stats_summary():
     if not supabase: return []
     try:
+        # Ensure this view exists in your Supabase SQL
         response = supabase.table('user_stats_view').select("*").execute()
         return response.data
     except Exception as e:
         logger.error(f"Error fetching user stats: {e}")
         return []
 
-# --- PROXY POOL FUNCTIONS (UPDATED) ---
+# --- PROXY POOL FUNCTIONS ---
 
 def add_bulk_proxies(proxy_list, provider="manual"):
+    """Adds a list of proxies to the pool, ignoring duplicates."""
     if not supabase or not proxy_list: return 0
+    
+    # Clean data
     data = [{"proxy": p.strip(), "provider": provider} for p in proxy_list if p.strip()]
-    total_added = 0; chunk_size = 1000
+    
+    total_added = 0
+    chunk_size = 1000
+    
     for i in range(0, len(data), chunk_size):
         chunk = data[i:i + chunk_size]
         try:
             supabase.table('proxy_pool').upsert(chunk, on_conflict='proxy', ignore_duplicates=True).execute()
             total_added += len(chunk)
-        except Exception as e: logger.error(f"Error adding bulk proxies: {e}")
+        except Exception as e:
+            logger.error(f"Error adding bulk proxies: {e}")
+            
     return total_added
 
 def get_random_proxies_from_pool(limit=100, provider=None):
-    """Fetches TRUE random proxies filtered by provider."""
+    """
+    Fetches TRUE random proxies using the Supabase RPC function.
+    Supports filtering by provider (pyproxy, piaproxy).
+    """
     if not supabase: return []
     try:
-        # Use the specific provider function if provider is set
         if provider:
+            # Fetch specific provider
             response = supabase.rpc('get_random_proxies_by_provider', {'limit_count': limit, 'provider_name': provider}).execute()
         else:
-            # Fallback to general random if no provider specified
+            # Fetch from entire pool
             response = supabase.rpc('get_random_proxies', {'limit_count': limit}).execute()
-            
+        
         proxies = [r['proxy'] for r in response.data]
         return proxies
     except Exception as e:
-        logger.error(f"Error fetching from pool: {e}")
+        logger.error(f"Error fetching random pool: {e}")
         return []
 
 def get_pool_counts():
-    """Returns specific counts for PyProxy and PiaProxy."""
+    """Returns breakdown of pool size by provider."""
     stats = {"total": 0, "pyproxy": 0, "piaproxy": 0}
     if not supabase: return stats
     try:
-        # Get Total
         res_total = supabase.table('proxy_pool').select("id", count="exact", head=True).execute()
         stats["total"] = res_total.count
 
-        # Get PyProxy
         res_py = supabase.table('proxy_pool').select("id", count="exact", head=True).eq("provider", "pyproxy").execute()
         stats["pyproxy"] = res_py.count
 
-        # Get PiaProxy
         res_pia = supabase.table('proxy_pool').select("id", count="exact", head=True).eq("provider", "piaproxy").execute()
         stats["piaproxy"] = res_pia.count
-        
         return stats
     except: return stats
 
 def clear_proxy_pool(provider=None):
+    """Clears proxies by provider, or all if provider is 'all'."""
     if not supabase: return False
     try:
         query = supabase.table('proxy_pool').delete()
         if provider and provider != "all":
             query = query.eq('provider', provider)
         else:
-            query = query.neq('id', 0) 
+            query = query.neq('id', 0) # Delete all
         query.execute()
         return True
-    except Exception as e: logger.error(f"Error clearing pool: {e}"); return False
+    except Exception as e:
+        logger.error(f"Error clearing pool: {e}")
+        return False
