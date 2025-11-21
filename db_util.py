@@ -4,6 +4,7 @@ from supabase import create_client, Client
 from datetime import datetime
 import pytz
 import random
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +66,7 @@ def get_all_used_ips():
     if not supabase: return []
     try:
         response = supabase.table('used_proxies').select("ip, proxy, created_at, username").order("created_at", desc=True).execute()
-        # Normalize keys for app.py
+        # Crucial: Return standard dictionary keys matching app.py expectation
         return [{"IP": r['ip'], "Proxy": r['proxy'], "Date": r['created_at'], "User": r.get('username', 'Unknown')} for r in response.data]
     except Exception: return []
 
@@ -80,9 +81,9 @@ def log_bad_proxy(proxy, ip, score):
     except Exception: return False
 
 def get_bad_proxies_list():
+    """Returns list of dict objects (IP/Proxy) to support filtering in app.py."""
     if not supabase: return []
     try:
-        # Fetch dicts so we can check IP logic in app.py
         response = supabase.table('bad_proxies').select("ip, proxy").execute()
         return response.data 
     except Exception: return []
@@ -149,7 +150,7 @@ def add_bulk_proxies(proxy_list, provider="manual"):
     return total
 
 def get_random_proxies_from_pool(limit=100, provider=None):
-    """Fetches random proxies using RPC, optionally filtering by provider."""
+    """Fetches random proxies, handling both provider-specific and general requests."""
     if not supabase: return []
     try:
         if provider:
@@ -159,10 +160,11 @@ def get_random_proxies_from_pool(limit=100, provider=None):
             # Requires SQL function 'get_random_proxies'
             response = supabase.rpc('get_random_proxies', {'limit_count': limit}).execute()
         return [r['proxy'] for r in response.data]
-    except Exception: return []
+    except Exception as e:
+        logger.error(f"Error fetching random pool: {e}")
+        return []
 
 def get_pool_counts():
-    """Returns separated counts."""
     stats = {"total": 0, "pyproxy": 0, "piaproxy": 0}
     if not supabase: return stats
     try:
