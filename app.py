@@ -27,7 +27,9 @@ from db_util import (
     get_all_system_logs, add_log_entry,
     clear_all_system_logs,
     add_api_usage_log, get_all_api_usage_logs,
-    get_user_stats_summary
+    get_user_stats_summary,
+    # NEW IMPORTS
+    add_bulk_proxies, get_random_proxies_from_pool, get_pool_count, clear_proxy_pool
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', stream=sys.stdout)
@@ -42,12 +44,7 @@ login_manager.login_view = 'login'
 login_manager.login_message_category = "warning"
 
 # --- SILENT BLOCKLIST ---
-# Add IPs here to silently block them (They will see a 404 Page)
-BLOCKED_IPS = {
-    "192.168.1.50", 
-    "10.0.0.5"
-    # Add real IPs here as strings
-}
+BLOCKED_IPS = {"192.168.1.50", "10.0.0.5"}
 
 # --- USER CLASS ---
 class User(UserMixin):
@@ -56,6 +53,7 @@ class User(UserMixin):
     @property
     def is_admin(self): return self.role == "admin"
 
+# --- USERS LIST ---
 users = {
     1: User(id=1, username="Boss", password="ADMIN123", role="admin", can_fetch=True),
     2: User(id=2, username="Work", password="password", role="user", can_fetch=True),
@@ -78,7 +76,16 @@ def get_user_ip():
     if ip: return ip.split(',')[0].strip()
     return request.remote_addr or "Unknown"
 
-DEFAULT_SETTINGS = { "MAX_PASTE": 30, "FRAUD_SCORE_LEVEL": 0, "MAX_WORKERS": 5, "SCAMALYTICS_API_KEY": "", "SCAMALYTICS_API_URL": "https://api11.scamalytics.com/v3/", "SCAMALYTICS_USERNAME": "", "ANNOUNCEMENT": "", "API_CREDITS_USED": "N/A", "API_CREDITS_REMAINING": "N/A", "STRICT_FRAUD_SCORE_LEVEL": 20, "CONSECUTIVE_FAILS": 0, "SYSTEM_PAUSED": "FALSE", "ABC_GENERATION_URL": "" }
+# DEFAULT SETTINGS (Added Reset URLs)
+DEFAULT_SETTINGS = { 
+    "MAX_PASTE": 30, "FRAUD_SCORE_LEVEL": 0, "MAX_WORKERS": 5, 
+    "SCAMALYTICS_API_KEY": "", "SCAMALYTICS_API_URL": "https://api11.scamalytics.com/v3/", 
+    "SCAMALYTICS_USERNAME": "", "ANNOUNCEMENT": "", 
+    "API_CREDITS_USED": "N/A", "API_CREDITS_REMAINING": "N/A", 
+    "STRICT_FRAUD_SCORE_LEVEL": 20, "CONSECUTIVE_FAILS": 0, 
+    "SYSTEM_PAUSED": "FALSE", "ABC_GENERATION_URL": "",
+    "PYPROXY_RESET_URL": "", "PIAPROXY_RESET_URL": "" 
+}
 
 _SETTINGS_CACHE = None; _SETTINGS_CACHE_TIME = 0; CACHE_DURATION = 300
 def get_app_settings(force_refresh=False):
@@ -197,12 +204,8 @@ def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list,
 
 @app.before_request
 def before_request_func():
-    # SILENT BLOCKING LOGIC
     client_ip = get_user_ip()
-    if client_ip in BLOCKED_IPS:
-        # Return 404 immediately to look like the site is down/doesn't exist
-        abort(404)
-    
+    if client_ip in BLOCKED_IPS: abort(404)
     if request.path.startswith(('/static', '/login', '/logout')) or request.path.endswith(('.ico', '.png')): return
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -229,6 +232,7 @@ def logout():
     logout_user()
     return redirect(url_for('login'))
 
+# --- ABC PROXY ROUTE ---
 @app.route('/api/fetch-abc-proxies')
 @login_required
 def fetch_abc_proxies():
@@ -258,6 +262,53 @@ def fetch_abc_proxies():
         return jsonify({"status": "error", "message": f"HTTP Error: {response.status_code}"})
     except Exception as e: return jsonify({"status": "error", "message": f"Server Error: {str(e)}"})
 
+# --- POOL ROUTES ---
+@app.route('/admin/pool', methods=['GET', 'POST'])
+@admin_required
+def admin_pool():
+    settings = get_app_settings()
+    if request.method == 'POST':
+        if 'bulk_proxies' in request.form:
+            provider = request.form.get('provider', 'manual')
+            text = request.form.get('bulk_proxies', '')
+            lines = [l.strip() for l in text.splitlines() if validate_proxy_format(l)]
+            if lines:
+                count = add_bulk_proxies(lines, provider)
+                flash(f"Added {count} proxies to {provider}.", "success")
+            else: flash("No valid proxies.", "warning")
+        elif 'clear_pool' in request.form:
+            clear_proxy_pool(); flash("Pool cleared.", "success")
+        elif 'save_urls' in request.form:
+            update_setting("PYPROXY_RESET_URL", request.form.get("pyproxy_url", "").strip())
+            update_setting("PIAPROXY_RESET_URL", request.form.get("piaproxy_url", "").strip())
+            flash("URLs updated.", "success"); get_app_settings(force_refresh=True)
+        return redirect(url_for('admin_pool'))
+    count = get_pool_count()
+    return render_template('admin_pool.html', count=count, settings=settings)
+
+@app.route('/api/trigger-reset/<provider>')
+@admin_required
+def trigger_reset(provider):
+    settings = get_app_settings()
+    target_url = ""
+    if provider == 'pyproxy': target_url = settings.get("PYPROXY_RESET_URL")
+    elif provider == 'piaproxy': target_url = settings.get("PIAPROXY_RESET_URL")
+    if not target_url: return jsonify({"status": "error", "message": "Reset URL not configured."})
+    try:
+        resp = requests.get(target_url, timeout=10)
+        return jsonify({"status": "success", "message": f"Signal Sent. Response: {resp.text}"})
+    except Exception as e: return jsonify({"status": "error", "message": str(e)})
+
+@app.route('/api/fetch-pool-proxies')
+@login_required
+def fetch_pool_proxies():
+    if not current_user.can_fetch: return jsonify({"status": "error", "message": "Permission denied."}), 403
+    settings = get_app_settings()
+    limit = settings.get("MAX_PASTE", 30)
+    proxies = get_random_proxies_from_pool(limit)
+    if not proxies: return jsonify({"status": "error", "message": "Pool is empty!"})
+    return jsonify({"status": "success", "proxies": proxies})
+
 @app.route("/", methods=["GET", "POST"])
 @login_required
 def index():
@@ -275,7 +326,6 @@ def index():
         if 'proxytext' in request.form: proxies_input = request.form.get("proxytext", "").strip().splitlines()[:MAX_PASTE]
         if not proxies_input: return render_template("index.html", results=[], message="No proxies submitted.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"))
         
-        # --- API SAVING LOGIC: CACHE FIRST ---
         used_ips_list = set(); used_proxy_cache = set(); bad_proxy_cache = set()
         try:
             u_recs = get_all_used_ips()
@@ -284,59 +334,31 @@ def index():
             bad_proxy_cache = set(get_bad_proxies_list())
         except: pass
 
-        # Filter locally first
         proxies_to_check = []
-        skipped_used = 0
-        skipped_bad = 0
-        
+        skipped_used = 0; skipped_bad = 0
         for p in {px.strip() for px in proxies_input if px.strip()}:
             if not validate_proxy_format(p): continue
-            
-            # 1. Check Used Cache
-            if p in used_proxy_cache:
-                skipped_used += 1
-                continue
-            
-            # 2. Check Bad Cache
-            if p in bad_proxy_cache:
-                skipped_bad += 1
-                continue
-                
+            if p in used_proxy_cache: skipped_used += 1; continue
+            if p in bad_proxy_cache: skipped_bad += 1; continue
             proxies_to_check.append(p)
         
-        logger.info(f"Pre-check: Skipped {skipped_used} used, {skipped_bad} bad. Checking {len(proxies_to_check)} fresh proxies.")
-        # -------------------------------------
-
-        good_proxy_results = []; futures = set()
-        target_good_proxies = 2 # The goal
-
+        logger.info(f"Pre-check: Skipped {skipped_used} used, {skipped_bad} bad.")
+        
+        good_proxy_results = []; futures = set(); target = 2
         if proxies_to_check:
             with ThreadPoolExecutor(max_workers=min(settings["MAX_WORKERS"], len(proxies_to_check))) as executor:
-                for p in proxies_to_check:
-                    futures.add(executor.submit(single_check_proxy_detailed, p, FRAUD_SCORE_LEVEL, api_credentials, is_strict_mode=True))
-                
-                # Monitor completion
+                for p in proxies_to_check: futures.add(executor.submit(single_check_proxy_detailed, p, FRAUD_SCORE_LEVEL, api_credentials, is_strict_mode=True))
                 while futures:
                     done, futures = wait(futures, return_when=FIRST_COMPLETED)
                     for f in done:
                         try:
                             res = f.result()
                             if res and res.get("proxy"):
-                                # We found a good proxy!
-                                ip_clean = str(res.get('ip')).strip()
-                                
-                                # Double check against used list just in case of race condition
-                                res['used'] = ip_clean in used_ips_list
-                                
+                                res['used'] = str(res.get('ip')).strip() in used_ips_list
                                 good_proxy_results.append(res)
-                                
-                                # Check if we hit the target (2 good unused proxies)
-                                good_unused_count = len([r for r in good_proxy_results if not r['used']])
-                                if good_unused_count >= target_good_proxies:
-                                    logger.info(f"Target of {target_good_proxies} usable proxies reached. Cancelling remaining tasks to SAVE API CREDITS.")
+                                if len([r for r in good_proxy_results if not r['used']]) >= target:
                                     for x in futures: x.cancel()
-                                    futures = set() # Stop the while loop
-                                    break
+                                    futures = set(); break
                         except: pass
                     if not futures: break
         
@@ -356,13 +378,9 @@ def index():
         except: pass
         
         msg_prefix = "⚠️ MAINTENANCE (Admin) - " if admin_bypass else ""
-        
-        api_savings_msg = ""
-        if skipped_used > 0 or skipped_bad > 0:
-            api_savings_msg = f" (Saved {skipped_used + skipped_bad} API calls by checking local history first!)"
-            
-        message = f"{msg_prefix}Found {good_count} new usable proxies.{api_savings_msg}"
-        
+        save_msg = ""
+        if skipped_used > 0 or skipped_bad > 0: save_msg = f" (Saved {skipped_used + skipped_bad} API calls!)"
+        message = f"{msg_prefix}Found {good_count} new usable proxies.{save_msg}"
         return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False)
 
     msg_prefix = "⚠️ MAINTENANCE (Admin)" if admin_bypass else ""
