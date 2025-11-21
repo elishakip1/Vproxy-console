@@ -1,6 +1,6 @@
 Flask
+Flask-Login
 requests
 gunicorn
 pytz
-Flask-Login
 supabase
