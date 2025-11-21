@@ -108,9 +108,13 @@
                     <div class="accordion-body">
                         
                         {% if current_user.can_fetch %}
-                        <div class="d-flex justify-content-end mb-2">
+                        <div class="d-flex justify-content-end mb-2 gap-2">
                             <button type="button" id="fetchBtn" class="btn btn-success btn-sm" onclick="fetchABCProxies()">
-                                🔄 Auto-Fetch Proxies
+                                🔄 Live API (ABC)
+                            </button>
+                            
+                            <button type="button" id="poolBtn" class="btn btn-info btn-sm text-white" onclick="fetchPoolProxies()">
+                                📦 Fetch from DB Pool
                             </button>
                         </div>
                         {% endif %}
@@ -250,6 +254,34 @@
                 }
             } catch (err) {
                 alert("Failed to fetch proxies: " + err);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        }
+
+        // --- NEW: FETCH FROM DB POOL ---
+        async function fetchPoolProxies() {
+            const btn = document.getElementById('poolBtn');
+            const textarea = document.getElementById('proxytext');
+            
+            btn.disabled = true;
+            const originalText = btn.textContent;
+            btn.textContent = "Loading...";
+            
+            try {
+                const response = await fetch('/api/fetch-pool-proxies');
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    textarea.value = data.proxies.join('\n');
+                    updateProxyCounter(textarea);
+                    alert(`Loaded ${data.proxies.length} proxies from the pool.`);
+                } else {
+                    alert("Error: " + data.message);
+                }
+            } catch (err) {
+                alert("Failed to fetch from pool: " + err);
             } finally {
                 btn.disabled = false;
                 btn.textContent = originalText;
