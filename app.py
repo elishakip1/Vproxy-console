@@ -318,7 +318,6 @@ def index():
         used_rows = get_all_used_ips()
         used_ip_set = {r['IP'] for r in used_rows if r.get('IP')}
         
-        # Use the corrected get_bad_proxies_list which returns dicts
         bad_rows = get_bad_proxies_list()
         bad_ip_set = set()
         for r in bad_rows:
@@ -338,7 +337,9 @@ def index():
                 if local_ip in bad_ip_set: skipped_bad += 1; continue
             proxies_to_check.append(p)
         
-        logger.info(f"Pre-check: Skipped {skipped_used} used, {skipped_bad} bad.")
+        # LOGIC END: proxies_to_check now contains only fresh candidates
+        live_check_count = len(proxies_to_check)
+        logger.info(f"Pre-check (IP-Based): Skipped {skipped_used} used, {skipped_bad} bad. Checking {live_check_count}.")
         
         good_proxy_results = []; futures = set(); target = 2
         if proxies_to_check:
@@ -373,10 +374,16 @@ def index():
         try: add_api_usage_log(current_user.username, get_user_ip(), len(proxies_input), len(proxies_to_check), good_count)
         except: pass
         
+        # --- DETAILED MESSAGE ---
         msg_prefix = "⚠️ MAINTENANCE (Admin) - " if admin_bypass else ""
-        save_msg = ""
-        if skipped_used > 0 or skipped_bad > 0: save_msg = f" (Saved {skipped_used + skipped_bad} API calls!)"
-        message = f"{msg_prefix}Found {good_count} new usable proxies.{save_msg}"
+        details = []
+        if skipped_used > 0: details.append(f"{skipped_used} from cache")
+        if skipped_bad > 0: details.append(f"{skipped_bad} known bad")
+        details.append(f"{live_check_count} live checked")
+        
+        detail_str = ", ".join(details)
+        message = f"{msg_prefix}Found {good_count} good proxies. ({detail_str})"
+        
         return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False)
 
     msg_prefix = "⚠️ MAINTENANCE (Admin)" if admin_bypass else ""
