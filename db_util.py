@@ -46,6 +46,7 @@ def update_setting(key, value):
 def add_used_ip(ip, proxy, username="Unknown"):
     if not supabase: return False
     try:
+        # Check if IP exists to prevent duplicates
         exists = supabase.table('used_proxies').select("id").eq("ip", ip).execute()
         if exists.data: return True
         
@@ -69,6 +70,7 @@ def delete_used_ip(ip):
 def get_all_used_ips():
     if not supabase: return []
     try:
+        # Fetch IPs to cache them in app.py
         response = supabase.table('used_proxies').select("ip, proxy, created_at, username").order("created_at", desc=True).execute()
         return [{
             "IP": r['ip'], 
@@ -82,15 +84,21 @@ def get_all_used_ips():
 def log_bad_proxy(proxy, ip, score):
     if not supabase: return False
     try:
+        # Only log if this IP isn't already logged as bad
+        exists = supabase.table('bad_proxies').select("id").eq("ip", ip).execute()
+        if exists.data: return True
+
         supabase.table('bad_proxies').insert({"proxy": proxy, "ip": ip, "score": score}).execute()
         return True
     except Exception: return False
 
 def get_bad_proxies_list():
+    """Returns list of bad proxy objects (IP and Proxy string)."""
     if not supabase: return []
     try:
-        response = supabase.table('bad_proxies').select("proxy").execute()
-        return [r['proxy'] for r in response.data]
+        # We need the IP to filter correctly
+        response = supabase.table('bad_proxies').select("ip, proxy").execute()
+        return response.data # Returns [{'ip': '...', 'proxy': '...'}, ...]
     except Exception: return []
 
 # --- LOGS ---
@@ -147,50 +155,34 @@ def get_user_stats_summary():
         logger.error(f"Error fetching user stats: {e}")
         return []
 
-# --- PROXY POOL FUNCTIONS (NEW) ---
+# --- PROXY POOL FUNCTIONS ---
 
 def add_bulk_proxies(proxy_list, provider="manual"):
-    """Adds a list of proxies to the pool, ignoring duplicates."""
     if not supabase or not proxy_list: return 0
-    
     data = [{"proxy": p.strip(), "provider": provider} for p in proxy_list if p.strip()]
-    
-    total_added = 0
-    chunk_size = 1000
-    
+    total_added = 0; chunk_size = 1000
     for i in range(0, len(data), chunk_size):
         chunk = data[i:i + chunk_size]
         try:
             supabase.table('proxy_pool').upsert(chunk, on_conflict='proxy', ignore_duplicates=True).execute()
             total_added += len(chunk)
-        except Exception as e:
-            logger.error(f"Error adding bulk proxies: {e}")
-            
+        except Exception as e: logger.error(f"Error adding bulk proxies: {e}")
     return total_added
 
 def get_random_proxies_from_pool(limit=100):
-    """Fetches random proxies from the pool."""
     if not supabase: return []
     try:
         count_res = supabase.table('proxy_pool').select("id", count="exact", head=True).execute()
         total = count_res.count
-        
         if total == 0: return []
-        
-        # Pick a random start point
         start = random.randint(0, max(0, total - limit - 1))
-        
         response = supabase.table('proxy_pool').select("proxy").range(start, start + limit * 2).execute()
         proxies = [r['proxy'] for r in response.data]
-        
         random.shuffle(proxies)
         return proxies[:limit]
-    except Exception as e:
-        logger.error(f"Error fetching from pool: {e}")
-        return []
+    except Exception as e: logger.error(f"Error fetching from pool: {e}"); return []
 
 def get_pool_count():
-    """Returns the total number of proxies in the pool."""
     if not supabase: return 0
     try:
         res = supabase.table('proxy_pool').select("id", count="exact", head=True).execute()
@@ -198,16 +190,11 @@ def get_pool_count():
     except: return 0
 
 def clear_proxy_pool(provider=None):
-    """Clears proxies."""
     if not supabase: return False
     try:
         query = supabase.table('proxy_pool').delete()
-        if provider:
-            query = query.eq('provider', provider)
-        else:
-            query = query.neq('id', 0) 
+        if provider: query = query.eq('provider', provider)
+        else: query = query.neq('id', 0) 
         query.execute()
         return True
-    except Exception as e:
-        logger.error(f"Error clearing pool: {e}")
-        return False
+    except Exception as e: logger.error(f"Error clearing pool: {e}"); return False
