@@ -78,19 +78,26 @@ def get_all_used_ips():
         } for r in response.data]
     except Exception: return []
 
-# --- BAD PROXIES ---
+# --- BAD PROXIES (FIXED) ---
 def log_bad_proxy(proxy, ip, score):
     if not supabase: return False
     try:
+        exists = supabase.table('bad_proxies').select("id").eq("ip", ip).execute()
+        if exists.data: return True
+
         supabase.table('bad_proxies').insert({"proxy": proxy, "ip": ip, "score": score}).execute()
         return True
     except Exception: return False
 
 def get_bad_proxies_list():
+    """
+    FIXED: Returns a list of DICTIONARIES (including IP), not just strings.
+    This prevents the 'AttributeError' in app.py.
+    """
     if not supabase: return []
     try:
-        response = supabase.table('bad_proxies').select("proxy").execute()
-        return [r['proxy'] for r in response.data]
+        response = supabase.table('bad_proxies').select("ip, proxy").execute()
+        return response.data # Returns [{'ip': '...', 'proxy': '...'}, ...]
     except Exception: return []
 
 # --- LOGS ---
@@ -162,19 +169,14 @@ def add_bulk_proxies(proxy_list, provider="manual"):
     return total_added
 
 def get_random_proxies_from_pool(limit=100):
-    """
-    Fetches TRUE random proxies using the Supabase RPC function.
-    This ensures excellent mixing of providers.
-    """
+    """Fetches TRUE random proxies using RPC."""
     if not supabase: return []
     try:
-        # Calls the SQL function 'get_random_proxies' we created in Step 1
         response = supabase.rpc('get_random_proxies', {'limit_count': limit}).execute()
-        
         proxies = [r['proxy'] for r in response.data]
         return proxies
     except Exception as e:
-        logger.error(f"Error fetching random pool: {e}")
+        logger.error(f"Error fetching from pool: {e}")
         return []
 
 def get_pool_count():
