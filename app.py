@@ -150,7 +150,6 @@ def get_fraud_score_detailed(ip, proxy_line, credentials_list):
     return None
 
 def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list, is_strict_mode=False):
-    """RESTORED FULL STRICT CHECKER"""
     time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
     res = {"proxy": None, "ip": None, "credits": {}, "geo": {}, "score": None}
     if not validate_proxy_format(proxy_line): return res
@@ -179,7 +178,6 @@ def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list,
                 pf = scam.get("scamalytics_proxy", {})
                 for f in ["is_datacenter", "is_vpn", "is_apple_icloud_private_relay", "is_amazon_aws", "is_google"]:
                     if pf.get(f) is True: passed = False
-                # External Checks
                 ext_data = data.get("external_datasources", {})
                 if ext_data.get("ip2proxy", {}).get("proxy_type") == "VPN": passed = False
                 if ext_data.get("ip2proxy_lite", {}).get("ip_blacklisted") is True: passed = False
@@ -233,21 +231,26 @@ def logout():
     logout_user()
     return redirect(url_for('login'))
 
+# --- ABC PROXY ROUTE (Updated to use MAX_PASTE) ---
 @app.route('/api/fetch-abc-proxies')
 @login_required
 def fetch_abc_proxies():
     if not current_user.can_fetch: return jsonify({"status": "error", "message": "Permission denied."}), 403
     settings = get_app_settings()
     generation_url = settings.get("ABC_GENERATION_URL", "").strip()
-    max_paste_limit = settings.get("MAX_PASTE", 30)
+    # Force Limit from Settings
+    max_paste_limit = int(settings.get("MAX_PASTE", 30))
+
     if not generation_url: return jsonify({"status": "error", "message": "ABC Generation URL not set."})
     try:
         parsed_url = urlparse(generation_url)
         query_params = parse_qs(parsed_url.query)
+        # Overwrite 'num'
         query_params['num'] = [str(max_paste_limit)]
         new_query_string = urlencode(query_params, doseq=True)
         final_url = urlunparse(parsed_url._replace(query=new_query_string))
-        logger.info(f"Fetching proxies for {current_user.username}: {final_url}")
+        
+        logger.info(f"Fetching proxies for {current_user.username} (Limit {max_paste_limit}): {final_url}")
         response = requests.get(final_url, timeout=10)
         if response.status_code == 200:
             content = response.text.strip()
@@ -257,12 +260,13 @@ def fetch_abc_proxies():
                      if json_data.get("code") != 0: return jsonify({"status": "error", "message": f"API Error: {json_data}"})
                  except: pass
             lines = [l.strip() for l in content.splitlines() if l.strip()]
+            # Safety truncate
             if len(lines) > max_paste_limit: lines = lines[:max_paste_limit]
             return jsonify({"status": "success", "proxies": lines})
         return jsonify({"status": "error", "message": f"HTTP Error: {response.status_code}"})
     except Exception as e: return jsonify({"status": "error", "message": f"Server Error: {str(e)}"})
 
-# --- POOL ROUTES ---
+# --- POOL ROUTES (Updated to use MAX_PASTE) ---
 @app.route('/admin/pool', methods=['GET', 'POST'])
 @admin_required
 def admin_pool():
@@ -303,8 +307,11 @@ def trigger_reset(provider):
 @login_required
 def fetch_pool_proxies():
     if not current_user.can_fetch: return jsonify({"status": "error", "message": "Permission denied."}), 403
+    
     settings = get_app_settings()
-    limit = settings.get("MAX_PASTE", 30)
+    # Force Limit from Settings
+    limit = int(settings.get("MAX_PASTE", 30))
+    
     proxies = get_random_proxies_from_pool(limit)
     if not proxies: return jsonify({"status": "error", "message": "Pool is empty!"})
     return jsonify({"status": "success", "proxies": proxies})
@@ -326,7 +333,6 @@ def index():
         if 'proxytext' in request.form: proxies_input = request.form.get("proxytext", "").strip().splitlines()[:MAX_PASTE]
         if not proxies_input: return render_template("index.html", results=[], message="No proxies submitted.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"))
         
-        # --- CACHE FIRST LOGIC ---
         used_ips_list = set(); used_proxy_cache = set(); bad_proxy_cache = set()
         try:
             u_recs = get_all_used_ips()
@@ -357,7 +363,6 @@ def index():
                             if res and res.get("proxy"):
                                 res['used'] = str(res.get('ip')).strip() in used_ips_list
                                 good_proxy_results.append(res)
-                                # STOP AFTER FINDING 2 GOOD UNUSED PROXIES
                                 if len([r for r in good_proxy_results if not r['used']]) >= target:
                                     for x in futures: x.cancel()
                                     futures = set(); break
