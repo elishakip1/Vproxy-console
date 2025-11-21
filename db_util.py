@@ -153,7 +153,6 @@ def add_bulk_proxies(proxy_list, provider="manual"):
     """Adds a list of proxies to the pool, ignoring duplicates."""
     if not supabase or not proxy_list: return 0
     
-    # Clean data
     data = [{"proxy": p.strip(), "provider": provider} for p in proxy_list if p.strip()]
     
     total_added = 0
@@ -162,7 +161,6 @@ def add_bulk_proxies(proxy_list, provider="manual"):
     for i in range(0, len(data), chunk_size):
         chunk = data[i:i + chunk_size]
         try:
-            # Upsert with ignore_duplicates ensures we don't crash on repeats
             supabase.table('proxy_pool').upsert(chunk, on_conflict='proxy', ignore_duplicates=True).execute()
             total_added += len(chunk)
         except Exception as e:
@@ -174,21 +172,17 @@ def get_random_proxies_from_pool(limit=100):
     """Fetches random proxies from the pool."""
     if not supabase: return []
     try:
-        # 1. Get total count
         count_res = supabase.table('proxy_pool').select("id", count="exact", head=True).execute()
         total = count_res.count
         
         if total == 0: return []
         
-        # 2. Pick random start index
-        # We fetch a range (e.g., rows 500 to 600) to get a chunk
+        # Pick a random start point
         start = random.randint(0, max(0, total - limit - 1))
         
-        # Fetch slightly more than needed to allow for shuffling
         response = supabase.table('proxy_pool').select("proxy").range(start, start + limit * 2).execute()
         proxies = [r['proxy'] for r in response.data]
         
-        # 3. Shuffle in Python to make it truly random within that chunk
         random.shuffle(proxies)
         return proxies[:limit]
     except Exception as e:
