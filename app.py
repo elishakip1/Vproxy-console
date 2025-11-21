@@ -140,13 +140,37 @@ def get_fraud_score_detailed(ip, proxy_line, credentials_list):
         except: continue
     return None
 
-def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list, is_strict_mode=False):
-    time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
-    res = {"proxy": None, "ip": None, "credits": {}, "geo": {}, "score": None}
+def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list, used_ip_set, bad_ip_set, is_strict_mode=False):
+    """
+    SMART CHECKER:
+    1. Extracts Real IP via Network (Cost: 0, Time: Low)
+    2. Checks Real IP against Caches (Cost: 0) -> STOP if used/bad.
+    3. Checks Fraud Score via API (Cost: $$, Time: High)
+    """
+    res = {"proxy": None, "ip": None, "credits": {}, "geo": {}, "score": None, "status": "error", "used": False, "cached_bad": False}
+    
+    # 1. Get Real IP
     if not validate_proxy_format(proxy_line): return res
-    ip = get_ip_from_proxy(proxy_line); res["ip"] = ip
-    if not ip: return res
+    ip = get_ip_from_proxy(proxy_line)
+    res["ip"] = ip
+    
+    if not ip: return res # Proxy dead
+
+    # 2. MID-CHECK (Critical Step to save API calls)
+    if str(ip).strip() in used_ip_set:
+        res["used"] = True
+        res["status"] = "used_cache"
+        return res # Stop here, don't call API
+    
+    if str(ip).strip() in bad_ip_set:
+        res["cached_bad"] = True
+        res["status"] = "bad_cache"
+        return res # Stop here
+
+    # 3. Call API
+    time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
     data = get_fraud_score_detailed(ip, proxy_line, credentials_list)
+    
     if data and data.get("credits"): res["credits"] = data.get("credits")
     try:
         ext_src = data.get("external_datasources", {}) if data else {}; geo = {}
@@ -157,6 +181,7 @@ def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list,
             if db and "PREMIUM" not in db.get("ip_country_code", ""): geo = {"country_code": db.get("ip_country_code"), "state": db.get("ip_state_name"), "city": db.get("ip_city"), "postcode": db.get("ip_postcode")}
         res["geo"] = geo if geo else {"country_code": "N/A", "state": "N/A", "city": "N/A", "postcode": "N/A"}
     except: res["geo"] = {"country_code": "ERR", "state": "ERR", "city": "ERR", "postcode": "ERR"}
+    
     if data and data.get("scamalytics"):
         scam = data.get("scamalytics", {}); score = scam.get("scamalytics_score"); res["score"] = score
         if scam.get("status") != "ok": return res
@@ -186,10 +211,14 @@ def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list,
                 goog = ext_data.get("google", {})
                 for f in ["is_google_general", "is_googlebot", "is_special_crawler", "is_user_triggered_fetcher"]:
                     if goog.get(f) is True: passed = False
-            if passed: res["proxy"] = proxy_line
+            
+            if passed: 
+                res["proxy"] = proxy_line
+                res["status"] = "success"
             elif score_int > fraud_score_level:
                 try: log_bad_proxy(proxy_line, ip, score_int)
                 except: pass
+                res["status"] = "bad_score"
         except: pass
     return res
 
@@ -314,75 +343,81 @@ def index():
         if 'proxytext' in request.form: proxies_input = request.form.get("proxytext", "").strip().splitlines()[:MAX_PASTE]
         if not proxies_input: return render_template("index.html", results=[], message="No proxies submitted.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"))
         
-        # --- IP-BASED CACHE LOGIC ---
+        # --- LOAD CACHES ---
         used_rows = get_all_used_ips()
-        used_ip_set = {r['IP'] for r in used_rows if r.get('IP')}
+        used_ip_set = {str(r['IP']).strip() for r in used_rows if r.get('IP')}
         
         bad_rows = get_bad_proxies_list()
         bad_ip_set = set()
         for r in bad_rows:
-            if r.get('ip'): 
-                bad_ip_set.add(r['ip'])
+            if r.get('ip'): bad_ip_set.add(str(r['ip']).strip())
             elif r.get('proxy'):
                 local_ip = extract_ip_local(r['proxy'])
                 if local_ip: bad_ip_set.add(local_ip)
 
-        proxies_to_check = []
-        skipped_used = 0; skipped_bad = 0
-        for p in {px.strip() for px in proxies_input if px.strip()}:
-            if not validate_proxy_format(p): continue
-            local_ip = extract_ip_local(p)
-            if local_ip:
-                if local_ip in used_ip_set: skipped_used += 1; continue
-                if local_ip in bad_ip_set: skipped_bad += 1; continue
-            proxies_to_check.append(p)
+        proxies_raw = [p.strip() for p in proxies_input if validate_proxy_format(p.strip())]
         
-        # LOGIC END: proxies_to_check now contains only fresh candidates
-        live_check_count = len(proxies_to_check)
-        logger.info(f"Pre-check (IP-Based): Skipped {skipped_used} used, {skipped_bad} bad. Checking {live_check_count}.")
+        # --- BATCH PROCESSING FOR STRICT STOPPING ---
+        good_proxy_results = []
+        stats = {"used": 0, "bad": 0, "api": 0}
+        target_good = 2
         
-        good_proxy_results = []; futures = set(); target = 2
-        if proxies_to_check:
-            with ThreadPoolExecutor(max_workers=min(settings["MAX_WORKERS"], len(proxies_to_check))) as executor:
-                for p in proxies_to_check: futures.add(executor.submit(single_check_proxy_detailed, p, FRAUD_SCORE_LEVEL, api_credentials, is_strict_mode=True))
-                while futures:
-                    done, futures = wait(futures, return_when=FIRST_COMPLETED)
-                    for f in done:
-                        try:
-                            res = f.result()
-                            if res and res.get("proxy"):
-                                res['used'] = str(res.get('ip')).strip() in used_ip_set
-                                good_proxy_results.append(res)
-                                if len([r for r in good_proxy_results if not r['used']]) >= target:
-                                    for x in futures: x.cancel()
-                                    futures = set(); break
-                        except: pass
-                    if not futures: break
+        # Submit in chunks equal to MAX_WORKERS (usually 5)
+        batch_size = settings["MAX_WORKERS"]
         
+        # Create executor ONCE to reuse
+        with ThreadPoolExecutor(max_workers=batch_size) as executor:
+            
+            # Process in small batches
+            for i in range(0, len(proxies_raw), batch_size):
+                
+                # Check if we already won
+                good_count = len([r for r in good_proxy_results if not r['used'] and not r['cached_bad']])
+                if good_count >= target_good:
+                    break # Stop loop immediately
+
+                batch = proxies_raw[i : i + batch_size]
+                futures = {executor.submit(single_check_proxy_detailed, p, FRAUD_SCORE_LEVEL, api_credentials, used_ip_set, bad_ip_set, is_strict_mode=True): p for p in batch}
+
+                for f in as_completed(futures):
+                    res = f.result()
+                    
+                    # Classify Result
+                    if res["status"] == "used_cache":
+                        stats["used"] += 1
+                    elif res["status"] == "bad_cache":
+                        stats["bad"] += 1
+                    elif res["status"] in ["success", "bad_score"]:
+                        stats["api"] += 1 # Actual API call happened
+                    
+                    if res.get("proxy"):
+                        good_proxy_results.append(res)
+                
+                # Ensure we break loop if target hit during this batch
+                good_count = len([r for r in good_proxy_results if not r['used'] and not r['cached_bad']])
+                if good_count >= target_good:
+                    break
+
+        # --- DISPLAY RESULTS ---
         unique_results = []; seen = set()
         for r in good_proxy_results:
             if r['ip'] not in seen: seen.add(r['ip']); unique_results.append(r)
-        results = sorted(unique_results, key=lambda x: x['used'])
+        results = sorted(unique_results, key=lambda x: x.get('used', False))
         
-        good_count = len([r for r in results if not r['used']])
+        good_final = len(results)
+        
+        # Update Fails Counter
         fails = settings.get("CONSECUTIVE_FAILS", 0)
-        if good_count > 0 and fails > 0: update_setting("CONSECUTIVE_FAILS", "0"); _SETTINGS_CACHE["CONSECUTIVE_FAILS"] = 0
-        elif not good_count and proxies_to_check:
-            new_fails = fails + len(proxies_to_check); update_setting("CONSECUTIVE_FAILS", str(new_fails))
+        if good_final > 0 and fails > 0: update_setting("CONSECUTIVE_FAILS", "0"); _SETTINGS_CACHE["CONSECUTIVE_FAILS"] = 0
+        elif not good_final and proxies_raw:
+            new_fails = fails + len(proxies_raw); update_setting("CONSECUTIVE_FAILS", str(new_fails))
             if new_fails > 1000: update_setting("SYSTEM_PAUSED", "TRUE"); add_log_entry("CRITICAL", "Auto-paused.", ip="System")
         
-        try: add_api_usage_log(current_user.username, get_user_ip(), len(proxies_input), len(proxies_to_check), good_count)
+        try: add_api_usage_log(current_user.username, get_user_ip(), len(proxies_input), stats["api"], good_final)
         except: pass
         
-        # --- DETAILED MESSAGE ---
         msg_prefix = "⚠️ MAINTENANCE (Admin) - " if admin_bypass else ""
-        details = []
-        if skipped_used > 0: details.append(f"{skipped_used} from cache")
-        if skipped_bad > 0: details.append(f"{skipped_bad} known bad")
-        details.append(f"{live_check_count} live checked")
-        
-        detail_str = ", ".join(details)
-        message = f"{msg_prefix}Found {good_count} good proxies. ({detail_str})"
+        message = f"{msg_prefix}Found {good_final} good proxies. ({stats['used']} from cache, {stats['bad']} skipped bad, {stats['api']} live checked)"
         
         return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False)
 
@@ -465,7 +500,8 @@ def admin_test():
         proxies_to_check = [p.strip() for p in proxies_input if validate_proxy_format(p.strip())]
         good = []
         with ThreadPoolExecutor(max_workers=min(settings["MAX_WORKERS"], len(proxies_to_check))) as ex:
-            futures = {ex.submit(single_check_proxy_detailed, p, settings["STRICT_FRAUD_SCORE_LEVEL"], parse_api_credentials(settings), True): p for p in proxies_to_check}
+            # Note: We pass empty sets for caches in test mode to force re-check
+            futures = {ex.submit(single_check_proxy_detailed, p, settings["STRICT_FRAUD_SCORE_LEVEL"], parse_api_credentials(settings), set(), set(), True): p for p in proxies_to_check}
             for f in as_completed(futures):
                 res = f.result()
                 if res.get("proxy"): good.append(res)
