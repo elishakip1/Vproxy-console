@@ -28,7 +28,7 @@ from db_util import (
     clear_all_system_logs,
     add_api_usage_log, get_all_api_usage_logs,
     get_user_stats_summary,
-    # NEW IMPORTS
+    # POOL IMPORTS
     add_bulk_proxies, get_random_proxies_from_pool, get_pool_count, clear_proxy_pool
 )
 
@@ -76,7 +76,7 @@ def get_user_ip():
     if ip: return ip.split(',')[0].strip()
     return request.remote_addr or "Unknown"
 
-# DEFAULT SETTINGS (Added Reset URLs)
+# DEFAULT SETTINGS
 DEFAULT_SETTINGS = { 
     "MAX_PASTE": 30, "FRAUD_SCORE_LEVEL": 0, "MAX_WORKERS": 5, 
     "SCAMALYTICS_API_KEY": "", "SCAMALYTICS_API_URL": "https://api11.scamalytics.com/v3/", 
@@ -150,6 +150,7 @@ def get_fraud_score_detailed(ip, proxy_line, credentials_list):
     return None
 
 def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list, is_strict_mode=False):
+    """RESTORED FULL STRICT CHECKER"""
     time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
     res = {"proxy": None, "ip": None, "credits": {}, "geo": {}, "score": None}
     if not validate_proxy_format(proxy_line): return res
@@ -178,6 +179,7 @@ def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list,
                 pf = scam.get("scamalytics_proxy", {})
                 for f in ["is_datacenter", "is_vpn", "is_apple_icloud_private_relay", "is_amazon_aws", "is_google"]:
                     if pf.get(f) is True: passed = False
+                # External Checks
                 ext_data = data.get("external_datasources", {})
                 if ext_data.get("ip2proxy", {}).get("proxy_type") == "VPN": passed = False
                 if ext_data.get("ip2proxy_lite", {}).get("ip_blacklisted") is True: passed = False
@@ -204,8 +206,7 @@ def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list,
 
 @app.before_request
 def before_request_func():
-    client_ip = get_user_ip()
-    if client_ip in BLOCKED_IPS: abort(404)
+    if get_user_ip() in BLOCKED_IPS: abort(404)
     if request.path.startswith(('/static', '/login', '/logout')) or request.path.endswith(('.ico', '.png')): return
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -232,7 +233,6 @@ def logout():
     logout_user()
     return redirect(url_for('login'))
 
-# --- ABC PROXY ROUTE ---
 @app.route('/api/fetch-abc-proxies')
 @login_required
 def fetch_abc_proxies():
@@ -326,6 +326,7 @@ def index():
         if 'proxytext' in request.form: proxies_input = request.form.get("proxytext", "").strip().splitlines()[:MAX_PASTE]
         if not proxies_input: return render_template("index.html", results=[], message="No proxies submitted.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"))
         
+        # --- CACHE FIRST LOGIC ---
         used_ips_list = set(); used_proxy_cache = set(); bad_proxy_cache = set()
         try:
             u_recs = get_all_used_ips()
@@ -356,6 +357,7 @@ def index():
                             if res and res.get("proxy"):
                                 res['used'] = str(res.get('ip')).strip() in used_ips_list
                                 good_proxy_results.append(res)
+                                # STOP AFTER FINDING 2 GOOD UNUSED PROXIES
                                 if len([r for r in good_proxy_results if not r['used']]) >= target:
                                     for x in futures: x.cancel()
                                     futures = set(); break
