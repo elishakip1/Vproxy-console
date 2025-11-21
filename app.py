@@ -28,7 +28,7 @@ from db_util import (
     clear_all_system_logs,
     add_api_usage_log, get_all_api_usage_logs,
     get_user_stats_summary,
-    add_bulk_proxies, get_random_proxies_from_pool, get_pool_count, clear_proxy_pool
+    add_bulk_proxies, get_random_proxies_from_pool, get_pool_counts, clear_proxy_pool
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', stream=sys.stdout)
@@ -140,37 +140,13 @@ def get_fraud_score_detailed(ip, proxy_line, credentials_list):
         except: continue
     return None
 
-def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list, used_ip_set, bad_ip_set, is_strict_mode=False):
-    """
-    SMART CHECKER:
-    1. Extracts Real IP via Network (Cost: 0, Time: Low)
-    2. Checks Real IP against Caches (Cost: 0) -> STOP if used/bad.
-    3. Checks Fraud Score via API (Cost: $$, Time: High)
-    """
-    res = {"proxy": None, "ip": None, "credits": {}, "geo": {}, "score": None, "status": "error", "used": False, "cached_bad": False}
-    
-    # 1. Get Real IP
-    if not validate_proxy_format(proxy_line): return res
-    ip = get_ip_from_proxy(proxy_line)
-    res["ip"] = ip
-    
-    if not ip: return res # Proxy dead
-
-    # 2. MID-CHECK (Critical Step to save API calls)
-    if str(ip).strip() in used_ip_set:
-        res["used"] = True
-        res["status"] = "used_cache"
-        return res # Stop here, don't call API
-    
-    if str(ip).strip() in bad_ip_set:
-        res["cached_bad"] = True
-        res["status"] = "bad_cache"
-        return res # Stop here
-
-    # 3. Call API
+def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list, is_strict_mode=False):
     time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
+    res = {"proxy": None, "ip": None, "credits": {}, "geo": {}, "score": None}
+    if not validate_proxy_format(proxy_line): return res
+    ip = get_ip_from_proxy(proxy_line); res["ip"] = ip
+    if not ip: return res
     data = get_fraud_score_detailed(ip, proxy_line, credentials_list)
-    
     if data and data.get("credits"): res["credits"] = data.get("credits")
     try:
         ext_src = data.get("external_datasources", {}) if data else {}; geo = {}
@@ -181,7 +157,6 @@ def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list,
             if db and "PREMIUM" not in db.get("ip_country_code", ""): geo = {"country_code": db.get("ip_country_code"), "state": db.get("ip_state_name"), "city": db.get("ip_city"), "postcode": db.get("ip_postcode")}
         res["geo"] = geo if geo else {"country_code": "N/A", "state": "N/A", "city": "N/A", "postcode": "N/A"}
     except: res["geo"] = {"country_code": "ERR", "state": "ERR", "city": "ERR", "postcode": "ERR"}
-    
     if data and data.get("scamalytics"):
         scam = data.get("scamalytics", {}); score = scam.get("scamalytics_score"); res["score"] = score
         if scam.get("status") != "ok": return res
@@ -211,14 +186,10 @@ def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list,
                 goog = ext_data.get("google", {})
                 for f in ["is_google_general", "is_googlebot", "is_special_crawler", "is_user_triggered_fetcher"]:
                     if goog.get(f) is True: passed = False
-            
-            if passed: 
-                res["proxy"] = proxy_line
-                res["status"] = "success"
+            if passed: res["proxy"] = proxy_line
             elif score_int > fraud_score_level:
                 try: log_bad_proxy(proxy_line, ip, score_int)
                 except: pass
-                res["status"] = "bad_score"
         except: pass
     return res
 
@@ -280,6 +251,7 @@ def fetch_abc_proxies():
         return jsonify({"status": "error", "message": f"HTTP Error: {response.status_code}"})
     except Exception as e: return jsonify({"status": "error", "message": f"Server Error: {str(e)}"})
 
+# --- POOL ROUTES (UPDATED) ---
 @app.route('/admin/pool', methods=['GET', 'POST'])
 @admin_required
 def admin_pool():
@@ -294,14 +266,17 @@ def admin_pool():
                 flash(f"Added {count} proxies to {provider}.", "success")
             else: flash("No valid proxies.", "warning")
         elif 'clear_pool' in request.form:
-            clear_proxy_pool(); flash("Pool cleared.", "success")
+            target = request.form.get('clear_target', 'all')
+            if clear_proxy_pool(target): flash(f"Pool cleared ({target}).", "success")
+            else: flash("Failed to clear.", "danger")
         elif 'save_urls' in request.form:
             update_setting("PYPROXY_RESET_URL", request.form.get("pyproxy_url", "").strip())
             update_setting("PIAPROXY_RESET_URL", request.form.get("piaproxy_url", "").strip())
             flash("URLs updated.", "success"); get_app_settings(force_refresh=True)
         return redirect(url_for('admin_pool'))
-    count = get_pool_count()
-    return render_template('admin_pool.html', count=count, settings=settings)
+    
+    counts = get_pool_counts()
+    return render_template('admin_pool.html', counts=counts, settings=settings)
 
 @app.route('/api/trigger-reset/<provider>')
 @admin_required
@@ -316,14 +291,19 @@ def trigger_reset(provider):
         return jsonify({"status": "success", "message": f"Signal Sent. Response: {resp.text}"})
     except Exception as e: return jsonify({"status": "error", "message": str(e)})
 
-@app.route('/api/fetch-pool-proxies')
+@app.route('/api/fetch-pool-proxies/<provider>')
 @login_required
-def fetch_pool_proxies():
+def fetch_pool_proxies(provider):
+    """Fetches random proxies filtered by provider."""
     if not current_user.can_fetch: return jsonify({"status": "error", "message": "Permission denied."}), 403
+    
     settings = get_app_settings()
     limit = int(settings.get("MAX_PASTE", 30))
-    proxies = get_random_proxies_from_pool(limit)
-    if not proxies: return jsonify({"status": "error", "message": "Pool is empty!"})
+    
+    # Fetch based on provider
+    proxies = get_random_proxies_from_pool(limit, provider)
+    
+    if not proxies: return jsonify({"status": "error", "message": f"No {provider} proxies found in pool!"})
     return jsonify({"status": "success", "proxies": proxies})
 
 @app.route("/", methods=["GET", "POST"])
@@ -343,70 +323,66 @@ def index():
         if 'proxytext' in request.form: proxies_input = request.form.get("proxytext", "").strip().splitlines()[:MAX_PASTE]
         if not proxies_input: return render_template("index.html", results=[], message="No proxies submitted.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"))
         
-        # --- LOAD CACHES ---
+        # --- IP-BASED CACHE LOGIC ---
         used_rows = get_all_used_ips()
-        used_ip_set = {str(r['IP']).strip() for r in used_rows if r.get('IP')}
+        used_ip_set = {r['IP'] for r in used_rows if r.get('IP')}
         
         bad_rows = get_bad_proxies_list()
         bad_ip_set = set()
         for r in bad_rows:
-            if r.get('ip'): bad_ip_set.add(str(r['ip']).strip())
+            if r.get('ip'): 
+                bad_ip_set.add(r['ip'])
             elif r.get('proxy'):
                 local_ip = extract_ip_local(r['proxy'])
                 if local_ip: bad_ip_set.add(local_ip)
 
         proxies_raw = [p.strip() for p in proxies_input if validate_proxy_format(p.strip())]
         
-        # --- BATCH PROCESSING FOR STRICT STOPPING ---
         good_proxy_results = []
         stats = {"used": 0, "bad": 0, "api": 0}
         target_good = 2
-        
-        # Submit in chunks equal to MAX_WORKERS (usually 5)
         batch_size = settings["MAX_WORKERS"]
         
-        # Create executor ONCE to reuse
         with ThreadPoolExecutor(max_workers=batch_size) as executor:
-            
-            # Process in small batches
             for i in range(0, len(proxies_raw), batch_size):
-                
-                # Check if we already won
-                good_count = len([r for r in good_proxy_results if not r['used'] and not r['cached_bad']])
-                if good_count >= target_good:
-                    break # Stop loop immediately
+                good_count = len([r for r in good_proxy_results if not r.get('used') and not r.get('cached_bad')])
+                if good_count >= target_good: break
 
                 batch = proxies_raw[i : i + batch_size]
-                futures = {executor.submit(single_check_proxy_detailed, p, FRAUD_SCORE_LEVEL, api_credentials, used_ip_set, bad_ip_set, is_strict_mode=True): p for p in batch}
+                futures = {executor.submit(single_check_proxy_detailed, p, FRAUD_SCORE_LEVEL, api_credentials, is_strict_mode=True): p for p in batch}
 
                 for f in as_completed(futures):
-                    res = f.result()
-                    
-                    # Classify Result
-                    if res["status"] == "used_cache":
+                    p_line = futures[f]
+                    # MANUAL PRE-CHECK HERE TO COUNT CORRECTLY
+                    local_ip = extract_ip_local(p_line)
+                    if local_ip and local_ip in used_ip_set:
                         stats["used"] += 1
-                    elif res["status"] == "bad_cache":
+                        # Don't add to results to keep list clean, just count it
+                        continue
+                    if local_ip and local_ip in bad_ip_set:
                         stats["bad"] += 1
-                    elif res["status"] in ["success", "bad_score"]:
-                        stats["api"] += 1 # Actual API call happened
-                    
-                    if res.get("proxy"):
-                        good_proxy_results.append(res)
-                
-                # Ensure we break loop if target hit during this batch
-                good_count = len([r for r in good_proxy_results if not r['used'] and not r['cached_bad']])
-                if good_count >= target_good:
-                    break
+                        continue
 
-        # --- DISPLAY RESULTS ---
+                    # If passed local check, get result from future (which does Network+API)
+                    try:
+                        res = f.result()
+                        # Logic to count API calls: If it reached here and wasn't caught by internal mid-check
+                        if res["status"] == "used_cache": stats["used"] += 1
+                        elif res["status"] == "bad_cache": stats["bad"] += 1
+                        elif res["status"] in ["success", "bad_score"]: stats["api"] += 1
+                        
+                        if res.get("proxy"): good_proxy_results.append(res)
+                    except: pass
+                
+                good_count = len([r for r in good_proxy_results if not r.get('used') and not r.get('cached_bad')])
+                if good_count >= target_good: break
+
         unique_results = []; seen = set()
         for r in good_proxy_results:
             if r['ip'] not in seen: seen.add(r['ip']); unique_results.append(r)
         results = sorted(unique_results, key=lambda x: x.get('used', False))
         
         good_final = len(results)
-        
-        # Update Fails Counter
         fails = settings.get("CONSECUTIVE_FAILS", 0)
         if good_final > 0 and fails > 0: update_setting("CONSECUTIVE_FAILS", "0"); _SETTINGS_CACHE["CONSECUTIVE_FAILS"] = 0
         elif not good_final and proxies_raw:
@@ -417,7 +393,12 @@ def index():
         except: pass
         
         msg_prefix = "⚠️ MAINTENANCE (Admin) - " if admin_bypass else ""
-        message = f"{msg_prefix}Found {good_final} good proxies. ({stats['used']} from cache, {stats['bad']} skipped bad, {stats['api']} live checked)"
+        details = []
+        if stats["used"] > 0: details.append(f"{stats['used']} from cache")
+        if stats["bad"] > 0: details.append(f"{stats['bad']} skipped bad")
+        details.append(f"{stats['api']} live checked")
+        
+        message = f"{msg_prefix}Found {good_final} good proxies. ({', '.join(details)})"
         
         return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False)
 
@@ -500,8 +481,7 @@ def admin_test():
         proxies_to_check = [p.strip() for p in proxies_input if validate_proxy_format(p.strip())]
         good = []
         with ThreadPoolExecutor(max_workers=min(settings["MAX_WORKERS"], len(proxies_to_check))) as ex:
-            # Note: We pass empty sets for caches in test mode to force re-check
-            futures = {ex.submit(single_check_proxy_detailed, p, settings["STRICT_FRAUD_SCORE_LEVEL"], parse_api_credentials(settings), set(), set(), True): p for p in proxies_to_check}
+            futures = {ex.submit(single_check_proxy_detailed, p, settings["STRICT_FRAUD_SCORE_LEVEL"], parse_api_credentials(settings), True): p for p in proxies_to_check}
             for f in as_completed(futures):
                 res = f.result()
                 if res.get("proxy"): good.append(res)
