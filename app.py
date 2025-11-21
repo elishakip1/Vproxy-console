@@ -187,7 +187,10 @@ def login():
 
 @app.route('/logout')
 @login_required
-def logout(): logout_user(); return redirect(url_for('login'))
+def logout():
+    add_log_entry("INFO", f"User {current_user.username} logged out.", ip=get_user_ip())
+    logout_user()
+    return redirect(url_for('login'))
 
 @app.route('/api/fetch-abc-proxies')
 @login_required
