@@ -109,13 +109,10 @@ def validate_proxy_format(proxy_line):
     except: return False
 
 def extract_ip_local(proxy_line):
-    """Extracts IP from proxy string WITHOUT a network call."""
-    try:
-        return proxy_line.split(':')[0].strip()
+    try: return proxy_line.split(':')[0].strip()
     except: return None
 
 def get_ip_from_proxy(proxy_line):
-    """Gets PUBLIC IP via network call (Checking phase only)."""
     if not validate_proxy_format(proxy_line): return None
     try:
         host, port, user, pw = proxy_line.strip().split(":")
@@ -317,45 +314,31 @@ def index():
         if 'proxytext' in request.form: proxies_input = request.form.get("proxytext", "").strip().splitlines()[:MAX_PASTE]
         if not proxies_input: return render_template("index.html", results=[], message="No proxies submitted.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"))
         
-        # --- IMPROVED CACHE FIRST LOGIC (IP BASED) ---
-        # 1. Load caches as SETS OF IPs (string matching is unreliable due to user/pass changes)
+        # --- IP-BASED CACHE LOGIC ---
         used_rows = get_all_used_ips()
         used_ip_set = {r['IP'] for r in used_rows if r.get('IP')}
         
+        # Use the corrected get_bad_proxies_list which returns dicts
         bad_rows = get_bad_proxies_list()
         bad_ip_set = set()
         for r in bad_rows:
             if r.get('ip'): 
                 bad_ip_set.add(r['ip'])
             elif r.get('proxy'):
-                # Fallback: try to extract IP from proxy string if column is empty
-                extracted = extract_ip_local(r['proxy'])
-                if extracted: bad_ip_set.add(extracted)
+                local_ip = extract_ip_local(r['proxy'])
+                if local_ip: bad_ip_set.add(local_ip)
 
         proxies_to_check = []
-        skipped_used = 0
-        skipped_bad = 0
-        
-        # 2. Filter Logic using Local IP Extraction (No API calls)
+        skipped_used = 0; skipped_bad = 0
         for p in {px.strip() for px in proxies_input if px.strip()}:
             if not validate_proxy_format(p): continue
-            
-            ip_local = extract_ip_local(p)
-            
-            # If we can't extract IP locally, we must skip pre-check or risk API cost.
-            # Safest to skip pre-check for that specific line if format is weird, 
-            # but validate_proxy_format should handle it.
-            if ip_local:
-                if ip_local in used_ip_set:
-                    skipped_used += 1
-                    continue
-                if ip_local in bad_ip_set:
-                    skipped_bad += 1
-                    continue
-            
+            local_ip = extract_ip_local(p)
+            if local_ip:
+                if local_ip in used_ip_set: skipped_used += 1; continue
+                if local_ip in bad_ip_set: skipped_bad += 1; continue
             proxies_to_check.append(p)
         
-        logger.info(f"Pre-check (IP-Based): Skipped {skipped_used} used, {skipped_bad} bad. Checking {len(proxies_to_check)}.")
+        logger.info(f"Pre-check: Skipped {skipped_used} used, {skipped_bad} bad.")
         
         good_proxy_results = []; futures = set(); target = 2
         if proxies_to_check:
@@ -367,8 +350,7 @@ def index():
                         try:
                             res = f.result()
                             if res and res.get("proxy"):
-                                ip_clean = str(res.get('ip')).strip()
-                                res['used'] = ip_clean in used_ip_set
+                                res['used'] = str(res.get('ip')).strip() in used_ip_set
                                 good_proxy_results.append(res)
                                 if len([r for r in good_proxy_results if not r['used']]) >= target:
                                     for x in futures: x.cancel()
