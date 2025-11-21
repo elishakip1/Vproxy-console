@@ -139,9 +139,11 @@
       <div class="col-md-6">
         <div class="card p-3 mb-4">
           <h4>🧠 Admin Actions</h4>
-          <a href="{{ url_for('admin_test') }}" class="btn btn-warning mb-2 w-100">🛡️ Run Strict Proxy Tester</a>
-          <a href="{{ url_for('admin_logs') }}" class="btn btn-info mb-2 w-100">📋 View System Logs</a> <a href="{{ url_for('admin_settings') }}" class="btn btn-outline-primary mb-2 w-100">Configure Settings</a>
+          <a href="{{ url_for('admin_pool') }}" class="btn btn-success mb-2 w-100">🏭 Manage Proxy Pool</a>
           <a href="{{ url_for('admin_users') }}" class="btn btn-dark mb-2 w-100">👥 View User Activity</a>
+          <a href="{{ url_for('admin_test') }}" class="btn btn-warning mb-2 w-100">🛡️ Run Strict Proxy Tester</a>
+          <a href="{{ url_for('admin_logs') }}" class="btn btn-info mb-2 w-100">📋 View System Logs</a>
+          <a href="{{ url_for('admin_settings') }}" class="btn btn-outline-primary mb-2 w-100">Configure Settings</a>
           <a href="/" class="btn btn-outline-secondary w-100">Go to Checker</a>
         </div>
       </div>
