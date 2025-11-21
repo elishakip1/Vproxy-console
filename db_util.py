@@ -46,7 +46,6 @@ def update_setting(key, value):
 def add_used_ip(ip, proxy, username="Unknown"):
     if not supabase: return False
     try:
-        # Check if IP exists to prevent duplicates
         exists = supabase.table('used_proxies').select("id").eq("ip", ip).execute()
         if exists.data: return True
         
@@ -70,7 +69,6 @@ def delete_used_ip(ip):
 def get_all_used_ips():
     if not supabase: return []
     try:
-        # Fetch IPs to cache them in app.py
         response = supabase.table('used_proxies').select("ip, proxy, created_at, username").order("created_at", desc=True).execute()
         return [{
             "IP": r['ip'], 
@@ -84,21 +82,15 @@ def get_all_used_ips():
 def log_bad_proxy(proxy, ip, score):
     if not supabase: return False
     try:
-        # Only log if this IP isn't already logged as bad
-        exists = supabase.table('bad_proxies').select("id").eq("ip", ip).execute()
-        if exists.data: return True
-
         supabase.table('bad_proxies').insert({"proxy": proxy, "ip": ip, "score": score}).execute()
         return True
     except Exception: return False
 
 def get_bad_proxies_list():
-    """Returns list of bad proxy objects (IP and Proxy string)."""
     if not supabase: return []
     try:
-        # We need the IP to filter correctly
-        response = supabase.table('bad_proxies').select("ip, proxy").execute()
-        return response.data # Returns [{'ip': '...', 'proxy': '...'}, ...]
+        response = supabase.table('bad_proxies').select("proxy").execute()
+        return [r['proxy'] for r in response.data]
     except Exception: return []
 
 # --- LOGS ---
@@ -170,17 +162,20 @@ def add_bulk_proxies(proxy_list, provider="manual"):
     return total_added
 
 def get_random_proxies_from_pool(limit=100):
+    """
+    Fetches TRUE random proxies using the Supabase RPC function.
+    This ensures excellent mixing of providers.
+    """
     if not supabase: return []
     try:
-        count_res = supabase.table('proxy_pool').select("id", count="exact", head=True).execute()
-        total = count_res.count
-        if total == 0: return []
-        start = random.randint(0, max(0, total - limit - 1))
-        response = supabase.table('proxy_pool').select("proxy").range(start, start + limit * 2).execute()
+        # Calls the SQL function 'get_random_proxies' we created in Step 1
+        response = supabase.rpc('get_random_proxies', {'limit_count': limit}).execute()
+        
         proxies = [r['proxy'] for r in response.data]
-        random.shuffle(proxies)
-        return proxies[:limit]
-    except Exception as e: logger.error(f"Error fetching from pool: {e}"); return []
+        return proxies
+    except Exception as e:
+        logger.error(f"Error fetching random pool: {e}")
+        return []
 
 def get_pool_count():
     if not supabase: return 0
