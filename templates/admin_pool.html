@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Proxy Manager</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>🏭 Bulk Proxy Manager</h2>
+        <a href="/admin" class="btn btn-outline-secondary">Back to Admin</a>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+        <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <div class="card mb-4 text-center bg-light">
+        <div class="card-body">
+            <h1 class="display-4 text-primary fw-bold">{{ count }}</h1>
+            <p class="text-muted">Total Proxies in Database Pool</p>
+            <form method="POST" onsubmit="return confirm('Are you sure? This deletes ALL proxies from the pool.');">
+                <input type="hidden" name="clear_pool" value="1">
+                <button class="btn btn-danger btn-sm">🗑️ Clear All Proxies</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white">📥 Upload Bulk Proxies</div>
+                <div class="card-body">
+                    <form method="POST">
+                        <div class="mb-3">
+                            <label class="form-label">Provider Tag</label>
+                            <select name="provider" class="form-select">
+                                <option value="pyproxy">PyProxy</option>
+                                <option value="piaproxy">PiaProxy</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Paste List (Format: host:port:user:pass)</label>
+                            <textarea name="bulk_proxies" class="form-control" rows="10" placeholder="1.2.3.4:8000:user:pass..."></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-success w-100">Add to Pool</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card mb-4">
+                <div class="card-header bg-dark text-white">🔄 Rotation Controls</div>
+                <div class="card-body">
+                    <form method="POST" class="mb-4">
+                        <input type="hidden" name="save_urls" value="1">
+                        <div class="mb-2">
+                            <label class="form-label">PyProxy Reset Link</label>
+                            <div class="input-group">
+                                <input type="text" name="pyproxy_url" class="form-control" value="{{ settings.PYPROXY_RESET_URL }}">
+                                <button type="button" class="btn btn-warning" onclick="triggerReset('pyproxy')">Rotate!</button>
+                            </div>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">PiaProxy Reset Link</label>
+                            <div class="input-group">
+                                <input type="text" name="piaproxy_url" class="form-control" value="{{ settings.PIAPROXY_RESET_URL }}">
+                                <button type="button" class="btn btn-warning" onclick="triggerReset('piaproxy')">Rotate!</button>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-secondary btn-sm">Save URLs</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+async function triggerReset(provider) {
+    if(!confirm("Trigger IP Rotation for " + provider + "?")) return;
+    try {
+        let btn = event.target;
+        let originalText = btn.innerText;
+        btn.innerText = "Wait...";
+        btn.disabled = true;
+
+        let res = await fetch('/api/trigger-reset/' + provider);
+        let data = await res.json();
+        alert(data.message);
+        
+        btn.innerText = originalText;
+        btn.disabled = false;
+    } catch (e) {
+        alert("Error: " + e);
+    }
+}
+</script>
+</body>
+</html>
