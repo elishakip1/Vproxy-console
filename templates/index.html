@@ -110,11 +110,11 @@
                         {% if current_user.can_fetch %}
                         <div class="d-flex justify-content-end mb-2 gap-2">
                             <button type="button" id="fetchBtn" class="btn btn-success btn-sm" onclick="fetchABCProxies()">
-                                🔄 Live API (ABC)
+                                🔄ABCPROXY
                             </button>
                             
                             <button type="button" id="poolBtn" class="btn btn-info btn-sm text-white" onclick="fetchPoolProxies()">
-                                📦 Fetch from DB Pool
+                                📦PYPROXY&PIA
                             </button>
                         </div>
                         {% endif %}
@@ -140,7 +140,7 @@
 
         {% if results is defined and results is not none %} 
         <hr>
-        <h5 class="mt-4">✅ Good Proxies Found (Score $\le$ {{ settings.FRAUD_SCORE_LEVEL }})</h5> <div class="table-responsive mt-2">
+        <h5 class="mt-4">✅ Good Proxies Found (Score {{ settings.FRAUD_SCORE_LEVEL }})</h5> <div class="table-responsive mt-2">
             <table class="table table-sm table-bordered table-hover">
                 <thead class="table-light">
                     <tr>
