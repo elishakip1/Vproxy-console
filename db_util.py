@@ -78,7 +78,7 @@ def get_all_used_ips():
         } for r in response.data]
     except Exception: return []
 
-# --- BAD PROXIES (FIXED) ---
+# --- BAD PROXIES ---
 def log_bad_proxy(proxy, ip, score):
     if not supabase: return False
     try:
@@ -90,14 +90,10 @@ def log_bad_proxy(proxy, ip, score):
     except Exception: return False
 
 def get_bad_proxies_list():
-    """
-    FIXED: Returns a list of DICTIONARIES (including IP), not just strings.
-    This prevents the 'AttributeError' in app.py.
-    """
     if not supabase: return []
     try:
         response = supabase.table('bad_proxies').select("ip, proxy").execute()
-        return response.data # Returns [{'ip': '...', 'proxy': '...'}, ...]
+        return response.data 
     except Exception: return []
 
 # --- LOGS ---
@@ -191,6 +187,10 @@ def get_pool_count_by_provider(provider=None):
     except Exception as e:
         logger.error(f"Error fetching pool count for {provider}: {e}")
         return 0
+
+# BACKWARD COMPATIBILITY: Keep this function to prevent ImportErrors in app.py
+def get_pool_count():
+    return get_pool_count_by_provider(None)
 
 def get_all_pool_counts():
     """Fetches counts for total, pyproxy, and piaproxy."""

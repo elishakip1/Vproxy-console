@@ -28,7 +28,8 @@ from db_util import (
     clear_all_system_logs,
     add_api_usage_log, get_all_api_usage_logs,
     get_user_stats_summary,
-    add_bulk_proxies, get_random_proxies_from_pool, get_all_pool_counts, clear_proxy_pool
+    add_bulk_proxies, get_random_proxies_from_pool, 
+    get_all_pool_counts, clear_proxy_pool, get_pool_count # Added get_pool_count for safety
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', stream=sys.stdout)
@@ -309,7 +310,13 @@ def admin_pool():
             flash("URLs updated.", "success"); get_app_settings(force_refresh=True)
         return redirect(url_for('admin_pool'))
         
-    counts = get_all_pool_counts() 
+    # Safety Check: If DB call fails, show 0 instead of crashing page
+    try:
+        counts = get_all_pool_counts()
+    except Exception as e:
+        logger.error(f"Failed to fetch pool counts: {e}")
+        counts = {"total": 0, "pyproxy": 0, "piaproxy": 0}
+        
     return render_template('admin_pool.html', counts=counts, settings=settings)
 
 @app.route('/api/trigger-reset/<provider>')
