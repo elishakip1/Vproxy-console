@@ -179,12 +179,26 @@ def get_random_proxies_from_pool(limit=100):
         logger.error(f"Error fetching from pool: {e}")
         return []
 
-def get_pool_count():
+def get_pool_count_by_provider(provider=None):
+    """Fetches the count for a specific provider or the total count if None."""
     if not supabase: return 0
     try:
-        res = supabase.table('proxy_pool').select("id", count="exact", head=True).execute()
+        query = supabase.table('proxy_pool').select("id", count="exact", head=True)
+        if provider:
+            query = query.eq('provider', provider)
+        res = query.execute()
         return res.count
-    except: return 0
+    except Exception as e:
+        logger.error(f"Error fetching pool count for {provider}: {e}")
+        return 0
+
+def get_all_pool_counts():
+    """Fetches counts for total, pyproxy, and piaproxy."""
+    return {
+        "total": get_pool_count_by_provider(),
+        "pyproxy": get_pool_count_by_provider("pyproxy"),
+        "piaproxy": get_pool_count_by_provider("piaproxy"),
+    }
 
 def clear_proxy_pool(provider=None):
     if not supabase: return False

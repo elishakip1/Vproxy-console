@@ -28,7 +28,7 @@ from db_util import (
     clear_all_system_logs,
     add_api_usage_log, get_all_api_usage_logs,
     get_user_stats_summary,
-    add_bulk_proxies, get_random_proxies_from_pool, get_pool_count, clear_proxy_pool
+    add_bulk_proxies, get_random_proxies_from_pool, get_all_pool_counts, clear_proxy_pool
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', stream=sys.stdout)
@@ -72,7 +72,7 @@ def get_user_ip():
     if ip: return ip.split(',')[0].strip()
     return request.remote_addr or "Unknown"
 
-DEFAULT_SETTINGS = { "MAX_PASTE": 30, "FRAUD_SCORE_LEVEL": 0, "MAX_WORKERS": 5, "SCAMALYTICS_API_KEY": "", "SCAMALYTICS_API_URL": "https://api11.scamalytics.com/v3/", "SCAMALYTICS_USERNAME": "", "ANNOUNCEMENT": "", "API_CREDITS_USED": "N/A", "API_CREDITS_REMAINING": "N/A", "STRICT_FRAUD_SCORE_LEVEL": 20, "CONSECUTIVE_FAILS": 0, "SYSTEM_PAUSED": "FALSE", "ABC_GENERATION_URL": "", "PYPROXY_RESET_URL": "", "PIAPROXY_RESET_URL": "" }
+DEFAULT_SETTINGS = { "MAX_PASTE": 30, "FRAUD_SCORE_LEVEL": 0, "MAX_WORKERS": 5, "SCAMALYTICS_API_KEY": "", "SCAMALYTICS_API_URL": "https://api11.scamalytics.com/v3/", "SCAMALYTICS_USERNAME": "", "ANNOUNCEMENT": "", "API_CREDITS_USED": "N/A", "API_CREDITS_REMAINING": "N/A", "STRICT_FRAUD_SCORE_LEVEL": 20, "CONSECUTIVE_FAILS": 0, "SYSTEM_PAUSED": "FALSE", "ABC_GENERATION_URL": "", "PYPROXY_RESET_URL": "", "PIAPROXY_RESET_URL": "", "PASTE_INPUT_DISABLED": "FALSE" }
 
 _SETTINGS_CACHE = None; _SETTINGS_CACHE_TIME = 0; CACHE_DURATION = 300
 def get_app_settings(force_refresh=False):
@@ -294,14 +294,23 @@ def admin_pool():
                 flash(f"Added {count} proxies to {provider}.", "success")
             else: flash("No valid proxies.", "warning")
         elif 'clear_pool' in request.form:
-            clear_proxy_pool(); flash("Pool cleared.", "success")
+            clear_target = request.form.get("clear_target", None)
+            if clear_target == 'all':
+                clear_proxy_pool()
+                flash("Pool cleared.", "success")
+            elif clear_target in ['pyproxy', 'piaproxy']:
+                clear_proxy_pool(clear_target)
+                flash(f"{clear_target.capitalize()} pool cleared.", "success")
+            else:
+                flash("Invalid clear target.", "warning")
         elif 'save_urls' in request.form:
             update_setting("PYPROXY_RESET_URL", request.form.get("pyproxy_url", "").strip())
             update_setting("PIAPROXY_RESET_URL", request.form.get("piaproxy_url", "").strip())
             flash("URLs updated.", "success"); get_app_settings(force_refresh=True)
         return redirect(url_for('admin_pool'))
-    count = get_pool_count()
-    return render_template('admin_pool.html', count=count, settings=settings)
+        
+    counts = get_all_pool_counts() 
+    return render_template('admin_pool.html', counts=counts, settings=settings)
 
 @app.route('/api/trigger-reset/<provider>')
 @admin_required
@@ -514,7 +523,17 @@ def admin_settings():
     curr = get_app_settings()
     if request.method == "POST":
         f = request.form
-        upd = { "MAX_PASTE": f.get("max_paste"), "FRAUD_SCORE_LEVEL": f.get("fraud_score_level"), "STRICT_FRAUD_SCORE_LEVEL": f.get("strict_fraud_score_level"), "MAX_WORKERS": f.get("max_workers"), "SCAMALYTICS_API_KEY": f.get("scamalytics_api_key", "").strip(), "SCAMALYTICS_API_URL": f.get("scamalytics_api_url", "").strip(), "SCAMALYTICS_USERNAME": f.get("scamalytics_username", "").strip(), "ABC_GENERATION_URL": f.get("abc_generation_url", "").strip() }
+        upd = { 
+            "MAX_PASTE": f.get("max_paste"), 
+            "FRAUD_SCORE_LEVEL": f.get("fraud_score_level"), 
+            "STRICT_FRAUD_SCORE_LEVEL": f.get("strict_fraud_score_level"), 
+            "MAX_WORKERS": f.get("max_workers"), 
+            "SCAMALYTICS_API_KEY": f.get("scamalytics_api_key", "").strip(), 
+            "SCAMALYTICS_API_URL": f.get("scamalytics_api_url", "").strip(), 
+            "SCAMALYTICS_USERNAME": f.get("scamalytics_username", "").strip(), 
+            "ABC_GENERATION_URL": f.get("abc_generation_url", "").strip(),
+            "PASTE_INPUT_DISABLED": f.get("paste_input_disabled", "FALSE")
+        }
         for k, v in upd.items(): update_setting(k, str(v)); time.sleep(0.2)
         flash("Settings updated.", "success"); curr = get_app_settings(force_refresh=True)
     return render_template("admin_settings.html", settings=curr)
