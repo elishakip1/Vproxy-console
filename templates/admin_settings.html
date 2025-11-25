@@ -121,23 +121,6 @@
                    name="max_paste" value="{{ settings.MAX_PASTE }}" min="5" max="100">
             <div class="form-text">Maximum number of proxies users can submit at once (5-100)</div>
           </div>
-          
-          <div class="mb-3">
-            <label for="paste_input_disabled_switch" class="form-label">
-              Disable Manual Paste Input (User Page)
-            </label>
-            <div>
-              <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" id="paste_input_disabled_switch" 
-                       name="paste_input_disabled" value="TRUE" role="switch" 
-                       {% if settings.PASTE_INPUT_DISABLED == 'TRUE' %}checked{% endif %}>
-                <label class="form-check-label" for="paste_input_disabled_switch">
-                  Currently: <strong>{{ 'DISABLED' if settings.PASTE_INPUT_DISABLED == 'TRUE' else 'ENABLED' }}</strong>
-                </label>
-              </div>
-            </div>
-            <div class="form-text">Prevents users from manually pasting proxies, forcing them to use the fetch buttons. <strong>Note: Users without fetch permission (Guests) will still be allowed to paste.</strong></div>
-          </div>
 
           <div class="mb-3">
             <label for="fraud_score_level" class="form-label">

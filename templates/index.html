@@ -34,7 +34,7 @@
 
         /* Notepad Widget Styles */
         #notepad-widget { position: fixed; bottom: 20px; right: 20px; z-index: 1050; }
-        #notepad-toggle-btn { background-color: #0d6efd; color: white; border: none; border-radius: 50%; w`idth: 50px; height: 50px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 8px rgba(0,0,0,0.2); cursor: pointer; transition: background-color 0.2s; }
+        #notepad-toggle-btn { background-color: #0d6efd; color: white; border: none; border-radius: 50%; width: 50px; height: 50px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 8px rgba(0,0,0,0.2); cursor: pointer; transition: background-color 0.2s; }
         #notepad-toggle-btn:hover { background-color: #0b5ed7; }
         #notepad-container { position: absolute; bottom: 65px; right: 0; width: 300px; height: 350px; background-color: #ffffff; border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); display: flex; flex-direction: column; overflow: hidden; transition: all 0.3s ease-in-out; opacity: 1; transform: translateY(0); pointer-events: auto; }
         #notepad-container.hidden { display: none; opacity: 0; transform: translateY(10px); pointer-events: none; }
@@ -94,9 +94,6 @@
             <p>Please contact the administrator.</p>
         </div>
         {% else %}
-        
-        {% set paste_disabled_for_user = (settings.PASTE_INPUT_DISABLED == 'TRUE' and current_user.can_fetch) %}
-        
         <div class="accordion" id="proxyAccordion">
             <div class="accordion-item">
                 <h2 class="accordion-header" id="formHeading">
@@ -128,15 +125,12 @@
                                     <textarea name="proxytext" id="proxytext_hidden" style="display: none;"></textarea>
                                     
                                     <textarea id="proxytext" class="form-control textarea-box"
-                                              placeholder="{% if paste_disabled_for_user %}Paste input is currently disabled by the administrator. Please use the fetch buttons.{% else %}Paste proxies here (e.g., host:port:user:pass)...{% endif %}"
-                                              oninput="{% if not paste_disabled_for_user %}updateProxyCounter(this){% endif %}"
-                                              {% if paste_disabled_for_user %}disabled{% endif %}></textarea>
+                                              placeholder="Paste proxies here (e.g., host:port:user:pass)..."
+                                              oninput="updateProxyCounter(this)"></textarea>
                                     <div class="proxy-counter" id="proxyCounter">0/{{ max_paste }}</div>
                                 </div>
                             </div>
-                            <button type="submit" id="submitBtn" class="btn btn-primary w-100" {% if paste_disabled_for_user %}disabled{% endif %}>
-                                {% if paste_disabled_for_user %}Paste Disabled (Use Fetch){% else %}Check Proxies{% endif %}
-                            </button>
+                            <button type="submit" id="submitBtn" class="btn btn-primary w-100">Check Proxies</button>
                         </form>
                     </div>
                 </div>
@@ -215,7 +209,6 @@
     <script>
         let trackedProxiesThisSession = new Set();
         const MAX_LINES = {{ max_paste }};
-        const IS_PASTE_DISABLED = {{ 'true' if paste_disabled_for_user else 'false' }};
 
         function updateProxyCounter(textarea) {
             const text = textarea.value;
@@ -237,13 +230,6 @@
                 textarea.classList.remove('is-invalid');
                 hiddenTextarea.value = text;
             }
-            
-            // If disabled by admin AND user can fetch, lock the button here too
-            if (IS_PASTE_DISABLED) {
-                submitBtn.disabled = true;
-                return;
-            }
-
             if (isTextAreaTooLong || isTextAreaEmpty) { submitBtn.disabled = true; } else { submitBtn.disabled = false; }
         }
 

@@ -78,7 +78,7 @@ def get_all_used_ips():
         } for r in response.data]
     except Exception: return []
 
-# --- BAD PROXIES ---
+# --- BAD PROXIES (FIXED) ---
 def log_bad_proxy(proxy, ip, score):
     if not supabase: return False
     try:
@@ -90,10 +90,14 @@ def log_bad_proxy(proxy, ip, score):
     except Exception: return False
 
 def get_bad_proxies_list():
+    """
+    FIXED: Returns a list of DICTIONARIES (including IP), not just strings.
+    This prevents the 'AttributeError' in app.py.
+    """
     if not supabase: return []
     try:
         response = supabase.table('bad_proxies').select("ip, proxy").execute()
-        return response.data 
+        return response.data # Returns [{'ip': '...', 'proxy': '...'}, ...]
     except Exception: return []
 
 # --- LOGS ---
@@ -175,7 +179,6 @@ def get_random_proxies_from_pool(limit=100):
         logger.error(f"Error fetching from pool: {e}")
         return []
 
-# ORIGINAL FUNCTION (RESTORED FOR SAFETY)
 def get_pool_count():
     if not supabase: return 0
     try:
@@ -183,31 +186,12 @@ def get_pool_count():
         return res.count
     except: return 0
 
-# NEW HELPER FOR ADMIN POOL PAGE
-def get_detailed_pool_counts():
-    if not supabase: return {"total": 0, "pyproxy": 0, "piaproxy": 0}
-    try:
-        total = get_pool_count()
-        
-        py_res = supabase.table('proxy_pool').select("id", count="exact", head=True).eq('provider', 'pyproxy').execute()
-        py_count = py_res.count if py_res else 0
-        
-        pia_res = supabase.table('proxy_pool').select("id", count="exact", head=True).eq('provider', 'piaproxy').execute()
-        pia_count = pia_res.count if pia_res else 0
-        
-        return {"total": total, "pyproxy": py_count, "piaproxy": pia_count}
-    except Exception as e:
-        logger.error(f"Error getting detailed counts: {e}")
-        return {"total": 0, "pyproxy": 0, "piaproxy": 0}
-
 def clear_proxy_pool(provider=None):
     if not supabase: return False
     try:
         query = supabase.table('proxy_pool').delete()
-        if provider and provider != 'all': 
-            query = query.eq('provider', provider)
-        else: 
-            query = query.neq('id', 0) 
+        if provider: query = query.eq('provider', provider)
+        else: query = query.neq('id', 0) 
         query.execute()
         return True
     except Exception as e: logger.error(f"Error clearing pool: {e}"); return False
