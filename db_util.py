@@ -175,37 +175,39 @@ def get_random_proxies_from_pool(limit=100):
         logger.error(f"Error fetching from pool: {e}")
         return []
 
-def get_pool_count_by_provider(provider=None):
-    """Fetches the count for a specific provider or the total count if None."""
+# ORIGINAL FUNCTION (RESTORED FOR SAFETY)
+def get_pool_count():
     if not supabase: return 0
     try:
-        query = supabase.table('proxy_pool').select("id", count="exact", head=True)
-        if provider:
-            query = query.eq('provider', provider)
-        res = query.execute()
+        res = supabase.table('proxy_pool').select("id", count="exact", head=True).execute()
         return res.count
+    except: return 0
+
+# NEW HELPER FOR ADMIN POOL PAGE
+def get_detailed_pool_counts():
+    if not supabase: return {"total": 0, "pyproxy": 0, "piaproxy": 0}
+    try:
+        total = get_pool_count()
+        
+        py_res = supabase.table('proxy_pool').select("id", count="exact", head=True).eq('provider', 'pyproxy').execute()
+        py_count = py_res.count if py_res else 0
+        
+        pia_res = supabase.table('proxy_pool').select("id", count="exact", head=True).eq('provider', 'piaproxy').execute()
+        pia_count = pia_res.count if pia_res else 0
+        
+        return {"total": total, "pyproxy": py_count, "piaproxy": pia_count}
     except Exception as e:
-        logger.error(f"Error fetching pool count for {provider}: {e}")
-        return 0
-
-# BACKWARD COMPATIBILITY: Keep this function to prevent ImportErrors in app.py
-def get_pool_count():
-    return get_pool_count_by_provider(None)
-
-def get_all_pool_counts():
-    """Fetches counts for total, pyproxy, and piaproxy."""
-    return {
-        "total": get_pool_count_by_provider(),
-        "pyproxy": get_pool_count_by_provider("pyproxy"),
-        "piaproxy": get_pool_count_by_provider("piaproxy"),
-    }
+        logger.error(f"Error getting detailed counts: {e}")
+        return {"total": 0, "pyproxy": 0, "piaproxy": 0}
 
 def clear_proxy_pool(provider=None):
     if not supabase: return False
     try:
         query = supabase.table('proxy_pool').delete()
-        if provider: query = query.eq('provider', provider)
-        else: query = query.neq('id', 0) 
+        if provider and provider != 'all': 
+            query = query.eq('provider', provider)
+        else: 
+            query = query.neq('id', 0) 
         query.execute()
         return True
     except Exception as e: logger.error(f"Error clearing pool: {e}"); return False
