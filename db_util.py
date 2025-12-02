@@ -203,20 +203,40 @@ def get_random_proxies_from_pool(limit=100):
         return []
 
 def get_pool_stats():
-    """Fetches counts for Total, PyProxy, and PiaProxy"""
+    """Fetches counts robustly"""
     if not supabase: return {"total": 0, "pyproxy": 0, "piaproxy": 0}
+    stats = {"total": 0, "pyproxy": 0, "piaproxy": 0}
+    
+    def safe_count(query):
+        try:
+            res = query.execute()
+            if hasattr(res, 'count') and res.count is not None:
+                return res.count
+            if hasattr(res, 'data') and res.data is not None:
+                return len(res.data)
+            return 0
+        except Exception as e:
+            logger.error(f"Count error: {e}")
+            return 0
+
     try:
-        # Get total
-        total = supabase.table('proxy_pool').select("id", count="exact", head=True).execute().count
-        # Get PyProxy
-        py = supabase.table('proxy_pool').select("id", count="exact", head=True).eq('provider', 'pyproxy').execute().count
-        # Get PiaProxy
-        pia = supabase.table('proxy_pool').select("id", count="exact", head=True).eq('provider', 'piaproxy').execute().count
-        
-        return {"total": total, "pyproxy": py, "piaproxy": pia}
+        stats["total"] = safe_count(supabase.table('proxy_pool').select("id", count="exact", head=True))
+        stats["pyproxy"] = safe_count(supabase.table('proxy_pool').select("id", count="exact", head=True).eq('provider', 'pyproxy'))
+        stats["piaproxy"] = safe_count(supabase.table('proxy_pool').select("id", count="exact", head=True).eq('provider', 'piaproxy'))
     except Exception as e:
-        logger.error(f"Error getting pool stats: {e}")
-        return {"total": 0, "pyproxy": 0, "piaproxy": 0}
+        logger.error(f"Pool stats error: {e}")
+    
+    return stats
+
+def get_pool_preview(provider, limit=50):
+    """Fetches a preview list of proxies for a provider"""
+    if not supabase: return []
+    try:
+        res = supabase.table('proxy_pool').select("proxy, created_at").eq('provider', provider).order('created_at', desc=True).limit(limit).execute()
+        return res.data
+    except Exception as e:
+        logger.error(f"Preview fetch error: {e}")
+        return []
 
 def clear_proxy_pool(provider=None):
     if not supabase: return False
