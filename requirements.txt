@@ -1,6 +1,8 @@
-Flask
-Flask-Login
-requests
-gunicorn
-pytz
-supabase
+Flask==2.3.3
+Flask-Login==0.6.3
+requests==2.31.0
+gunicorn==21.2.0
+pytz==2023.3
+supabase==1.0.3
+python-dotenv==1.0.0
+urllib3==1.26.16
