@@ -582,13 +582,18 @@ def index():
                                      max_paste=MAX_PASTE, settings=settings,
                                      announcement=settings.get("ANNOUNCEMENT"), system_paused=False)
         
-        # Check if user is trying to paste when forced to use fetch
-        if paste_disabled_for_user and 'proxytext' in request.form:
-            # Silently ignore the paste and show empty results
+        # --- FIXED: Check if user is trying to paste when forced to use fetch ---
+        # We now check a hidden field 'proxy_origin'. 
+        # If it is NOT 'fetch', and the user is restricted, we block it.
+        origin = request.form.get('proxy_origin', 'paste')
+        
+        if paste_disabled_for_user and origin != 'fetch' and 'proxytext' in request.form:
+            # User is restricted and origin is not fetch -> Block
             return render_template("index.html", results=[], 
                                  message="No good proxies found in this batch.",
                                  max_paste=MAX_PASTE, settings=settings,
-                                 announcement=settings.get("ANNOUNCEMENT"), system_paused=False)
+                                 announcement=settings.get("ANNOUNCEMENT"), system_paused=False,
+                                 paste_disabled_for_user=paste_disabled_for_user)
         
         proxies_input = []
         if 'proxytext' in request.form:
@@ -597,7 +602,8 @@ def index():
         if not proxies_input:
             return render_template("index.html", results=[], message="No proxies submitted.", 
                                  max_paste=MAX_PASTE, settings=settings, 
-                                 announcement=settings.get("ANNOUNCEMENT"))
+                                 announcement=settings.get("ANNOUNCEMENT"),
+                                 paste_disabled_for_user=paste_disabled_for_user)
         
         # --- LOAD CACHES ---
         used_rows = get_all_used_ips()
