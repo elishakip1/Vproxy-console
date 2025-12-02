@@ -130,9 +130,17 @@
               API Credits Remaining (from API)
               <span class="badge bg-primary">{{ stats.api_credits_remaining }}</span>
             </li>
+            <!-- STONES Daily Usage -->
+            <li class="list-group-item d-flex justify-content-between align-items-center">
+              STONES Daily Usage (Max 150)
+              <span class="badge {% if stones_daily_usage >= 150 %}bg-danger{% else %}bg-warning{% endif %}">
+                {{ stones_daily_usage }}/150
+              </span>
+            </li>
           </ul>
            <div class="form-text p-1">
-               Note: 'Total Logged' sums all checks from the usage log. 'Credits' is from the last successful API call.
+               Note: 'Total Logged' sums all checks from the usage log. 'Credits' is from the last successful API call.<br>
+               STONES user is limited to 150 API calls per day.
             </div>
            </div>
       </div>
