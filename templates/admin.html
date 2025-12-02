@@ -107,17 +107,17 @@
 
         <div class="col-12">
             <div class="card">
-                <div class="card-header">Recent Used Proxies</div>
+                <div class="card-header">Recent Used Proxies (Last 1000)</div>
                 <div class="table-responsive">
                     <table class="table table-sm table-hover mb-0">
                         <thead><tr><th>IP</th><th>User</th><th>Date</th><th>Action</th></tr></thead>
                         <tbody>
-                            {% for row in used_ips[:10] %}
+                            {% for row in used_ips[:1000] %}
                             <tr>
                                 <td>{{ row["IP"] }}</td>
                                 <td>{{ row["User"] }}</td>
                                 <td>{{ row["Date"]|string|truncate(16, True, '') }}</td>
-                                <td><a href="{{ url_for('delete_used_ip_route', ip=row['IP']) }}" class="text-danger">Delete</a></td>
+                                <td><a href="{{ url_for('delete_used_ip_route', ip=row['IP']) }}" class="text-danger" onclick="return confirm('Delete this record?')">Delete</a></td>
                             </tr>
                             {% else %}
                             <tr><td colspan="4" class="text-center text-muted">No recent used proxies.</td></tr>
