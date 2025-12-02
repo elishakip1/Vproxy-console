@@ -588,9 +588,9 @@ def index():
         origin = request.form.get('proxy_origin', 'paste')
         
         if paste_disabled_for_user and origin != 'fetch' and 'proxytext' in request.form:
-            # User is restricted and origin is not fetch -> Block
+            # User is restricted and origin is not fetch -> Block with SPECIFIC error
             return render_template("index.html", results=[], 
-                                 message="No good proxies found in this batch.",
+                                 message="Submission rejected: Manual pasting is disabled. Please use the fetch buttons.",
                                  max_paste=MAX_PASTE, settings=settings,
                                  announcement=settings.get("ANNOUNCEMENT"), system_paused=False,
                                  paste_disabled_for_user=paste_disabled_for_user)
