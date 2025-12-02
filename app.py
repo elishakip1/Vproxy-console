@@ -28,7 +28,8 @@ from db_util import (
     clear_all_system_logs,
     add_api_usage_log, get_all_api_usage_logs,
     get_user_stats_summary,
-    add_bulk_proxies, get_random_proxies_from_pool, get_pool_count, clear_proxy_pool
+    add_bulk_proxies, get_random_proxies_from_pool, get_pool_count, clear_proxy_pool,
+    get_daily_api_usage_for_user, update_api_credits
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', stream=sys.stdout)
@@ -219,9 +220,22 @@ def get_fraud_score_detailed(ip, proxy_line, credentials_list):
             if resp.status_code == 200:
                 data = resp.json()
                 scam = data.get("scamalytics", {})
+                
+                # Check for out of credits
                 if scam.get("status") == "error" and scam.get("error") == "out of credits":
                     add_log_entry("WARNING", f"Out of credits: {cred['user']}", ip="System")
+                    # Update credits to 0
+                    update_setting("API_CREDITS_REMAINING", "0")
+                    update_setting("API_CREDITS_USED", "N/A")
                     continue
+                
+                # If we have credits data, update it
+                if scam.get("status") == "ok" and scam.get("credits"):
+                    used = scam.get("credits", {}).get("used", 0)
+                    remaining = scam.get("credits", {}).get("remaining", 0)
+                    update_setting("API_CREDITS_USED", str(used))
+                    update_setting("API_CREDITS_REMAINING", str(remaining))
+                
                 return data
         except:
             continue
@@ -230,7 +244,7 @@ def get_fraud_score_detailed(ip, proxy_line, credentials_list):
 
 def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list, used_ip_set, bad_ip_set, is_strict_mode=False):
     """
-    SMART CHECKER:
+    SMART CHECKER with API credits tracking:
     1. Extracts Real IP via Network (Cost: 0, Time: Low)
     2. Checks Real IP against Caches (Cost: 0) -> STOP if used/bad.
     3. Checks Fraud Score via API (Cost: $$, Time: High)
@@ -263,8 +277,8 @@ def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list,
     time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
     data = get_fraud_score_detailed(ip, proxy_line, credentials_list)
     
-    if data and data.get("credits"):
-        res["credits"] = data.get("credits")
+    if data and data.get("scamalytics", {}).get("credits"):
+        res["credits"] = data.get("scamalytics", {}).get("credits", {})
     
     try:
         ext_src = data.get("external_datasources", {}) if data else {}
@@ -526,6 +540,15 @@ def index():
     system_paused = str(settings.get("SYSTEM_PAUSED", "FALSE")).upper() == "TRUE"
     admin_bypass = False
     
+    # Check for guest user daily limit (STONES user)
+    if current_user.username == "STONES":
+        daily_usage = get_daily_api_usage_for_user(current_user.username)
+        if daily_usage >= 150:
+            return render_template("index.html", results=None, 
+                                 message="⚠️ Daily API limit reached (150 calls). Please try again tomorrow.",
+                                 max_paste=MAX_PASTE, settings=settings,
+                                 announcement=settings.get("ANNOUNCEMENT"), system_paused=False)
+    
     if system_paused:
         if current_user.is_admin:
             admin_bypass = True
@@ -672,23 +695,27 @@ def admin():
     except:
         pass
     
+    # Get daily usage for STONES user
+    stones_daily_usage = get_daily_api_usage_for_user("STONES")
+    
     stats = {
         "max_paste": settings["MAX_PASTE"],
         "fraud_score_level": settings["FRAUD_SCORE_LEVEL"],
         "strict_fraud_score_level": settings["STRICT_FRAUD_SCORE_LEVEL"],
         "max_workers": settings["MAX_WORKERS"],
         "scamalytics_username": settings["SCAMALYTICS_USERNAME"],
-        "api_credits_remaining": settings.get("API_CREDITS_REMAINING"),
-        "api_credits_used": settings.get("API_CREDITS_USED"),
+        # Get the updated API credits from settings
+        "api_credits_used": settings.get("API_CREDITS_USED", "N/A"),
+        "api_credits_remaining": settings.get("API_CREDITS_REMAINING", "N/A"),
         "consecutive_fails": settings.get("CONSECUTIVE_FAILS"),
         "system_paused": settings.get("SYSTEM_PAUSED"),
         "total_api_calls_logged": total_api,
         "abc_generation_url": settings.get("ABC_GENERATION_URL")
     }
     
-    # FIXED: Pass settings to the template
     return render_template("admin.html", stats=stats, used_ips=get_all_used_ips(), 
-                          announcement=settings.get("ANNOUNCEMENT"), settings=settings)
+                          announcement=settings.get("ANNOUNCEMENT"), settings=settings,
+                          stones_daily_usage=stones_daily_usage)
 
 @app.route("/admin/reset-system", methods=["POST"])
 @admin_required
