@@ -154,6 +154,45 @@ def get_user_stats_summary():
         logger.error(f"Error fetching user stats: {e}")
         return []
 
+# --- DAILY API USAGE TRACKING ---
+def get_daily_api_usage_for_user(username):
+    """Get total API calls for a user today"""
+    if not supabase: return 0
+    
+    try:
+        # Get today's date in UTC
+        today = datetime.utcnow().strftime("%Y-%m-%d")
+        
+        # Query using date filtering
+        response = supabase.table('api_usage').select("api_calls_count, created_at").eq("username", username).execute()
+        
+        total = 0
+        for row in response.data:
+            # Parse the date from created_at
+            created_at = row.get('created_at', '')
+            if created_at.startswith(today):
+                total += int(row.get('api_calls_count', 0))
+        
+        return total
+    except Exception as e:
+        logger.error(f"Error getting daily API usage: {e}")
+        return 0
+
+# --- API CREDITS MANAGEMENT ---
+def update_api_credits(used, remaining):
+    """Update API credits in settings"""
+    if not supabase: return False
+    
+    try:
+        # Update used credits
+        supabase.table('settings').upsert({"key": "API_CREDITS_USED", "value": str(used)}).execute()
+        # Update remaining credits
+        supabase.table('settings').upsert({"key": "API_CREDITS_REMAINING", "value": str(remaining)}).execute()
+        return True
+    except Exception as e:
+        logger.error(f"Error updating API credits: {e}")
+        return False
+
 # --- PROXY POOL FUNCTIONS ---
 
 def add_bulk_proxies(proxy_list, provider="manual"):
