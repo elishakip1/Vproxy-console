@@ -52,10 +52,8 @@
     {% endwith %}
 
     <div class="row mt-4">
-      <!-- SYSTEM STATUS PANEL (UPDATED COLORS) -->
       <div class="col-12 mb-4">
           {% if stats.system_paused == "TRUE" %}
-          <!-- PAUSED STATE: RED -->
           <div class="card border-danger">
               <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
                   <h5 class="mb-0">🔴 System Monitor & Safety Switch</h5>
@@ -83,7 +81,6 @@
               </div>
           </div>
           {% else %}
-          <!-- ACTIVE STATE: GREEN -->
           <div class="card border-success">
               <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
                   <h5 class="mb-0">🟢 System Monitor & Safety Switch</h5>
@@ -114,6 +111,56 @@
           {% endif %}
       </div>
 
+      <div class="col-12 mb-4">
+        <div class="card border-primary">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">🔧 User Control Panel</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <div>
+                                <h6>Force Users to Use Fetch</h6>
+                                <p class="mb-0 small text-muted">
+                                    When enabled, users with role "user" cannot paste proxies - they must use fetch buttons.
+                                </p>
+                            </div>
+                            <form action="{{ url_for('admin_toggle_force_fetch') }}" method="POST" class="d-inline">
+                                <button type="submit" class="btn {% if stats.force_fetch_for_users == 'TRUE' %}btn-danger{% else %}btn-outline-success{% endif %}" 
+                                        onclick="return confirm('Toggle force fetch mode for users?')">
+                                    {% if stats.force_fetch_for_users == 'TRUE' %}
+                                        🚫 Disable Force Fetch
+                                    {% else %}
+                                        ✅ Enable Force Fetch
+                                    {% endif %}
+                                </button>
+                            </form>
+                        </div>
+                        <div class="alert {% if stats.force_fetch_for_users == 'TRUE' %}alert-warning{% else %}alert-info{% endif %} small">
+                            <strong>Current Status:</strong> 
+                            {% if stats.force_fetch_for_users == 'TRUE' %}
+                                <span class="text-danger">Force Fetch is ENABLED</span> - Users cannot paste proxies.
+                            {% else %}
+                                <span class="text-success">Force Fetch is DISABLED</span> - Users can paste proxies normally.
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="alert alert-secondary small">
+                            <strong>User Roles:</strong><br>
+                            • <strong>Admin:</strong> Full access, can paste and fetch<br>
+                            • <strong>User:</strong> Can fetch (affected by force fetch setting)<br>
+                            • <strong>Guest:</strong> Cannot fetch, limited to 150 API calls/day<br>
+                            <br>
+                            <strong>Force Fetch affects:</strong> Users with role "user" only (like "Work" account).
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+      </div>
+
       <div class="col-md-6">
         <div class="card p-3 mb-4">
           <h4>📊 API Stats</h4>
@@ -130,7 +177,6 @@
               API Credits Remaining (from API)
               <span class="badge bg-primary">{{ stats.api_credits_remaining }}</span>
             </li>
-            <!-- STONES Daily Usage -->
             <li class="list-group-item d-flex justify-content-between align-items-center">
               STONES Daily Usage (Max 150)
               <span class="badge {% if stones_daily_usage >= 150 %}bg-danger{% else %}bg-warning{% endif %}">
@@ -226,7 +272,6 @@
     </div>
   </div>
 
-  <!-- Notepad Widget -->
   <div id="notepad-widget">
         <div id="notepad-container" class="hidden"> <div id="notepad-header">
                 <span>Quick Notes</span>
@@ -241,8 +286,6 @@
             </svg>
         </button>
     </div>
-  <!-- End Notepad -->
-
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
