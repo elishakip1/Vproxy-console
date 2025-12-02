@@ -56,11 +56,15 @@ class User(UserMixin):
     @property
     def is_admin(self):
         return self.role == "admin"
+    
+    @property 
+    def is_guest(self):
+        return self.role == "guest"
 
 users = {
     1: User(id=1, username="Boss", password="ADMIN123", role="admin", can_fetch=True),
     2: User(id=2, username="Work", password="password", role="user", can_fetch=True),
-    3: User(id=3, username="STONES", password="123456", role="user", can_fetch=False),
+    3: User(id=3, username="STONES", password="123456", role="guest", can_fetch=False),
 }
 
 @login_manager.user_loader
@@ -97,7 +101,8 @@ DEFAULT_SETTINGS = {
     "ABC_GENERATION_URL": "",
     "PYPROXY_RESET_URL": "",
     "PIAPROXY_RESET_URL": "",
-    "PASTE_INPUT_DISABLED": "FALSE"
+    "PASTE_INPUT_DISABLED": "FALSE",  # For all users
+    "FORCE_FETCH_FOR_USERS": "FALSE"  # New: Force users with role "user" to use fetch only
 }
 
 _SETTINGS_CACHE = None
@@ -540,14 +545,19 @@ def index():
     system_paused = str(settings.get("SYSTEM_PAUSED", "FALSE")).upper() == "TRUE"
     admin_bypass = False
     
-    # Check for guest user daily limit (STONES user)
-    if current_user.username == "STONES":
+    # Check for guest user daily limit (150 calls) - SILENTLY
+    if current_user.is_guest:
         daily_usage = get_daily_api_usage_for_user(current_user.username)
         if daily_usage >= 150:
+            # SILENT: Don't show any message, just return empty results
             return render_template("index.html", results=None, 
-                                 message="⚠️ Daily API limit reached (150 calls). Please try again tomorrow.",
+                                 message="No good proxies found in this batch.",
                                  max_paste=MAX_PASTE, settings=settings,
                                  announcement=settings.get("ANNOUNCEMENT"), system_paused=False)
+    
+    # Check if paste should be disabled for regular users
+    force_fetch_for_users = str(settings.get("FORCE_FETCH_FOR_USERS", "FALSE")).upper() == "TRUE"
+    paste_disabled_for_user = (current_user.role == "user" and force_fetch_for_users)
     
     if system_paused:
         if current_user.is_admin:
@@ -561,6 +571,24 @@ def index():
         if system_paused and not admin_bypass:
             return render_template("index.html", results=None, message="System Paused.", 
                                  max_paste=MAX_PASTE, settings=settings, system_paused=True)
+        
+        # Check again for guest limit in POST request
+        if current_user.is_guest:
+            daily_usage = get_daily_api_usage_for_user(current_user.username)
+            if daily_usage >= 150:
+                # SILENT: Return empty results without showing limit message
+                return render_template("index.html", results=[], 
+                                     message="No good proxies found in this batch.",
+                                     max_paste=MAX_PASTE, settings=settings,
+                                     announcement=settings.get("ANNOUNCEMENT"), system_paused=False)
+        
+        # Check if user is trying to paste when forced to use fetch
+        if paste_disabled_for_user and 'proxytext' in request.form:
+            # Silently ignore the paste and show empty results
+            return render_template("index.html", results=[], 
+                                 message="No good proxies found in this batch.",
+                                 max_paste=MAX_PASTE, settings=settings,
+                                 announcement=settings.get("ANNOUNCEMENT"), system_paused=False)
         
         proxies_input = []
         if 'proxytext' in request.form:
@@ -591,6 +619,14 @@ def index():
         good_proxy_results = []
         stats = {"used": 0, "bad": 0, "api": 0}
         target_good = 2
+        
+        # For guest user: Check daily usage and silently limit
+        if current_user.is_guest:
+            daily_usage = get_daily_api_usage_for_user(current_user.username)
+            remaining_calls = max(0, 150 - daily_usage)
+            # Limit the number of proxies to check based on remaining API calls
+            if remaining_calls < len(proxies_raw):
+                proxies_raw = proxies_raw[:remaining_calls]
         
         # Submit in chunks equal to MAX_WORKERS (usually 5)
         batch_size = settings["MAX_WORKERS"]
@@ -656,16 +692,24 @@ def index():
             pass
         
         msg_prefix = "⚠️ MAINTENANCE (Admin) - " if admin_bypass else ""
-        message = f"{msg_prefix}Found {good_final} good proxies. ({stats['used']} from cache, {stats['bad']} skipped bad, {stats['api']} live checked)"
+        
+        # Check if guest user exceeded limit during this check
+        if current_user.is_guest and good_final == 0:
+            # Don't show any special message, just the standard "no good proxies" message
+            message = "No good proxies found in this batch."
+        else:
+            message = f"{msg_prefix}Found {good_final} good proxies. ({stats['used']} from cache, {stats['bad']} skipped bad, {stats['api']} live checked)"
         
         return render_template("index.html", results=results, message=message, 
                              max_paste=MAX_PASTE, settings=settings, 
-                             announcement=settings.get("ANNOUNCEMENT"), system_paused=False)
+                             announcement=settings.get("ANNOUNCEMENT"), system_paused=False,
+                             paste_disabled_for_user=paste_disabled_for_user)
 
     msg_prefix = "⚠️ MAINTENANCE (Admin)" if admin_bypass else ""
     return render_template("index.html", results=None, message=msg_prefix, 
                          max_paste=MAX_PASTE, settings=settings, 
-                         announcement=settings.get("ANNOUNCEMENT"), system_paused=False)
+                         announcement=settings.get("ANNOUNCEMENT"), system_paused=False,
+                         paste_disabled_for_user=paste_disabled_for_user)
 
 @app.route("/track-used", methods=["POST"])
 @login_required
@@ -695,7 +739,7 @@ def admin():
     except:
         pass
     
-    # Get daily usage for STONES user
+    # Get daily usage for guest users (STONES)
     stones_daily_usage = get_daily_api_usage_for_user("STONES")
     
     stats = {
@@ -710,7 +754,8 @@ def admin():
         "consecutive_fails": settings.get("CONSECUTIVE_FAILS"),
         "system_paused": settings.get("SYSTEM_PAUSED"),
         "total_api_calls_logged": total_api,
-        "abc_generation_url": settings.get("ABC_GENERATION_URL")
+        "abc_generation_url": settings.get("ABC_GENERATION_URL"),
+        "force_fetch_for_users": settings.get("FORCE_FETCH_FOR_USERS", "FALSE")
     }
     
     return render_template("admin.html", stats=stats, used_ips=get_all_used_ips(), 
@@ -736,6 +781,22 @@ def admin_toggle_maintenance():
     if update_setting("SYSTEM_PAUSED", new_state):
         get_app_settings(force_refresh=True)
         flash(f"Maintenance {'Activated' if new_state=='TRUE' else 'Deactivated'}.", "success")
+    else:
+        flash("Failed to toggle.", "danger")
+    
+    return redirect(url_for("admin"))
+
+@app.route("/admin/toggle-force-fetch", methods=["POST"])
+@admin_required
+def admin_toggle_force_fetch():
+    """Toggle forcing users to use fetch instead of paste"""
+    curr = get_app_settings()
+    is_forced = str(curr.get("FORCE_FETCH_FOR_USERS", "FALSE")).upper() == "TRUE"
+    new_state = "FALSE" if is_forced else "TRUE"
+    
+    if update_setting("FORCE_FETCH_FOR_USERS", new_state):
+        get_app_settings(force_refresh=True)
+        flash(f"Force fetch for users {'Activated' if new_state=='TRUE' else 'Deactivated'}.", "success")
     else:
         flash("Failed to toggle.", "danger")
     
@@ -814,7 +875,8 @@ def admin_settings():
             "SCAMALYTICS_API_KEY": f.get("scamalytics_api_key", "").strip(),
             "SCAMALYTICS_API_URL": f.get("scamalytics_api_url", "").strip(),
             "SCAMALYTICS_USERNAME": f.get("scamalytics_username", "").strip(),
-            "ABC_GENERATION_URL": f.get("abc_generation_url", "").strip()
+            "ABC_GENERATION_URL": f.get("abc_generation_url", "").strip(),
+            "FORCE_FETCH_FOR_USERS": f.get("force_fetch_for_users", "FALSE")
         }
         
         for k, v in upd.items():
