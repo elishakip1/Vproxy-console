@@ -28,7 +28,7 @@ from db_util import (
     clear_all_system_logs,
     add_api_usage_log, get_all_api_usage_logs,
     get_user_stats_summary,
-    add_bulk_proxies, get_random_proxies_from_pool, get_pool_count, clear_proxy_pool,
+    add_bulk_proxies, get_random_proxies_from_pool, get_pool_stats, clear_proxy_pool,
     get_daily_api_usage_for_user, update_api_credits
 )
 
@@ -391,11 +391,16 @@ def admin_pool():
             else:
                 flash("No valid proxies.", "warning")
         elif 'clear_pool' in request.form:
-            clear_proxy_pool()
-            flash("Pool cleared.", "success")
+            target = request.form.get('clear_target', 'all')
+            if clear_proxy_pool(target):
+                flash(f"Pool cleared ({target}).", "success")
+            else:
+                flash("Error clearing pool.", "danger")
         return redirect(url_for('admin_pool'))
-    count = get_pool_count()
-    return render_template('admin_pool.html', count=count, settings=settings, counts={"total": count, "pyproxy": count, "piaproxy": count})
+    
+    # Use the new detailed stats function
+    counts = get_pool_stats()
+    return render_template('admin_pool.html', counts=counts, settings=settings)
 
 @app.route('/api/trigger-reset/<provider>')
 @admin_required
