@@ -90,14 +90,10 @@ def log_bad_proxy(proxy, ip, score):
     except Exception: return False
 
 def get_bad_proxies_list():
-    """
-    FIXED: Returns a list of DICTIONARIES (including IP), not just strings.
-    This prevents the 'AttributeError' in app.py.
-    """
     if not supabase: return []
     try:
         response = supabase.table('bad_proxies').select("ip, proxy").execute()
-        return response.data # Returns [{'ip': '...', 'proxy': '...'}, ...]
+        return response.data 
     except Exception: return []
 
 # --- LOGS ---
@@ -158,21 +154,14 @@ def get_user_stats_summary():
 def get_daily_api_usage_for_user(username):
     """Get total API calls for a user today"""
     if not supabase: return 0
-    
     try:
-        # Get today's date in UTC
         today = datetime.utcnow().strftime("%Y-%m-%d")
-        
-        # Query using date filtering
         response = supabase.table('api_usage').select("api_calls_count, created_at").eq("username", username).execute()
-        
         total = 0
         for row in response.data:
-            # Parse the date from created_at
             created_at = row.get('created_at', '')
             if created_at.startswith(today):
                 total += int(row.get('api_calls_count', 0))
-        
         return total
     except Exception as e:
         logger.error(f"Error getting daily API usage: {e}")
@@ -180,13 +169,9 @@ def get_daily_api_usage_for_user(username):
 
 # --- API CREDITS MANAGEMENT ---
 def update_api_credits(used, remaining):
-    """Update API credits in settings"""
     if not supabase: return False
-    
     try:
-        # Update used credits
         supabase.table('settings').upsert({"key": "API_CREDITS_USED", "value": str(used)}).execute()
-        # Update remaining credits
         supabase.table('settings').upsert({"key": "API_CREDITS_REMAINING", "value": str(remaining)}).execute()
         return True
     except Exception as e:
@@ -208,7 +193,6 @@ def add_bulk_proxies(proxy_list, provider="manual"):
     return total_added
 
 def get_random_proxies_from_pool(limit=100):
-    """Fetches TRUE random proxies using RPC."""
     if not supabase: return []
     try:
         response = supabase.rpc('get_random_proxies', {'limit_count': limit}).execute()
@@ -218,19 +202,30 @@ def get_random_proxies_from_pool(limit=100):
         logger.error(f"Error fetching from pool: {e}")
         return []
 
-def get_pool_count():
-    if not supabase: return 0
+def get_pool_stats():
+    """Fetches counts for Total, PyProxy, and PiaProxy"""
+    if not supabase: return {"total": 0, "pyproxy": 0, "piaproxy": 0}
     try:
-        res = supabase.table('proxy_pool').select("id", count="exact", head=True).execute()
-        return res.count
-    except: return 0
+        # Get total
+        total = supabase.table('proxy_pool').select("id", count="exact", head=True).execute().count
+        # Get PyProxy
+        py = supabase.table('proxy_pool').select("id", count="exact", head=True).eq('provider', 'pyproxy').execute().count
+        # Get PiaProxy
+        pia = supabase.table('proxy_pool').select("id", count="exact", head=True).eq('provider', 'piaproxy').execute().count
+        
+        return {"total": total, "pyproxy": py, "piaproxy": pia}
+    except Exception as e:
+        logger.error(f"Error getting pool stats: {e}")
+        return {"total": 0, "pyproxy": 0, "piaproxy": 0}
 
 def clear_proxy_pool(provider=None):
     if not supabase: return False
     try:
         query = supabase.table('proxy_pool').delete()
-        if provider: query = query.eq('provider', provider)
-        else: query = query.neq('id', 0) 
+        if provider and provider != 'all': 
+            query = query.eq('provider', provider)
+        else: 
+            query = query.neq('id', 0) 
         query.execute()
         return True
     except Exception as e: logger.error(f"Error clearing pool: {e}"); return False
