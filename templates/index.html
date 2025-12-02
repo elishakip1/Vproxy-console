@@ -125,12 +125,14 @@
                                     <textarea name="proxytext" id="proxytext_hidden" style="display: none;"></textarea>
                                     
                                     <textarea id="proxytext" class="form-control textarea-box"
-                                              placeholder="Paste proxies here (e.g., host:port:user:pass)..."
-                                              oninput="updateProxyCounter(this)"></textarea>
+                                              placeholder="{% if paste_disabled_for_user %}Paste input is currently disabled. Please use the fetch buttons above.{% else %}Paste proxies here (e.g., host:port:user:pass)...{% endif %}"
+                                              oninput="{% if not paste_disabled_for_user %}updateProxyCounter(this){% endif %}"
+                                              {% if paste_disabled_for_user %}disabled{% endif %}></textarea>
                                     <div class="proxy-counter" id="proxyCounter">0/{{ max_paste }}</div>
                                 </div>
                             </div>
-                            <button type="submit" id="submitBtn" class="btn btn-primary w-100">Check Proxies</button>
+                            <button type="submit" id="submitBtn" class="btn btn-primary w-100" {% if paste_disabled_for_user %}disabled{% endif %}>
+                                {% if paste_disabled_for_user %}Use Fetch Buttons Above{% else %}Check Proxies{% endif %}</button>
                         </form>
                     </div>
                 </div>
