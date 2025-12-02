@@ -2,14 +2,38 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Proxy Manager</title>
+  <title>Proxy Pool Manager</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background-color: #f0f2f5; font-family: sans-serif; }
+    .sidebar { min-height: 100vh; width: 250px; background: #212529; color: #fff; position: fixed; top: 0; left: 0; z-index: 1000; padding-top: 20px; transition: all 0.3s; }
+    .sidebar-header { padding: 20px; text-align: center; border-bottom: 1px solid #495057; }
+    .sidebar-nav { list-style: none; padding: 0; margin-top: 20px; }
+    .sidebar-nav li { width: 100%; }
+    .nav-link { display: block; padding: 15px 20px; color: rgba(255,255,255,.75); text-decoration: none; border-left: 4px solid transparent; }
+    .nav-link:hover, .nav-link.active-nav { color: #fff; background: rgba(255,255,255,.1); border-left-color: #0d6efd; }
+    .content-wrapper { margin-left: 250px; padding: 30px; }
+    @media (max-width: 768px) { .sidebar { margin-left: -250px; } .sidebar.active { margin-left: 0; } .content-wrapper { margin-left: 0; } }
+  </style>
 </head>
 <body>
-<div class="container py-4">
+
+<nav class="sidebar" id="sidebar">
+    <div class="sidebar-header"><h4>🔐 Admin</h4></div>
+    <ul class="sidebar-nav">
+        <li><a href="{{ url_for('admin') }}" class="nav-link">📊 Dashboard</a></li>
+        <li><a href="{{ url_for('admin_pool') }}" class="nav-link active-nav">🏭 Proxy Pool</a></li>
+        <li><a href="{{ url_for('admin_users') }}" class="nav-link">👥 User Activity</a></li>
+        <li><a href="{{ url_for('admin_logs') }}" class="nav-link">📋 System Logs</a></li>
+        <li><a href="{{ url_for('admin_settings') }}" class="nav-link">⚙️ Settings</a></li>
+        <li class="mt-5"><a href="/" class="nav-link text-warning">← Back to Checker</a></li>
+    </ul>
+</nav>
+
+<div class="content-wrapper">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2>🏭 Bulk Proxy Manager</h2>
-        <a href="/admin" class="btn btn-outline-secondary">Back to Admin</a>
+        <button class="btn btn-dark d-md-none" id="sidebarToggle">☰ Menu</button>
+        <h2>🏭 Proxy Pool Manager</h2>
     </div>
 
     {% with messages = get_flashed_messages(with_categories=true) %}
@@ -28,111 +52,73 @@
                     <p class="text-muted mb-0">Total Proxies</p>
                     <form method="POST" class="mt-2" onsubmit="return confirm('Clear ALL proxies?');">
                         <input type="hidden" name="clear_pool" value="1">
-                        <input type="hidden" name="clear_target" value="all">
                         <button class="btn btn-danger btn-sm w-100">Clear All</button>
                     </form>
                 </div>
             </div>
         </div>
-        <div class="col-md-4">
+        <div class="col-md-8">
             <div class="card h-100 border-info">
-                <div class="card-body">
-                    <h1 class="display-5 text-info fw-bold">{{ counts.pyproxy }}</h1>
-                    <p class="text-muted mb-0">PyProxy Pool</p>
-                    <form method="POST" class="mt-2" onsubmit="return confirm('Clear PyProxy pool?');">
-                        <input type="hidden" name="clear_pool" value="1">
-                        <input type="hidden" name="clear_target" value="pyproxy">
-                        <button class="btn btn-outline-danger btn-sm w-100">Clear PyProxy</button>
-                    </form>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-4">
-            <div class="card h-100 border-warning">
-                <div class="card-body">
-                    <h1 class="display-5 text-warning fw-bold">{{ counts.piaproxy }}</h1>
-                    <p class="text-muted mb-0">PiaProxy Pool</p>
-                    <form method="POST" class="mt-2" onsubmit="return confirm('Clear PiaProxy pool?');">
-                        <input type="hidden" name="clear_pool" value="1">
-                        <input type="hidden" name="clear_target" value="piaproxy">
-                        <button class="btn btn-outline-danger btn-sm w-100">Clear PiaProxy</button>
-                    </form>
+                <div class="card-body d-flex align-items-center justify-content-center">
+                    <div class="text-center">
+                        <h4 class="text-info">Pool Controls</h4>
+                        <p>Use the <strong>Settings</strong> page to configure Reset URLs for PyProxy/PiaProxy.</p>
+                        <div class="d-flex gap-2 justify-content-center">
+                            <button class="btn btn-warning" onclick="triggerReset('pyproxy')">Rotate PyProxy IP</button>
+                            <button class="btn btn-warning" onclick="triggerReset('piaproxy')">Rotate PiaProxy IP</button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <div class="row">
-        <div class="col-md-6">
-            <div class="card mb-4">
-                <div class="card-header bg-primary text-white">📥 Upload Bulk Proxies</div>
-                <div class="card-body">
-                    <form method="POST">
-                        <div class="mb-3">
-                            <label class="form-label">Provider Tag</label>
-                            <select name="provider" class="form-select">
-                                <option value="pyproxy">PyProxy</option>
-                                <option value="piaproxy">PiaProxy</option>
-                                <option value="other">Other</option>
-                            </select>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Paste List (Format: host:port:user:pass)</label>
-                            <textarea name="bulk_proxies" class="form-control" rows="10" placeholder="1.2.3.4:8000:user:pass..."></textarea>
-                        </div>
-                        <button type="submit" class="btn btn-success w-100">Add to Pool</button>
-                    </form>
+    <div class="card mb-4">
+        <div class="card-header bg-primary text-white">📥 Upload Bulk Proxies</div>
+        <div class="card-body">
+            <form method="POST">
+                <div class="mb-3">
+                    <label class="form-label">Provider Tag</label>
+                    <select name="provider" class="form-select">
+                        <option value="pyproxy">PyProxy</option>
+                        <option value="piaproxy">PiaProxy</option>
+                        <option value="other">Other</option>
+                    </select>
                 </div>
-            </div>
-        </div>
-
-        <div class="col-md-6">
-            <div class="card mb-4">
-                <div class="card-header bg-dark text-white">🔄 Rotation Controls</div>
-                <div class="card-body">
-                    <form method="POST" class="mb-4">
-                        <input type="hidden" name="save_urls" value="1">
-                        <div class="mb-3">
-                            <label class="form-label">PyProxy Reset Link</label>
-                            <div class="input-group">
-                                <input type="text" name="pyproxy_url" class="form-control" value="{{ settings.PYPROXY_RESET_URL }}">
-                                <button type="button" class="btn btn-warning" onclick="triggerReset('pyproxy')">Rotate IP</button>
-                            </div>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">PiaProxy Reset Link</label>
-                            <div class="input-group">
-                                <input type="text" name="piaproxy_url" class="form-control" value="{{ settings.PIAPROXY_RESET_URL }}">
-                                <button type="button" class="btn btn-warning" onclick="triggerReset('piaproxy')">Rotate IP</button>
-                            </div>
-                        </div>
-                        <button type="submit" class="btn btn-secondary btn-sm w-100">Save URL Configurations</button>
-                    </form>
+                <div class="mb-3">
+                    <label class="form-label">Paste List (Format: host:port:user:pass)</label>
+                    <textarea name="bulk_proxies" class="form-control" rows="10" placeholder="1.2.3.4:8000:user:pass..."></textarea>
                 </div>
-            </div>
+                <button type="submit" class="btn btn-success w-100">Add to Pool</button>
+            </form>
         </div>
     </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-async function triggerReset(provider) {
-    if(!confirm("Trigger IP Rotation for " + provider + "?")) return;
-    try {
-        let btn = event.target;
-        let originalText = btn.innerText;
-        btn.innerText = "Wait...";
-        btn.disabled = true;
+    document.getElementById('sidebarToggle').addEventListener('click', function() {
+        document.getElementById('sidebar').classList.toggle('active');
+    });
 
-        let res = await fetch('/api/trigger-reset/' + provider);
-        let data = await res.json();
-        alert(data.message);
-        
-        btn.innerText = originalText;
-        btn.disabled = false;
-    } catch (e) {
-        alert("Error: " + e);
+    async function triggerReset(provider) {
+        if(!confirm("Trigger IP Rotation for " + provider + "?")) return;
+        try {
+            let btn = event.target;
+            let originalText = btn.innerText;
+            btn.innerText = "Wait...";
+            btn.disabled = true;
+
+            let res = await fetch('/api/trigger-reset/' + provider);
+            let data = await res.json();
+            alert(data.message);
+            
+            btn.innerText = originalText;
+            btn.disabled = false;
+        } catch (e) {
+            alert("Error: " + e);
+        }
     }
-}
 </script>
 </body>
 </html>
