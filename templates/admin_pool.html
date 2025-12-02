@@ -13,6 +13,7 @@
     .nav-link { display: block; padding: 15px 20px; color: rgba(255,255,255,.75); text-decoration: none; border-left: 4px solid transparent; }
     .nav-link:hover, .nav-link.active-nav { color: #fff; background: rgba(255,255,255,.1); border-left-color: #0d6efd; }
     .content-wrapper { margin-left: 250px; padding: 30px; }
+    .proxy-item { font-family: monospace; font-size: 0.8rem; }
     @media (max-width: 768px) { .sidebar { margin-left: -250px; } .sidebar.active { margin-left: 0; } .content-wrapper { margin-left: 0; } }
   </style>
 </head>
@@ -112,6 +113,57 @@
                 </div>
                 <button type="submit" class="btn btn-success w-100">Add to Pool</button>
             </form>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <ul class="nav nav-tabs card-header-tabs" id="poolTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="py-tab" data-bs-toggle="tab" data-bs-target="#py-content" type="button" role="tab">PyProxy List (Last 50)</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="pia-tab" data-bs-toggle="tab" data-bs-target="#pia-content" type="button" role="tab">PiaProxy List (Last 50)</button>
+                </li>
+            </ul>
+        </div>
+        <div class="card-body">
+            <div class="tab-content" id="poolTabsContent">
+                <div class="tab-pane fade show active" id="py-content" role="tabpanel">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped">
+                            <thead><tr><th>Proxy</th><th>Added At</th></tr></thead>
+                            <tbody>
+                                {% for p in preview_py %}
+                                <tr>
+                                    <td class="proxy-item">{{ p.proxy }}</td>
+                                    <td>{{ p.created_at | replace('T', ' ') | truncate(19, True, '') }}</td>
+                                </tr>
+                                {% else %}
+                                <tr><td colspan="2" class="text-center text-muted">No proxies found for PyProxy.</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="tab-pane fade" id="pia-content" role="tabpanel">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped">
+                            <thead><tr><th>Proxy</th><th>Added At</th></tr></thead>
+                            <tbody>
+                                {% for p in preview_pia %}
+                                <tr>
+                                    <td class="proxy-item">{{ p.proxy }}</td>
+                                    <td>{{ p.created_at | replace('T', ' ') | truncate(19, True, '') }}</td>
+                                </tr>
+                                {% else %}
+                                <tr><td colspan="2" class="text-center text-muted">No proxies found for PiaProxy.</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </div>
