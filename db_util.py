@@ -203,26 +203,25 @@ def get_random_proxies_from_pool(limit=100):
         return []
 
 def get_pool_stats():
-    """Fetches counts robustly"""
+    """Fetches counts robustly using limit(1) to ensure count is returned."""
     if not supabase: return {"total": 0, "pyproxy": 0, "piaproxy": 0}
     stats = {"total": 0, "pyproxy": 0, "piaproxy": 0}
     
     def safe_count(query):
         try:
-            res = query.execute()
+            # Changed strategy: removed head=True, using limit(1) with count='exact'
+            res = query.limit(1).execute()
             if hasattr(res, 'count') and res.count is not None:
                 return res.count
-            if hasattr(res, 'data') and res.data is not None:
-                return len(res.data)
             return 0
         except Exception as e:
             logger.error(f"Count error: {e}")
             return 0
 
     try:
-        stats["total"] = safe_count(supabase.table('proxy_pool').select("id", count="exact", head=True))
-        stats["pyproxy"] = safe_count(supabase.table('proxy_pool').select("id", count="exact", head=True).eq('provider', 'pyproxy'))
-        stats["piaproxy"] = safe_count(supabase.table('proxy_pool').select("id", count="exact", head=True).eq('provider', 'piaproxy'))
+        stats["total"] = safe_count(supabase.table('proxy_pool').select("id", count="exact"))
+        stats["pyproxy"] = safe_count(supabase.table('proxy_pool').select("id", count="exact").eq('provider', 'pyproxy'))
+        stats["piaproxy"] = safe_count(supabase.table('proxy_pool').select("id", count="exact").eq('provider', 'piaproxy'))
     except Exception as e:
         logger.error(f"Pool stats error: {e}")
     
