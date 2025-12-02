@@ -29,7 +29,7 @@ from db_util import (
     add_api_usage_log, get_all_api_usage_logs,
     get_user_stats_summary,
     add_bulk_proxies, get_random_proxies_from_pool, get_pool_stats, clear_proxy_pool,
-    get_daily_api_usage_for_user, update_api_credits
+    get_daily_api_usage_for_user, update_api_credits, get_pool_preview
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', stream=sys.stdout)
@@ -398,9 +398,11 @@ def admin_pool():
                 flash("Error clearing pool.", "danger")
         return redirect(url_for('admin_pool'))
     
-    # Use the new detailed stats function
     counts = get_pool_stats()
-    return render_template('admin_pool.html', counts=counts, settings=settings)
+    preview_py = get_pool_preview('pyproxy')
+    preview_pia = get_pool_preview('piaproxy')
+    
+    return render_template('admin_pool.html', counts=counts, settings=settings, preview_py=preview_py, preview_pia=preview_pia)
 
 @app.route('/api/trigger-reset/<provider>')
 @admin_required
