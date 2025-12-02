@@ -2,303 +2,139 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Admin Panel - Proxy Checker</title>
+  <title>Admin Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
-    body { padding-bottom: 80px; background-color: #f0f2f5; font-family: sans-serif; }
-    .container { margin-top: 30px; max-width: 1200px; }
-    
-    /* Notepad Widget Styles */
-    #notepad-widget { position: fixed; bottom: 20px; right: 20px; z-index: 1050; }
-    #notepad-toggle-btn { background-color: #0d6efd; color: white; border: none; border-radius: 50%; width: 50px; height: 50px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 8px rgba(0,0,0,0.2); cursor: pointer; transition: background-color 0.2s; }
-    #notepad-toggle-btn:hover { background-color: #0b5ed7; }
-    #notepad-container { position: absolute; bottom: 65px; right: 0; width: 300px; height: 350px; background-color: #ffffff; border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); display: flex; flex-direction: column; overflow: hidden; transition: all 0.3s ease-in-out; opacity: 1; transform: translateY(0); pointer-events: auto; }
-    #notepad-container.hidden { display: none; opacity: 0; transform: translateY(10px); pointer-events: none; }
-    #notepad-header { background-color: #f8f9fa; padding: 10px 15px; border-bottom: 1px solid #dee2e6; display: flex; justify-content: space-between; align-items: center; font-weight: bold; cursor: grab; }
-    #notepad-close-btn { background: none; border: none; font-size: 1.5rem; line-height: 1; padding: 0 5px; cursor: pointer; color: #6c757d; }
-    #notepad-close-btn:hover { color: #343a40; }
-    #notepad-textarea { flex-grow: 1; border: none; padding: 15px; resize: none; font-family: sans-serif; font-size: 14px; color: #212529; }
-    #notepad-textarea:focus { outline: none; }
-    
-    /* Custom styles for admin panel */
-    .card { border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-    .card-header { border-radius: 10px 10px 0 0 !important; }
-    .used-label { font-family: monospace; font-size: 0.9rem; }
-    .table th { background-color: #f8f9fa; }
+    body { background-color: #f0f2f5; font-family: sans-serif; }
+    /* Sidebar Styles */
+    .sidebar { min-height: 100vh; width: 250px; background: #212529; color: #fff; position: fixed; top: 0; left: 0; z-index: 1000; padding-top: 20px; transition: all 0.3s; }
+    .sidebar-header { padding: 20px; text-align: center; border-bottom: 1px solid #495057; }
+    .sidebar-nav { list-style: none; padding: 0; margin-top: 20px; }
+    .sidebar-nav li { width: 100%; }
+    .nav-link { display: block; padding: 15px 20px; color: rgba(255,255,255,.75); text-decoration: none; transition: 0.2s; border-left: 4px solid transparent; }
+    .nav-link:hover, .nav-link.active { color: #fff; background: rgba(255,255,255,.1); border-left-color: #0d6efd; }
+    .content-wrapper { margin-left: 250px; padding: 30px; }
+    @media (max-width: 768px) {
+        .sidebar { margin-left: -250px; }
+        .sidebar.active { margin-left: 0; }
+        .content-wrapper { margin-left: 0; }
+    }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="d-flex justify-content-between align-items-center my-3">
-        <h2 class="text-center mb-0">🔐 Admin Panel</h2>
-        <div>
-            <a href="/" class="btn btn-outline-primary btn-sm">← Back to Checker</a>
-            {% if current_user.is_authenticated %}
-                <a href="{{ url_for('logout') }}" class="btn btn-outline-secondary btn-sm">Logout ({{ current_user.username }})</a>
-            {% endif %}
-        </div>
+
+<nav class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+        <h4>🔐 Admin</h4>
+    </div>
+    <ul class="sidebar-nav">
+        <li><a href="{{ url_for('admin') }}" class="nav-link active">📊 Dashboard</a></li>
+        <li><a href="{{ url_for('admin_pool') }}" class="nav-link">🏭 Proxy Pool</a></li>
+        <li><a href="{{ url_for('admin_users') }}" class="nav-link">👥 User Activity</a></li>
+        <li><a href="{{ url_for('admin_logs') }}" class="nav-link">📋 System Logs</a></li>
+        <li><a href="{{ url_for('admin_settings') }}" class="nav-link">⚙️ Settings</a></li>
+        <li class="mt-5"><a href="/" class="nav-link text-warning">← Back to Checker</a></li>
+        <li><a href="{{ url_for('logout') }}" class="nav-link text-danger">Logout</a></li>
+    </ul>
+</nav>
+
+<div class="content-wrapper">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <button class="btn btn-dark d-md-none" id="sidebarToggle">☰ Menu</button>
+        <h2>Dashboard Overview</h2>
     </div>
 
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
             {% for category, message in messages %}
             <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-                {{ message }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                {{ message }} <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
             {% endfor %}
         {% endif %}
     {% endwith %}
 
-    <div class="row mt-4">
-      <div class="col-12 mb-4">
-          {% if stats.system_paused == "TRUE" %}
-          <div class="card border-danger">
-              <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
-                  <h5 class="mb-0">🔴 System Monitor & Safety Switch</h5>
-                  <span class="badge bg-warning text-dark">SYSTEM PAUSED</span>
-              </div>
-              <div class="card-body d-flex justify-content-between align-items-center">
-                  <div>
-                      <p class="mb-1 text-danger fw-bold">System is currently halted!</p>
-                      <p class="mb-1"><strong>Consecutive Failures:</strong> <span class="badge bg-danger">{{ stats.consecutive_fails }}</span></p>
-                  </div>
-                  <div>
-                      <form action="{{ url_for('admin_reset_system') }}" method="POST" class="d-inline">
-                          <button type="submit" class="btn btn-danger me-2" 
-                                  onclick="return confirm('This will reset the failure counter to 0 and unpause the system. Continue?')">
-                              🔄 Reset & Unpause System
-                          </button>
-                      </form>
-                      <form action="{{ url_for('admin_toggle_maintenance') }}" method="POST" class="d-inline">
-                          <button type="submit" class="btn btn-warning" 
-                                  onclick="return confirm('Toggle maintenance mode?')">
-                              ⚙️ Toggle Maintenance
-                          </button>
-                      </form>
-                  </div>
-              </div>
-          </div>
-          {% else %}
-          <div class="card border-success">
-              <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
-                  <h5 class="mb-0">🟢 System Monitor & Safety Switch</h5>
-                  <span class="badge bg-white text-success">ACTIVE</span>
-              </div>
-              <div class="card-body d-flex justify-content-between align-items-center">
-                  <div>
-                      <p class="mb-1 text-success fw-bold">System is running normally.</p>
-                      <p class="mb-1"><strong>Consecutive Failures:</strong> <span class="badge bg-secondary">{{ stats.consecutive_fails }}</span></p>
-                      <small class="text-muted">Auto-pause triggers at 1000 failures.</small>
-                  </div>
-                  <div>
-                      <form action="{{ url_for('admin_reset_system') }}" method="POST" class="d-inline me-2">
-                          <button type="submit" class="btn btn-outline-success btn-sm" 
-                                  onclick="return confirm('Reset counter?')">
-                              Reset Counter
-                          </button>
-                      </form>
-                      <form action="{{ url_for('admin_toggle_maintenance') }}" method="POST" class="d-inline">
-                          <button type="submit" class="btn btn-outline-warning btn-sm" 
-                                  onclick="return confirm('Toggle maintenance mode?')">
-                              ⚙️ Toggle Maintenance
-                          </button>
-                      </form>
-                  </div>
-              </div>
-          </div>
-          {% endif %}
-      </div>
-
-      <div class="col-12 mb-4">
-        <div class="card border-primary">
-            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">🔧 User Control Panel</h5>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-6">
-                        <div class="d-flex justify-content-between align-items-center mb-3">
-                            <div>
-                                <h6>Force Users to Use Fetch</h6>
-                                <p class="mb-0 small text-muted">
-                                    When enabled, users with role "user" cannot paste proxies - they must use fetch buttons.
-                                </p>
-                            </div>
-                            <form action="{{ url_for('admin_toggle_force_fetch') }}" method="POST" class="d-inline">
-                                <button type="submit" class="btn {% if stats.force_fetch_for_users == 'TRUE' %}btn-danger{% else %}btn-outline-success{% endif %}" 
-                                        onclick="return confirm('Toggle force fetch mode for users?')">
-                                    {% if stats.force_fetch_for_users == 'TRUE' %}
-                                        🚫 Disable Force Fetch
-                                    {% else %}
-                                        ✅ Enable Force Fetch
-                                    {% endif %}
-                                </button>
-                            </form>
-                        </div>
-                        <div class="alert {% if stats.force_fetch_for_users == 'TRUE' %}alert-warning{% else %}alert-info{% endif %} small">
-                            <strong>Current Status:</strong> 
-                            {% if stats.force_fetch_for_users == 'TRUE' %}
-                                <span class="text-danger">Force Fetch is ENABLED</span> - Users cannot paste proxies.
-                            {% else %}
-                                <span class="text-success">Force Fetch is DISABLED</span> - Users can paste proxies normally.
-                            {% endif %}
-                        </div>
+    <div class="row">
+        <div class="col-12 mb-4">
+            <div class="card {% if stats.system_paused == 'TRUE' %}border-danger{% else %}border-success{% endif %}">
+                <div class="card-header {% if stats.system_paused == 'TRUE' %}bg-danger{% else %}bg-success{% endif %} text-white d-flex justify-content-between">
+                    <h5 class="mb-0">System Monitor</h5>
+                    <span class="badge bg-light text-dark">{% if stats.system_paused == 'TRUE' %}PAUSED{% else %}ACTIVE{% endif %}</span>
+                </div>
+                <div class="card-body d-flex justify-content-between align-items-center">
+                    <div>
+                        <p class="mb-1"><strong>Consecutive Failures:</strong> {{ stats.consecutive_fails }}</p>
                     </div>
-                    <div class="col-md-6">
-                        <div class="alert alert-secondary small">
-                            <strong>User Roles:</strong><br>
-                            • <strong>Admin:</strong> Full access, can paste and fetch<br>
-                            • <strong>User:</strong> Can fetch (affected by force fetch setting)<br>
-                            • <strong>Guest:</strong> Cannot fetch, limited to 150 API calls/day<br>
-                            <br>
-                            <strong>Force Fetch affects:</strong> Users with role "user" only (like "Work" account).
-                        </div>
+                    <div>
+                        <form action="{{ url_for('admin_reset_system') }}" method="POST" class="d-inline me-2">
+                            <button type="submit" class="btn btn-outline-secondary btn-sm" onclick="return confirm('Reset?')">Reset</button>
+                        </form>
+                        <form action="{{ url_for('admin_toggle_maintenance') }}" method="POST" class="d-inline">
+                            <button type="submit" class="btn btn-warning btn-sm">Toggle Maintenance</button>
+                        </form>
                     </div>
                 </div>
             </div>
         </div>
-      </div>
 
-      <div class="col-md-6">
-        <div class="card p-3 mb-4">
-          <h4>📊 API Stats</h4>
-          <ul class="list-group">
-            <li class="list-group-item d-flex justify-content-between align-items-center">
-              Total Logged API Calls
-              <span class="badge bg-info">{{ stats.total_api_calls_logged }}</span>
-            </li>
-            <li class="list-group-item d-flex justify-content-between align-items-center">
-              API Credits Used (from API)
-              <span class="badge bg-secondary">{{ stats.api_credits_used }}</span>
-            </li>
-            <li class="list-group-item d-flex justify-content-between align-items-center">
-              API Credits Remaining (from API)
-              <span class="badge bg-primary">{{ stats.api_credits_remaining }}</span>
-            </li>
-            <li class="list-group-item d-flex justify-content-between align-items-center">
-              STONES Daily Usage (Max 150)
-              <span class="badge {% if stones_daily_usage >= 150 %}bg-danger{% else %}bg-warning{% endif %}">
-                {{ stones_daily_usage }}/150
-              </span>
-            </li>
-          </ul>
-           <div class="form-text p-1">
-               Note: 'Total Logged' sums all checks from the usage log. 'Credits' is from the last successful API call.<br>
-               STONES user is limited to 150 API calls per day.
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-primary text-white">API Statistics</div>
+                <div class="card-body">
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item d-flex justify-content-between"><span>Total Calls Logged</span> <strong>{{ stats.total_api_calls_logged }}</strong></li>
+                        <li class="list-group-item d-flex justify-content-between"><span>Credits Used</span> <strong>{{ stats.api_credits_used }}</strong></li>
+                        <li class="list-group-item d-flex justify-content-between"><span>Credits Remaining</span> <strong class="text-primary">{{ stats.api_credits_remaining }}</strong></li>
+                        <li class="list-group-item d-flex justify-content-between"><span>STONES Daily Usage</span> <strong>{{ stones_daily_usage }}/150</strong></li>
+                    </ul>
+                </div>
             </div>
-           </div>
-      </div>
-      <div class="col-md-6">
-        <div class="card p-3 mb-4">
-            <h4>⚙️ Current Settings</h4>
-            <ul class="list-group">
-                <li class="list-group-item">Max Proxies: <strong>{{ stats.max_paste }}</strong></li>
-                <li class="list-group-item">User Fraud Score: <strong>{{ stats.fraud_score_level }}</strong></li>
-                <li class="list-group-item">Admin Strict Score: <strong>{{ stats.strict_fraud_score_level }}</strong></li>
-                <li class="list-group-item">Max Workers: <strong>{{ stats.max_workers }}</strong></li>
-                <li class="list-group-item">Scamalytics User: <strong>{{ stats.scamalytics_username }}</strong></li>
-                <li class="list-group-item">ABC Generation URL: <strong>{{ stats.abc_generation_url|truncate(30) if stats.abc_generation_url else 'Not set' }}</strong></li>
-            </ul>
-            <a href="/admin/settings" class="btn btn-outline-primary mt-2">Edit Settings</a>
         </div>
-      </div>
-    </div>
-    
-    <div class="row mt-4">
-      <div class="col-md-6">
-        <div class="card p-3 mb-4">
-          <h4>📣 Manage Announcement</h4>
-          <p class="text-muted small">This message will be shown at the top of the user homepage.</p>
-          <form action="{{ url_for('admin_announcement') }}" method="POST">
-            <div class="mb-3">
-              <label for="announcement_text" class="form-label">Announcement Text:</label>
-              <textarea class="form-control" id="announcement_text" name="announcement_text" rows="3" placeholder="Enter announcement here...">{{ announcement or '' }}</textarea>
-            </div>
-            <button type="submit" name="save_announcement" value="1" class="btn btn-primary">Save / Update</button>
-            <button type="submit" name="delete_announcement" value="1" class="btn btn-outline-danger">Clear Announcement</button>
-          </form>
-        </div>
-      </div>
-      <div class="col-md-6">
-        <div class="card p-3 mb-4">
-          <h4>🧠 Admin Actions</h4>
-          <div class="d-grid gap-2">
-            <a href="{{ url_for('admin_test') }}" class="btn btn-warning">🛡️ Run Strict Proxy Tester</a>
-            <a href="{{ url_for('admin_logs') }}" class="btn btn-info">📋 View System Logs</a>
-            <a href="{{ url_for('admin_users') }}" class="btn btn-secondary">👥 User Activity</a>
-            <a href="{{ url_for('admin_pool') }}" class="btn btn-success">🏭 Proxy Manager</a>
-            <a href="{{ url_for('admin_settings') }}" class="btn btn-outline-primary">⚙️ Configure Settings</a>
-            <a href="/" class="btn btn-outline-secondary">← Go to Checker</a>
-          </div>
-        </div>
-      </div>
-    </div>
 
-     <div class="card p-3 mb-4">
-      <h4>📋 Used Proxies ({{ used_ips|length }})</h4>
-      <div class="table-responsive">
-        <table class="table table-hover table-bordered">
-          <thead>
-            <tr>
-              <th>IP</th>
-              <th>Proxy</th>
-              <th>Username</th>
-              <th>Date Added</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for row in used_ips %}
-            <tr>
-              <td class="used-label">{{ row["IP"] }}</td>
-              <td><code>{{ row["Proxy"]|truncate(40) }}</code></td>
-              <td>{{ row["User"] or "Unknown" }}</td>
-              <td>{{ row["Date"]|string|truncate(19, True, '') }}</td>
-              <td>
-                <a href="{{ url_for('delete_used_ip_route', ip=row['IP']) }}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this used IP?')">Delete</a>
-              </td>
-            </tr>
-            {% endfor %}
-            {% if used_ips|length == 0 %}
-            <tr>
-              <td colspan="5" class="text-center text-muted">No used proxies logged.</td>
-            </tr>
-            {% endif %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
-  <div id="notepad-widget">
-        <div id="notepad-container" class="hidden"> <div id="notepad-header">
-                <span>Quick Notes</span>
-                <button id="notepad-close-btn">&times;</button>
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-dark text-white">Announcement</div>
+                <div class="card-body">
+                    <form action="{{ url_for('admin_announcement') }}" method="POST">
+                        <textarea class="form-control mb-2" name="announcement_text" rows="3">{{ announcement or '' }}</textarea>
+                        <button type="submit" name="save_announcement" value="1" class="btn btn-primary btn-sm">Update</button>
+                        <button type="submit" name="delete_announcement" value="1" class="btn btn-outline-danger btn-sm">Clear</button>
+                    </form>
+                </div>
             </div>
-            <textarea id="notepad-textarea" placeholder="Write notes here..."></textarea>
         </div>
-        <button id="notepad-toggle-btn">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 20h9"></path>
-                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
-            </svg>
-        </button>
+
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">Recent Used Proxies</div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead><tr><th>IP</th><th>User</th><th>Date</th><th>Action</th></tr></thead>
+                        <tbody>
+                            {% for row in used_ips[:10] %}
+                            <tr>
+                                <td>{{ row["IP"] }}</td>
+                                <td>{{ row["User"] }}</td>
+                                <td>{{ row["Date"]|string|truncate(16, True, '') }}</td>
+                                <td><a href="{{ url_for('delete_used_ip_route', ip=row['IP']) }}" class="text-danger">Delete</a></td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="4" class="text-center text-muted">No recent used proxies.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
     </div>
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script>
-    document.addEventListener('DOMContentLoaded', () => {
-        const toggleBtn = document.getElementById('notepad-toggle-btn');
-        const notepad = document.getElementById('notepad-container');
-        const closeBtn = document.getElementById('notepad-close-btn');
-        const textarea = document.getElementById('notepad-textarea');
-        const storageKey = 'userNotepadContent';
-        if (textarea) { textarea.value = localStorage.getItem(storageKey) || ''; }
-        if (textarea) { textarea.addEventListener('input', () => { localStorage.setItem(storageKey, textarea.value); }); }
-        if (toggleBtn && notepad) { toggleBtn.addEventListener('click', () => { notepad.classList.toggle('hidden'); }); }
-        if (closeBtn && notepad) { closeBtn.addEventListener('click', () => { notepad.classList.add('hidden'); }); }
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    document.getElementById('sidebarToggle').addEventListener('click', function() {
+        document.getElementById('sidebar').classList.toggle('active');
     });
-  </script>
+</script>
 </body>
 </html>
