@@ -66,16 +66,53 @@
             color: var(--text-color);
             font-family: sans-serif;
             padding-bottom: 80px;
+            margin: 0;
+            min-height: 100vh;
             transition: background-color 0.3s ease, color 0.3s ease;
         }
 
-        .container {
-            margin-top: 50px;
-            max-width: 950px;
+        .main-container {
+            width: 100%;
+            max-width: 1000px;
+            margin: 30px auto;
+            padding: 0 20px;
+        }
+
+        .content-card {
             background-color: var(--card-bg);
             border-radius: 8px;
             box-shadow: 0 4px 6px var(--shadow-color);
+            padding: 25px;
             transition: background-color 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .header-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 0;
+            margin-bottom: 20px;
+            background-color: var(--header-bg);
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        .header-title-container { 
+            display: flex; 
+            align-items: center; 
+            flex: 1;
+        }
+
+        .header-buttons {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            justify-content: flex-end;
+        }
+
+        .header-logo { 
+            height: 80px; 
+            margin-right: 15px; 
         }
 
         .textarea-box { 
@@ -149,22 +186,24 @@
         .table {
             color: var(--text-color);
             background-color: var(--card-bg);
+            margin-bottom: 0;
         }
 
         .table th, .table td { 
             vertical-align: middle; 
-            padding: 0.4rem; 
+            padding: 0.6rem; 
             border-color: var(--border-color);
         }
 
         .table th { 
-            font-size: 0.8rem; 
+            font-size: 0.85rem; 
             white-space: nowrap; 
             background-color: var(--table-header-bg);
+            font-weight: 600;
         }
 
         .table td { 
-            font-size: 0.75rem; 
+            font-size: 0.8rem; 
         }
 
         .table .text-end { 
@@ -181,35 +220,29 @@
 
         /* Theme Toggle Button */
         .theme-toggle {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 1000;
-            background-color: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
+            background-color: var(--btn-secondary);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 14px;
+            cursor: pointer;
             display: flex;
             align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            box-shadow: 0 2px 10px var(--shadow-color);
-            transition: all 0.3s ease;
+            gap: 5px;
+            transition: background-color 0.3s ease;
         }
 
         .theme-toggle:hover {
-            transform: scale(1.1);
+            background-color: var(--btn-secondary-hover);
         }
 
         .theme-toggle .sun-icon {
             display: none;
-            color: #ffc107;
         }
 
         .theme-toggle .moon-icon {
             display: inline-block;
-            color: #6c757d;
         }
 
         [data-theme="dark"] .theme-toggle .sun-icon {
@@ -275,7 +308,7 @@
 
         #notepad-header { 
             background-color: var(--table-header-bg); 
-            padding: 10px 15px; 
+            padding: 12px 15px; 
             border-bottom: 1px solid var(--border-color); 
             display: flex; 
             justify-content: space-between; 
@@ -316,16 +349,6 @@
 
         #notepad-textarea::placeholder {
             color: var(--placeholder-color);
-        }
-
-        .header-logo { 
-            height: 120px; 
-            margin-right: 15px; 
-        }
-
-        .header-title-container { 
-            display: flex; 
-            align-items: center; 
         }
 
         /* Custom alert colors for dark theme */
@@ -391,6 +414,7 @@
         [data-theme="dark"] .accordion-button {
             background-color: var(--table-header-bg);
             color: var(--text-color);
+            border-color: var(--border-color);
         }
 
         [data-theme="dark"] .accordion-button:not(.collapsed) {
@@ -420,22 +444,80 @@
         [data-theme="dark"] .badge.bg-success {
             background-color: #198754 !important;
         }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .main-container {
+                padding: 0 15px;
+                margin: 20px auto;
+            }
+            
+            .content-card {
+                padding: 20px 15px;
+            }
+            
+            .header-container {
+                flex-direction: column;
+                gap: 15px;
+                padding: 15px;
+            }
+            
+            .header-title-container {
+                width: 100%;
+                justify-content: center;
+            }
+            
+            .header-buttons {
+                width: 100%;
+                justify-content: center;
+            }
+            
+            .header-logo {
+                height: 60px;
+            }
+            
+            .table-responsive {
+                font-size: 0.9rem;
+            }
+            
+            .table th, .table td {
+                padding: 0.4rem;
+                font-size: 0.75rem;
+            }
+        }
+
+        @media (max-width: 576px) {
+            .header-buttons {
+                flex-direction: column;
+                width: 100%;
+            }
+            
+            .header-buttons .btn {
+                width: 100%;
+                margin-bottom: 5px;
+            }
+            
+            #notepad-container {
+                width: 280px;
+                height: 320px;
+                right: 10px;
+            }
+        }
     </style>
 </head>
 <body>
-    <!-- Theme Toggle Button -->
-    <div class="theme-toggle" id="themeToggle" title="Toggle Dark/Light Mode">
-        <span class="sun-icon">☀️</span>
-        <span class="moon-icon">🌙</span>
-    </div>
-
-    <div class="container bg-white p-4 rounded shadow-sm">
-        <div class="d-flex justify-content-between align-items-center mb-3">
+    <div class="main-container">
+        <!-- Header Section -->
+        <div class="header-container">
             <div class="header-title-container">
                 <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Proxy Checker Logo" class="header-logo">
-                <h2 class="mb-0"></h2> 
+                <h2 class="mb-0">Proxy Checker</h2>
             </div>
-            <div>
+            <div class="header-buttons">
+                <button class="theme-toggle" id="themeToggle">
+                    <span class="sun-icon">☀️ Light</span>
+                    <span class="moon-icon">🌙 Dark</span>
+                </button>
                 {% if current_user.is_authenticated and current_user.is_admin %}
                     <a href="{{ url_for('admin') }}" class="btn btn-outline-primary btn-sm">Admin Panel</a>
                 {% endif %}
@@ -445,133 +527,137 @@
             </div>
         </div>
 
-        {% if announcement %}
-        <div class="alert alert-primary alert-dismissible fade show" role="alert">
-            <strong>Notice:</strong> {{ announcement }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-        </div>
-        {% endif %}
-
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-                    {{ message }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                </div>
-                {% endfor %}
+        <!-- Main Content -->
+        <div class="content-card">
+            {% if announcement %}
+            <div class="alert alert-primary alert-dismissible fade show" role="alert">
+                <strong>Notice:</strong> {{ announcement }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
             {% endif %}
-        {% endwith %}
 
-        {% if message is defined and message %}
-        <div class="alert alert-info">{{ message }}</div>
-        {% endif %}
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
 
-        {% if system_paused %}
-        <div class="alert alert-danger text-center p-5">
-            <h3>⚠️ System Halted</h3>
-            <p>Too many consecutive failures detected. Checking is currently paused.</p>
-            <p>Please contact the administrator.</p>
-        </div>
-        {% else %}
-        <div class="accordion" id="proxyAccordion">
-            <div class="accordion-item">
-                <h2 class="accordion-header" id="formHeading">
-                   <button class="accordion-button {% if results is defined and results %}collapsed{% endif %}" type="button"
-                            data-bs-toggle="collapse" data-bs-target="#proxyForm"
-                            aria-expanded="{{ 'false' if results is defined and results else 'true' }}" aria-controls="proxyForm">
-                        Paste Proxies (Max {{ max_paste }} Lines)
-                    </button>
-                </h2>
-                <div id="proxyForm" class="accordion-collapse collapse {% if results is not defined or not results %}show{% endif %}"
-                     aria-labelledby="formHeading" data-bs-parent="#proxyAccordion">
-                    <div class="accordion-body">
-                        
-                        {% if current_user.can_fetch %}
-                        <div class="d-flex justify-content-end mb-2 gap-2">
-                            <button type="button" id="fetchBtn" class="btn btn-success btn-sm" onclick="fetchABCProxies()">
-                                🔄SINCLAIR
-                            </button>
+            {% if message is defined and message %}
+            <div class="alert alert-info">{{ message }}</div>
+            {% endif %}
+
+            {% if system_paused %}
+            <div class="alert alert-danger text-center p-5">
+                <h3>⚠️ System Halted</h3>
+                <p>Too many consecutive failures detected. Checking is currently paused.</p>
+                <p>Please contact the administrator.</p>
+            </div>
+            {% else %}
+            <div class="accordion" id="proxyAccordion">
+                <div class="accordion-item">
+                    <h2 class="accordion-header" id="formHeading">
+                       <button class="accordion-button {% if results is defined and results %}collapsed{% endif %}" type="button"
+                                data-bs-toggle="collapse" data-bs-target="#proxyForm"
+                                aria-expanded="{{ 'false' if results is defined and results else 'true' }}" aria-controls="proxyForm">
+                            Paste Proxies (Max {{ max_paste }} Lines)
+                        </button>
+                    </h2>
+                    <div id="proxyForm" class="accordion-collapse collapse {% if results is not defined or not results %}show{% endif %}"
+                         aria-labelledby="formHeading" data-bs-parent="#proxyAccordion">
+                        <div class="accordion-body">
                             
-                            <button type="button" id="poolBtn" class="btn btn-info btn-sm text-white" onclick="fetchPoolProxies()">
-                                📦SPSCC
-                            </button>
-                        </div>
-                        {% endif %}
-                        <form method="POST" id="proxyFormElement">
-                            <input type="hidden" name="proxy_origin" id="proxy_origin" value="paste">
-
-                            <div class="mb-3">
-                                <label for="proxytext" class="form-label">Paste Proxies (one per line)</label>
-                                <div class="textarea-container">
-                                    <textarea name="proxytext" id="proxytext_hidden" style="display: none;"></textarea>
-                                    
-                                    <textarea id="proxytext" class="form-control textarea-box"
-                                              placeholder="{% if paste_disabled_for_user %}Manual pasting is disabled. Please use the fetch buttons above.{% else %}Paste proxies here (e.g., host:port:user:pass)...{% endif %}"
-                                              oninput="{% if not paste_disabled_for_user %}updateProxyCounter(this){% endif %}"
-                                              {% if paste_disabled_for_user %}readonly{% endif %}></textarea>
-                                    <div class="proxy-counter" id="proxyCounter">0/{{ max_paste }}</div>
-                                </div>
+                            {% if current_user.can_fetch %}
+                            <div class="d-flex justify-content-end mb-2 gap-2">
+                                <button type="button" id="fetchBtn" class="btn btn-success btn-sm" onclick="fetchABCProxies()">
+                                    🔄SINCLAIR
+                                </button>
+                                
+                                <button type="button" id="poolBtn" class="btn btn-info btn-sm text-white" onclick="fetchPoolProxies()">
+                                    📦SPSCC
+                                </button>
                             </div>
-                            <button type="submit" id="submitBtn" class="btn btn-primary w-100">Check Proxies</button>
-                        </form>
+                            {% endif %}
+                            <form method="POST" id="proxyFormElement">
+                                <input type="hidden" name="proxy_origin" id="proxy_origin" value="paste">
+
+                                <div class="mb-3">
+                                    <label for="proxytext" class="form-label">Paste Proxies (one per line)</label>
+                                    <div class="textarea-container">
+                                        <textarea name="proxytext" id="proxytext_hidden" style="display: none;"></textarea>
+                                        
+                                        <textarea id="proxytext" class="form-control textarea-box"
+                                                  placeholder="{% if paste_disabled_for_user %}Manual pasting is disabled. Please use the fetch buttons above.{% else %}Paste proxies here (e.g., host:port:user:pass)...{% endif %}"
+                                                  oninput="{% if not paste_disabled_for_user %}updateProxyCounter(this){% endif %}"
+                                                  {% if paste_disabled_for_user %}readonly{% endif %}></textarea>
+                                        <div class="proxy-counter" id="proxyCounter">0/{{ max_paste }}</div>
+                                    </div>
+                                </div>
+                                <button type="submit" id="submitBtn" class="btn btn-primary w-100">Check Proxies</button>
+                            </form>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
-        {% endif %}
+            {% endif %}
 
-        {% if results is defined and results is not none %} 
-        <hr>
-        <h5 class="mt-4">✅ Good Proxies Found (Score {{ settings.FRAUD_SCORE_LEVEL }})</h5> <div class="table-responsive mt-2">
-            <table class="table table-sm table-bordered table-hover">
-                <thead class="table-light">
-                    <tr>
-                        <th style="width: 28%;">Proxy</th>
-                        <th style="width: 12%;">IP Address</th>
-                        <th style="width: 8%;">Country</th>
-                        <th style="width: 10%;">State</th>
-                        <th style="width: 10%;">City</th>
-                        <th style="width: 8%;">Postcode</th>
-                        <th style="width: 7%;" class="text-center">Score</th>
-                        <th style="width: 17%;" class="text-end">Action</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for item in results %}
-                    <tr>
-                        <td>
-                            <span class="proxy-masked" id="proxy-{{ loop.index }}" data-full-proxy="{{ item.proxy }}">
-                                {{ item.proxy.split(':')[0] }}:{{ item.proxy.split(':')[1] }}:********
-                            </span>
-                        </td>
-                        <td>{{ item.ip | default('N/A') }}</td>
-                        <td>{{ item.geo.country_code | default('N/A') }}</td>
-                        <td>{{ item.geo.state | default('N/A') }}</td>
-                        <td>{{ item.geo.city | default('N/A') }}</td>
-                        <td>{{ item.geo.postcode | default('N/A') }}</td>
-                        <td class="text-center">{{ item.score if item.score is not none else 'N/A' }}</td>
-                        <td class="text-end">
-                             {% if item.used %}
-                             <span class="badge bg-secondary me-1">USED IP</span>
-                             {% endif %}
-                            <button class="btn btn-sm btn-outline-secondary copy-btn {% if item.used %}disabled{% endif %}"
-                                    onclick="handleCopyAndTrack('proxy-{{ loop.index }}', this, '{{ item.proxy }}', '{{ item.ip | default('') }}')"
-                                    {% if item.used %}disabled{% endif %}>
-                                Copy
-                            </button>
-                        </td>
-                    </tr>
-                    {% else %} 
-                    <tr>
-                        <td colspan="8" class="text-center text-muted">No good proxies found in this batch.</td>
-                    </tr>
-                    {% endfor %} 
-                </tbody>
-            </table>
+            {% if results is defined and results is not none %} 
+            <hr class="my-4">
+            <h5 class="mb-3">✅ Good Proxies Found (Score {{ settings.FRAUD_SCORE_LEVEL }})</h5>
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 28%;">Proxy</th>
+                            <th style="width: 12%;">IP Address</th>
+                            <th style="width: 8%;">Country</th>
+                            <th style="width: 10%;">State</th>
+                            <th style="width: 10%;">City</th>
+                            <th style="width: 8%;">Postcode</th>
+                            <th style="width: 7%;" class="text-center">Score</th>
+                            <th style="width: 17%;" class="text-end">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in results %}
+                        <tr>
+                            <td>
+                                <span class="proxy-masked" id="proxy-{{ loop.index }}" data-full-proxy="{{ item.proxy }}">
+                                    {{ item.proxy.split(':')[0] }}:{{ item.proxy.split(':')[1] }}:********
+                                </span>
+                            </td>
+                            <td>{{ item.ip | default('N/A') }}</td>
+                            <td>{{ item.geo.country_code | default('N/A') }}</td>
+                            <td>{{ item.geo.state | default('N/A') }}</td>
+                            <td>{{ item.geo.city | default('N/A') }}</td>
+                            <td>{{ item.geo.postcode | default('N/A') }}</td>
+                            <td class="text-center">{{ item.score if item.score is not none else 'N/A' }}</td>
+                            <td class="text-end">
+                                 {% if item.used %}
+                                 <span class="badge bg-secondary me-1">USED IP</span>
+                                 {% endif %}
+                                <button class="btn btn-sm btn-outline-secondary copy-btn {% if item.used %}disabled{% endif %}"
+                                        onclick="handleCopyAndTrack('proxy-{{ loop.index }}', this, '{{ item.proxy }}', '{{ item.ip | default('') }}')"
+                                        {% if item.used %}disabled{% endif %}>
+                                    Copy
+                                </button>
+                            </td>
+                        </tr>
+                        {% else %} 
+                        <tr>
+                            <td colspan="8" class="text-center text-muted">No good proxies found in this batch.</td>
+                        </tr>
+                        {% endfor %} 
+                    </tbody>
+                </table>
+            </div>
+            <p class="mt-3 text-muted text-end">Results will clear automatically after 5 minutes.</p>
+            {% endif %}
         </div>
-        <p class="mt-3 text-muted text-end">Results will clear automatically after 5 minutes.</p>
-        {% endif %}
     </div>
 
     <div id="notepad-widget">
