@@ -350,6 +350,20 @@
         #notepad-textarea::placeholder {
             color: var(--placeholder-color);
         }
+        
+        /* State buttons styling */
+        .state-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 10px;
+        }
+        
+        .state-buttons .btn {
+            flex: 0 0 auto;
+            font-size: 0.75rem;
+            padding: 4px 8px;
+        }
     </style>
 </head>
 <body>
@@ -418,66 +432,30 @@
                             
                             {% if current_user.can_fetch %}
                             <div class="row g-2 align-items-center mb-3">
-                                <div class="col-md-4">
-                                    <label class="form-label mb-1" style="font-size: 0.75rem; color: var(--text-muted);">US State (ABC Proxy only)</label>
-                                    <select id="stateSelect" class="form-select form-select-sm">
-                                        <option value="">-- All States --</option>
-                                        <option value="alabama">Alabama</option>
-                                        <option value="alaska">Alaska</option>
-                                        <option value="arizona">Arizona</option>
-                                        <option value="arkansas">Arkansas</option>
-                                        <option value="california">California</option>
-                                        <option value="colorado">Colorado</option>
-                                        <option value="connecticut">Connecticut</option>
-                                        <option value="delaware">Delaware</option>
-                                        <option value="florida">Florida</option>
-                                        <option value="georgia">Georgia</option>
-                                        <option value="hawaii">Hawaii</option>
-                                        <option value="idaho">Idaho</option>
-                                        <option value="illinois">Illinois</option>
-                                        <option value="indiana">Indiana</option>
-                                        <option value="iowa">Iowa</option>
-                                        <option value="kansas">Kansas</option>
-                                        <option value="kentucky">Kentucky</option>
-                                        <option value="louisiana">Louisiana</option>
-                                        <option value="maine">Maine</option>
-                                        <option value="maryland">Maryland</option>
-                                        <option value="massachusetts">Massachusetts</option>
-                                        <option value="michigan">Michigan</option>
-                                        <option value="minnesota">Minnesota</option>
-                                        <option value="mississippi">Mississippi</option>
-                                        <option value="missouri">Missouri</option>
-                                        <option value="montana">Montana</option>
-                                        <option value="nebraska">Nebraska</option>
-                                        <option value="nevada">Nevada</option>
-                                        <option value="newhampshire">New Hampshire</option>
-                                        <option value="newjersey">New Jersey</option>
-                                        <option value="newmexico">New Mexico</option>
-                                        <option value="newyork">New York</option>
-                                        <option value="northcarolina">North Carolina</option>
-                                        <option value="northdakota">North Dakota</option>
-                                        <option value="ohio">Ohio</option>
-                                        <option value="oklahoma">Oklahoma</option>
-                                        <option value="oregon">Oregon</option>
-                                        <option value="pennsylvania">Pennsylvania</option>
-                                        <option value="rhodeisland">Rhode Island</option>
-                                        <option value="southcarolina">South Carolina</option>
-                                        <option value="southdakota">South Dakota</option>
-                                        <option value="tennessee">Tennessee</option>
-                                        <option value="texas">Texas</option>
-                                        <option value="utah">Utah</option>
-                                        <option value="vermont">Vermont</option>
-                                        <option value="virginia">Virginia</option>
-                                        <option value="washington">Washington</option>
-                                        <option value="westvirginia">West Virginia</option>
-                                        <option value="wisconsin">Wisconsin</option>
-                                        <option value="wyoming">Wyoming</option>
-                                    </select>
+                                <div class="col-md-12">
+                                    <label class="form-label mb-1" style="font-size: 0.75rem; color: var(--text-muted);">Fetch ABC Proxies by State</label>
+                                    <div class="state-buttons">
+                                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="fetchStateProxies('washington')">
+                                            Washington
+                                        </button>
+                                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="fetchStateProxies('ohio')">
+                                            Ohio
+                                        </button>
+                                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="fetchStateProxies('florida')">
+                                            Florida
+                                        </button>
+                                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="fetchStateProxies('alabama')">
+                                            Alabama
+                                        </button>
+                                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="fetchStateProxies('california')">
+                                            California
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="fetchStateProxies('')">
+                                            All States
+                                        </button>
+                                    </div>
                                 </div>
-                                <div class="col-md-8 d-flex justify-content-end gap-2 align-self-end">
-                                    <button type="button" id="fetchBtn" class="btn btn-success btn-sm" onclick="fetchABCProxies()">
-                                        🔄ABC PROXY
-                                    </button>
+                                <div class="col-md-12 d-flex justify-content-end gap-2 mt-2">
                                     <button type="button" id="poolBtn" class="btn btn-info btn-sm text-white" onclick="fetchPoolProxies()">
                                         📦SPSCC
                                     </button>
@@ -624,21 +602,33 @@
             if (isTextAreaTooLong || isTextAreaEmpty) { submitBtn.disabled = true; } else { submitBtn.disabled = false; }
         }
 
-        async function fetchABCProxies() {
-            const btn = document.getElementById('fetchBtn');
-            const state = document.getElementById('stateSelect').value;
+        async function fetchStateProxies(state) {
+            const btn = document.querySelector(`button[onclick*="${state}"]`) || document.querySelector('button[onclick*="All States"]');
             const textarea = document.getElementById('proxytext');
             const sourceField = document.getElementById('proxy_origin');
-            btn.disabled = true; btn.textContent = "Loading...";
-            try {
-                const response = await fetch(`/api/fetch-abc-proxies?state=${state}`);
-                const data = await response.json();
-                if (data.status === 'success') {
-                    textarea.value = data.proxies.join('\n');
-                    updateProxyCounter(textarea);
-                    if (sourceField) sourceField.value = 'fetch';
-                } else alert("Error: " + data.message);
-            } catch (err) { alert("Failed: " + err); } finally { btn.disabled = false; btn.textContent = "🔄ABC PROXY"; }
+            
+            if (btn) {
+                const originalText = btn.textContent;
+                btn.disabled = true;
+                btn.textContent = "Loading...";
+                
+                try {
+                    const response = await fetch(`/api/fetch-abc-proxies?state=${state}`);
+                    const data = await response.json();
+                    if (data.status === 'success') {
+                        textarea.value = data.proxies.join('\n');
+                        updateProxyCounter(textarea);
+                        if (sourceField) sourceField.value = 'fetch';
+                    } else {
+                        alert("Error: " + data.message);
+                    }
+                } catch (err) {
+                    alert("Failed to fetch proxies: " + err);
+                } finally {
+                    btn.disabled = false;
+                    btn.textContent = originalText;
+                }
+            }
         }
 
         async function fetchSXProxies() {
