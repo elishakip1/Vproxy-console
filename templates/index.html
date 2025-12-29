@@ -350,159 +350,6 @@
         #notepad-textarea::placeholder {
             color: var(--placeholder-color);
         }
-
-        /* Custom alert colors for dark theme */
-        [data-theme="dark"] .alert-primary {
-            background-color: rgba(13, 110, 253, 0.2);
-            border-color: rgba(13, 110, 253, 0.3);
-            color: #b3d4ff;
-        }
-
-        [data-theme="dark"] .alert-success {
-            background-color: rgba(25, 135, 84, 0.2);
-            border-color: rgba(25, 135, 84, 0.3);
-            color: #b7f0d1;
-        }
-
-        [data-theme="dark"] .alert-danger {
-            background-color: rgba(220, 53, 69, 0.2);
-            border-color: rgba(220, 53, 69, 0.3);
-            color: #f5c6cb;
-        }
-
-        [data-theme="dark"] .alert-info {
-            background-color: rgba(13, 202, 240, 0.2);
-            border-color: rgba(13, 202, 240, 0.3);
-            color: #c4f1f9;
-        }
-
-        [data-theme="dark"] .btn-outline-primary {
-            color: #b3d4ff;
-            border-color: #0d6efd;
-        }
-
-        [data-theme="dark"] .btn-outline-primary:hover {
-            background-color: #0d6efd;
-            color: white;
-        }
-
-        [data-theme="dark"] .btn-outline-secondary {
-            color: #adb5bd;
-            border-color: #6c757d;
-        }
-
-        [data-theme="dark"] .btn-outline-secondary:hover {
-            background-color: #6c757d;
-            color: white;
-        }
-
-        /* Form controls for dark theme */
-        [data-theme="dark"] .form-control {
-            background-color: var(--input-bg);
-            border-color: var(--input-border);
-            color: var(--input-color);
-        }
-
-        [data-theme="dark"] .form-control:focus {
-            background-color: var(--input-bg);
-            border-color: #0d6efd;
-            color: var(--input-color);
-            box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
-        }
-
-        /* Accordion for dark theme */
-        [data-theme="dark"] .accordion-button {
-            background-color: var(--table-header-bg);
-            color: var(--text-color);
-            border-color: var(--border-color);
-        }
-
-        [data-theme="dark"] .accordion-button:not(.collapsed) {
-            background-color: var(--table-header-bg);
-            color: var(--text-color);
-        }
-
-        [data-theme="dark"] .accordion-button::after {
-            filter: invert(1) brightness(0.8);
-        }
-
-        [data-theme="dark"] .accordion-item {
-            background-color: var(--card-bg);
-            border-color: var(--border-color);
-        }
-
-        [data-theme="dark"] .accordion-body {
-            background-color: var(--card-bg);
-            color: var(--text-color);
-        }
-
-        /* Badge adjustments for dark theme */
-        [data-theme="dark"] .badge.bg-secondary {
-            background-color: #6c757d !important;
-        }
-
-        [data-theme="dark"] .badge.bg-success {
-            background-color: #198754 !important;
-        }
-
-        /* Responsive adjustments */
-        @media (max-width: 768px) {
-            .main-container {
-                padding: 0 15px;
-                margin: 20px auto;
-            }
-            
-            .content-card {
-                padding: 20px 15px;
-            }
-            
-            .header-container {
-                flex-direction: column;
-                gap: 15px;
-                padding: 15px;
-            }
-            
-            .header-title-container {
-                width: 100%;
-                justify-content: center;
-            }
-            
-            .header-buttons {
-                width: 100%;
-                justify-content: center;
-            }
-            
-            .header-logo {
-                height: 60px;
-            }
-            
-            .table-responsive {
-                font-size: 0.9rem;
-            }
-            
-            .table th, .table td {
-                padding: 0.4rem;
-                font-size: 0.75rem;
-            }
-        }
-
-        @media (max-width: 576px) {
-            .header-buttons {
-                flex-direction: column;
-                width: 100%;
-            }
-            
-            .header-buttons .btn {
-                width: 100%;
-                margin-bottom: 5px;
-            }
-            
-            #notepad-container {
-                width: 280px;
-                height: 320px;
-                right: 10px;
-            }
-        }
     </style>
 </head>
 <body>
@@ -572,7 +419,8 @@
                             {% if current_user.can_fetch %}
                             <div class="row g-2 align-items-center mb-3">
                                 <div class="col-md-4">
-                                    <select id="stateSelect" class="form-select form-select-sm" style="max-height: 200px; overflow-y: auto;">
+                                    <label class="form-label mb-1" style="font-size: 0.75rem; color: var(--text-muted);">US State (ABC Proxy only)</label>
+                                    <select id="stateSelect" class="form-select form-select-sm">
                                         <option value="">-- All States --</option>
                                         <option value="alabama">Alabama</option>
                                         <option value="alaska">Alaska</option>
@@ -626,9 +474,9 @@
                                         <option value="wyoming">Wyoming</option>
                                     </select>
                                 </div>
-                                <div class="col-md-8 d-flex justify-content-end gap-2">
+                                <div class="col-md-8 d-flex justify-content-end gap-2 align-self-end">
                                     <button type="button" id="fetchBtn" class="btn btn-success btn-sm" onclick="fetchABCProxies()">
-                                        🔄SINCLAIR
+                                        🔄ABC PROXY
                                     </button>
                                     <button type="button" id="poolBtn" class="btn btn-info btn-sm text-white" onclick="fetchPoolProxies()">
                                         📦SPSCC
@@ -790,7 +638,7 @@
                     updateProxyCounter(textarea);
                     if (sourceField) sourceField.value = 'fetch';
                 } else alert("Error: " + data.message);
-            } catch (err) { alert("Failed: " + err); } finally { btn.disabled = false; btn.textContent = "🔄SINCLAIR"; }
+            } catch (err) { alert("Failed: " + err); } finally { btn.disabled = false; btn.textContent = "🔄ABC PROXY"; }
         }
 
         async function fetchSXProxies() {
@@ -851,10 +699,7 @@
             if (trackedProxiesThisSession.has(proxy) || saveQueue.some(item => item.proxy === proxy)) { clickedButton.textContent = 'Saved!'; clickedButton.disabled = true; return; }
             const parent = clickedButton.parentNode;
             if (!parent.querySelector('.badge.bg-secondary')) { const badge = document.createElement('span'); badge.className = 'badge bg-secondary me-1'; badge.textContent = 'USED IP'; parent.insertBefore(badge, clickedButton); }
-            clickedButton.textContent = 'Saved!';
-            clickedButton.classList.remove('btn-outline-secondary');
-            clickedButton.classList.add('btn-success');
-            clickedButton.disabled = true;
+            clickedButton.textContent = 'Saved!'; clickedButton.classList.replace('btn-outline-secondary', 'btn-success'); clickedButton.disabled = true;
             saveQueue.push({ proxy: proxy, ip: ip });
         }
 
@@ -890,8 +735,9 @@
             const notepad = document.getElementById('notepad-container');
             const closeBtn = document.getElementById('notepad-close-btn');
             const textarea = document.getElementById('notepad-textarea');
-            if (textarea) { textarea.value = localStorage.getItem('userNotepadContent') || ''; }
-            if (textarea) { textarea.addEventListener('input', () => { localStorage.setItem('userNotepadContent', textarea.value); }); }
+            const storageKey = 'userNotepadContent';
+            if (textarea) { textarea.value = localStorage.getItem(storageKey) || ''; }
+            if (textarea) { textarea.addEventListener('input', () => { localStorage.setItem(storageKey, textarea.value); }); }
             if (toggleBtn && notepad) { toggleBtn.addEventListener('click', () => { notepad.classList.toggle('hidden'); }); }
             if (closeBtn && notepad) { closeBtn.addEventListener('click', () => { notepad.classList.add('hidden'); }); }
             processSaveQueue();
