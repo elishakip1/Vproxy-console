@@ -62,7 +62,7 @@ class User(UserMixin):
     def is_guest(self):
         return self.role == "guest"
 
-# Updated Users as requested
+# Updated users as requested
 users = {
     1: User(id=1, username="Boss", password="ADMIN123", role="admin", can_fetch=True),
     2: User(id=2, username="Work", password="password", role="user", can_fetch=True),
@@ -369,11 +369,11 @@ def fetch_abc_proxies():
         parsed_url = urlparse(generation_url)
         query_params = parse_qs(parsed_url.query)
         
-        # Injects state selection into username parameter via regex
+        # Logic to dynamically replace the state in the username parameter
         if selected_state:
             username_val = query_params.get('username', [''])[0]
             if 'st-' in username_val:
-                new_username = re.sub(r'st-[a-zA-Z]+', f'st-{selected_state}', username_val)
+                new_username = re.sub(r'st-[a-zA-Z0-9]+', f'st-{selected_state}', username_val)
             else:
                 new_username = username_val + f"-st-{selected_state}"
             query_params['username'] = [new_username]
@@ -381,6 +381,7 @@ def fetch_abc_proxies():
         query_params['num'] = [str(max_paste_limit)]
         new_query_string = urlencode(query_params, doseq=True)
         final_url = urlunparse(parsed_url._replace(query=new_query_string))
+        
         logger.info(f"Fetching proxies for {current_user.username}: {final_url}")
         response = requests.get(final_url, timeout=10)
         if response.status_code == 200:
@@ -391,7 +392,7 @@ def fetch_abc_proxies():
         return jsonify({"status": "error", "message": f"HTTP Error: {response.status_code}"})
     except Exception as e: return jsonify({"status": "error", "message": f"Server Error: {str(e)}"})
 
-# New standalone fetcher for SX.ORG
+# Standalone SX.ORG fetcher
 @app.route('/api/fetch-sx-proxies')
 @login_required
 def fetch_sx_proxies():
