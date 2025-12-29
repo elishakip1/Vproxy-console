@@ -18,6 +18,7 @@ from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 import logging
 import sys
+import re
 
 # Import from db_util
 from db_util import (
@@ -97,7 +98,8 @@ DEFAULT_SETTINGS = {
     "API_CREDITS_REMAINING": "N/A",
     "CONSECUTIVE_FAILS": 0,
     "SYSTEM_PAUSED": "FALSE",
-    "ABC_GENERATION_URL": "",
+    "ABC_GENERATION_URL": "https://proxyinfo.abcproxy.com/generate_proxy_list?pkg_type=flow&proxy_address=na.d8268f2d3cc6cb22.abcproxy.vip:4950&username=winter_2026-zone-star-region-US-st-ohio-session-pFXjr5sP-sessTime-120&password=0654876559&format=2&num=100",
+    "SX_GENERATION_URL": "https://api.sx.org/port/list/rkocd4za052HM0HkruFuQvE6x37cMNsG.txt?proxy_template_id=3729&all=true&except_id[]=[]",
     "PYPROXY_RESET_URL": "",
     "PIAPROXY_RESET_URL": "",
     "PASTE_INPUT_DISABLED": "FALSE",
@@ -359,15 +361,49 @@ def fetch_abc_proxies():
     settings = get_app_settings()
     generation_url = settings.get("ABC_GENERATION_URL", "").strip()
     max_paste_limit = int(settings.get("MAX_PASTE", 30))
+    selected_state = request.args.get('state', '').lower()
+
     if not generation_url: return jsonify({"status": "error", "message": "ABC Generation URL not set."})
+    
     try:
         parsed_url = urlparse(generation_url)
         query_params = parse_qs(parsed_url.query)
+        
+        # Inject state into username if provided
+        if selected_state:
+            username_val = query_params.get('username', [''])[0]
+            # Replace st-X with st-{selected_state} or append it
+            if 'st-' in username_val:
+                new_username = re.sub(r'st-[a-zA-Z]+', f'st-{selected_state}', username_val)
+            else:
+                new_username = username_val + f"-st-{selected_state}"
+            query_params['username'] = [new_username]
+
         query_params['num'] = [str(max_paste_limit)]
         new_query_string = urlencode(query_params, doseq=True)
         final_url = urlunparse(parsed_url._replace(query=new_query_string))
+        
         logger.info(f"Fetching proxies for {current_user.username}: {final_url}")
         response = requests.get(final_url, timeout=10)
+        if response.status_code == 200:
+            content = response.text.strip()
+            lines = [l.strip() for l in content.splitlines() if l.strip()]
+            if len(lines) > max_paste_limit: lines = lines[:max_paste_limit]
+            return jsonify({"status": "success", "proxies": lines})
+        return jsonify({"status": "error", "message": f"HTTP Error: {response.status_code}"})
+    except Exception as e: return jsonify({"status": "error", "message": f"Server Error: {str(e)}"})
+
+@app.route('/api/fetch-sx-proxies')
+@login_required
+def fetch_sx_proxies():
+    if not current_user.can_fetch: return jsonify({"status": "error", "message": "Permission denied."}), 403
+    settings = get_app_settings()
+    generation_url = settings.get("SX_GENERATION_URL", "").strip()
+    max_paste_limit = int(settings.get("MAX_PASTE", 30))
+    if not generation_url: return jsonify({"status": "error", "message": "SX Generation URL not set."})
+    try:
+        logger.info(f"Fetching SX proxies for {current_user.username}")
+        response = requests.get(generation_url, timeout=10)
         if response.status_code == 200:
             content = response.text.strip()
             lines = [l.strip() for l in content.splitlines() if l.strip()]
@@ -566,6 +602,7 @@ def admin():
         "system_paused": settings.get("SYSTEM_PAUSED"),
         "total_api_calls_logged": total_api,
         "abc_generation_url": settings.get("ABC_GENERATION_URL"),
+        "sx_generation_url": settings.get("SX_GENERATION_URL"),
         "force_fetch_for_users": settings.get("FORCE_FETCH_FOR_USERS", "FALSE")
     }
     return render_template("admin.html", stats=stats, used_ips=get_all_used_ips(), announcement=settings.get("ANNOUNCEMENT"), settings=settings, stones_daily_usage=stones_daily_usage)
@@ -642,6 +679,7 @@ def admin_settings():
             "SCAMALYTICS_API_URL": f.get("scamalytics_api_url", "").strip(),
             "SCAMALYTICS_USERNAME": f.get("scamalytics_username", "").strip(),
             "ABC_GENERATION_URL": f.get("abc_generation_url", "").strip(),
+            "SX_GENERATION_URL": f.get("sx_generation_url", "").strip(),
             "PYPROXY_RESET_URL": f.get("pyproxy_reset_url", "").strip(),
             "PIAPROXY_RESET_URL": f.get("piaproxy_reset_url", "").strip(),
             "FORCE_FETCH_FOR_USERS": f.get("force_fetch_for_users", "FALSE")
