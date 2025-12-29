@@ -15,7 +15,6 @@ except Exception as e:
     logger.critical(f"Failed to initialize Supabase: {e}")
     supabase = None
 
-# --- SETTINGS ---
 def get_settings():
     if not supabase: return {}
     try:
@@ -34,7 +33,6 @@ def update_setting(key, value):
         logger.error(f"Error updating setting {key}: {e}")
         return False
 
-# --- USED PROXIES ---
 def add_used_ip(ip, proxy, username="Unknown"):
     if not supabase: return False
     try:
@@ -58,13 +56,12 @@ def get_all_used_ips():
         return [{"IP": r['ip'], "Proxy": r['proxy'], "Date": r['created_at'], "User": r.get('username', 'Unknown')} for r in res.data]
     except Exception: return []
 
-# --- BAD PROXIES ---
 def log_bad_proxy(proxy, ip, score):
     if not supabase: return False
     try:
         exists = supabase.table('bad_proxies').select("id").eq("ip", ip).execute()
-        if not exists.data:
-            supabase.table('bad_proxies').insert({"proxy": proxy, "ip": ip, "score": score}).execute()
+        if exists.data: return True
+        supabase.table('bad_proxies').insert({"proxy": proxy, "ip": ip, "score": score}).execute()
         return True
     except Exception: return False
 
@@ -73,7 +70,6 @@ def get_bad_proxies_list():
     try: return supabase.table('bad_proxies').select("ip, proxy").execute().data 
     except Exception: return []
 
-# --- LOGS ---
 def add_log_entry(level, message, ip="N/A"):
     if not supabase: return False
     try:
@@ -95,15 +91,13 @@ def clear_all_system_logs():
         return True
     except Exception: return False
 
-# --- API USAGE & STATS ---
 def add_api_usage_log(username, ip, submitted_count, api_calls_count, good_proxies_count):
     if not supabase: return False
     try:
         supabase.table('api_usage').insert({
             "username": username, "user_ip": ip, "submitted_count": submitted_count, 
             "api_calls_count": api_calls_count, "good_proxies_count": good_proxies_count
-        }).execute()
-        return True
+        }).execute(); return True
     except: return False
 
 def get_all_api_usage_logs():
@@ -114,7 +108,7 @@ def get_all_api_usage_logs():
 def get_user_stats_summary():
     if not supabase: return []
     try: return supabase.table('user_stats_view').select("*").execute().data
-    except Exception: return []
+    except: return []
 
 def get_daily_api_usage_for_user(username):
     if not supabase: return 0
@@ -132,7 +126,6 @@ def update_api_credits(used, remaining):
         return True
     except Exception: return False
 
-# --- PROXY POOL ---
 def add_bulk_proxies(proxy_list, provider="manual"):
     if not supabase or not proxy_list: return 0
     data = [{"proxy": p.strip(), "provider": provider} for p in proxy_list if p.strip()]
@@ -162,11 +155,11 @@ def get_pool_preview(provider, limit=50):
     try: return supabase.table('proxy_pool').select("proxy, created_at").eq('provider', provider).order('created_at', desc=True).limit(limit).execute().data
     except: return []
 
-def clear_proxy_pool(provider=None):
+def clear_proxy_pool(target=None):
     if not supabase: return False
     try:
         q = supabase.table('proxy_pool').delete()
-        if provider and provider != 'all': q = q.eq('provider', provider)
-        else: q = q.neq('id', 0) 
+        if target and target != 'all': q = q.eq('provider', target)
+        else: q = q.neq('id', 0)
         q.execute(); return True
     except: return False
