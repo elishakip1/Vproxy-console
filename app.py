@@ -209,6 +209,43 @@ def get_ip_from_proxy(proxy_line):
     except:
         return None
 
+def verify_ip_stability(proxy_line, required_stable_checks=3, max_attempts=5):
+    """
+    Verify that a proxy returns the same IP address multiple times.
+    Returns the stable IP if consistent, None if unstable.
+    """
+    if not validate_proxy_format(proxy_line):
+        return None
+    
+    seen_ips = set()
+    stable_ip = None
+    
+    for attempt in range(max_attempts):
+        ip = get_ip_from_proxy(proxy_line)
+        
+        if not ip:
+            # If we can't get an IP at all, wait and retry
+            time.sleep(random.uniform(0.1, 0.3))
+            continue
+        
+        seen_ips.add(ip)
+        
+        # If we have enough checks and all IPs are the same
+        if len(seen_ips) == 1 and (attempt + 1) >= required_stable_checks:
+            stable_ip = ip
+            break
+        
+        # If we see different IPs, it's unstable
+        if len(seen_ips) > 1:
+            logger.warning(f"Proxy {proxy_line.split(':')[0]} shows unstable IPs: {seen_ips}")
+            return None
+        
+        # Small delay between checks
+        if attempt < max_attempts - 1:
+            time.sleep(random.uniform(0.1, 0.3))
+    
+    return stable_ip
+
 def get_fraud_score_detailed(ip, proxy_line, credentials_list):
     if not validate_proxy_format(proxy_line) or not ip or not credentials_list:
         return None
@@ -247,12 +284,20 @@ def get_fraud_score_detailed(ip, proxy_line, credentials_list):
 
 def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list, used_ip_set, bad_ip_set, is_strict_mode=False):
     res = {"proxy": None, "ip": None, "credits": {}, "geo": {}, "score": None, 
-           "status": "error", "used": False, "cached_bad": False}
+           "status": "error", "used": False, "cached_bad": False, "unstable": False}
     
     if not validate_proxy_format(proxy_line):
         return res
     
-    ip = get_ip_from_proxy(proxy_line)
+    # First verify IP stability
+    ip = verify_ip_stability(proxy_line, required_stable_checks=3, max_attempts=5)
+    
+    if not ip:
+        # If we get None from verify_ip_stability, it means the IP was unstable
+        res["status"] = "unstable_ip"
+        res["unstable"] = True
+        return res
+    
     res["ip"] = ip
     
     if not ip:
@@ -513,7 +558,7 @@ def index():
         proxies_raw = [p.strip() for p in proxies_input if validate_proxy_format(p.strip())]
         
         good_proxy_results = []
-        stats = {"used": 0, "bad": 0, "api": 0}
+        stats = {"used": 0, "bad": 0, "api": 0, "unstable": 0}
         target_good = 2
         
         if current_user.is_guest:
@@ -532,6 +577,7 @@ def index():
                     res = f.result()
                     if res["status"] == "used_cache": stats["used"] += 1
                     elif res["status"] == "bad_cache": stats["bad"] += 1
+                    elif res["status"] == "unstable_ip": stats["unstable"] += 1
                     elif res["status"] in ["success", "bad_score"]: stats["api"] += 1
                     if res.get("proxy"): good_proxy_results.append(res)
                 good_count = len([r for r in good_proxy_results if not r['used'] and not r['cached_bad']])
@@ -562,8 +608,10 @@ def index():
         except: pass
         
         msg_prefix = "⚠️ MAINTENANCE (Admin) - " if admin_bypass else ""
-        if current_user.is_guest and good_final == 0: message = "No good proxies found in this batch."
-        else: message = f"{msg_prefix}Found {good_final} good proxies. ({stats['used']} from cache, {stats['bad']} skipped bad, {stats['api']} live checked)"
+        if current_user.is_guest and good_final == 0: 
+            message = "No good proxies found in this batch."
+        else: 
+            message = f"{msg_prefix}Found {good_final} good proxies. ({stats['used']} from cache, {stats['bad']} skipped bad, {stats['unstable']} unstable, {stats['api']} live checked)"
         
         return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, paste_disabled_for_user=paste_disabled_for_user)
 
