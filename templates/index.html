@@ -350,6 +350,159 @@
         #notepad-textarea::placeholder {
             color: var(--placeholder-color);
         }
+
+        /* Custom alert colors for dark theme */
+        [data-theme="dark"] .alert-primary {
+            background-color: rgba(13, 110, 253, 0.2);
+            border-color: rgba(13, 110, 253, 0.3);
+            color: #b3d4ff;
+        }
+
+        [data-theme="dark"] .alert-success {
+            background-color: rgba(25, 135, 84, 0.2);
+            border-color: rgba(25, 135, 84, 0.3);
+            color: #b7f0d1;
+        }
+
+        [data-theme="dark"] .alert-danger {
+            background-color: rgba(220, 53, 69, 0.2);
+            border-color: rgba(220, 53, 69, 0.3);
+            color: #f5c6cb;
+        }
+
+        [data-theme="dark"] .alert-info {
+            background-color: rgba(13, 202, 240, 0.2);
+            border-color: rgba(13, 202, 240, 0.3);
+            color: #c4f1f9;
+        }
+
+        [data-theme="dark"] .btn-outline-primary {
+            color: #b3d4ff;
+            border-color: #0d6efd;
+        }
+
+        [data-theme="dark"] .btn-outline-primary:hover {
+            background-color: #0d6efd;
+            color: white;
+        }
+
+        [data-theme="dark"] .btn-outline-secondary {
+            color: #adb5bd;
+            border-color: #6c757d;
+        }
+
+        [data-theme="dark"] .btn-outline-secondary:hover {
+            background-color: #6c757d;
+            color: white;
+        }
+
+        /* Form controls for dark theme */
+        [data-theme="dark"] .form-control {
+            background-color: var(--input-bg);
+            border-color: var(--input-border);
+            color: var(--input-color);
+        }
+
+        [data-theme="dark"] .form-control:focus {
+            background-color: var(--input-bg);
+            border-color: #0d6efd;
+            color: var(--input-color);
+            box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+        }
+
+        /* Accordion for dark theme */
+        [data-theme="dark"] .accordion-button {
+            background-color: var(--table-header-bg);
+            color: var(--text-color);
+            border-color: var(--border-color);
+        }
+
+        [data-theme="dark"] .accordion-button:not(.collapsed) {
+            background-color: var(--table-header-bg);
+            color: var(--text-color);
+        }
+
+        [data-theme="dark"] .accordion-button::after {
+            filter: invert(1) brightness(0.8);
+        }
+
+        [data-theme="dark"] .accordion-item {
+            background-color: var(--card-bg);
+            border-color: var(--border-color);
+        }
+
+        [data-theme="dark"] .accordion-body {
+            background-color: var(--card-bg);
+            color: var(--text-color);
+        }
+
+        /* Badge adjustments for dark theme */
+        [data-theme="dark"] .badge.bg-secondary {
+            background-color: #6c757d !important;
+        }
+
+        [data-theme="dark"] .badge.bg-success {
+            background-color: #198754 !important;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .main-container {
+                padding: 0 15px;
+                margin: 20px auto;
+            }
+            
+            .content-card {
+                padding: 20px 15px;
+            }
+            
+            .header-container {
+                flex-direction: column;
+                gap: 15px;
+                padding: 15px;
+            }
+            
+            .header-title-container {
+                width: 100%;
+                justify-content: center;
+            }
+            
+            .header-buttons {
+                width: 100%;
+                justify-content: center;
+            }
+            
+            .header-logo {
+                height: 60px;
+            }
+            
+            .table-responsive {
+                font-size: 0.9rem;
+            }
+            
+            .table th, .table td {
+                padding: 0.4rem;
+                font-size: 0.75rem;
+            }
+        }
+
+        @media (max-width: 576px) {
+            .header-buttons {
+                flex-direction: column;
+                width: 100%;
+            }
+            
+            .header-buttons .btn {
+                width: 100%;
+                margin-bottom: 5px;
+            }
+            
+            #notepad-container {
+                width: 280px;
+                height: 320px;
+                right: 10px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -418,23 +571,71 @@
                             
                             {% if current_user.can_fetch %}
                             <div class="row g-2 align-items-center mb-3">
-                                <div class="col-md-3">
-                                    <select id="stateSelect" class="form-select form-select-sm">
+                                <div class="col-md-4">
+                                    <select id="stateSelect" class="form-select form-select-sm" style="max-height: 200px; overflow-y: auto;">
                                         <option value="">-- All States --</option>
-                                        <option value="ohio">Ohio</option>
-                                        <option value="utah">Utah</option>
                                         <option value="alabama">Alabama</option>
+                                        <option value="alaska">Alaska</option>
+                                        <option value="arizona">Arizona</option>
+                                        <option value="arkansas">Arkansas</option>
                                         <option value="california">California</option>
-                                        <option value="texas">Texas</option>
+                                        <option value="colorado">Colorado</option>
+                                        <option value="connecticut">Connecticut</option>
+                                        <option value="delaware">Delaware</option>
                                         <option value="florida">Florida</option>
-                                        <option value="newyork">New York</option>
                                         <option value="georgia">Georgia</option>
+                                        <option value="hawaii">Hawaii</option>
+                                        <option value="idaho">Idaho</option>
+                                        <option value="illinois">Illinois</option>
+                                        <option value="indiana">Indiana</option>
+                                        <option value="iowa">Iowa</option>
+                                        <option value="kansas">Kansas</option>
+                                        <option value="kentucky">Kentucky</option>
+                                        <option value="louisiana">Louisiana</option>
+                                        <option value="maine">Maine</option>
+                                        <option value="maryland">Maryland</option>
+                                        <option value="massachusetts">Massachusetts</option>
+                                        <option value="michigan">Michigan</option>
+                                        <option value="minnesota">Minnesota</option>
+                                        <option value="mississippi">Mississippi</option>
+                                        <option value="missouri">Missouri</option>
+                                        <option value="montana">Montana</option>
+                                        <option value="nebraska">Nebraska</option>
+                                        <option value="nevada">Nevada</option>
+                                        <option value="newhampshire">New Hampshire</option>
+                                        <option value="newjersey">New Jersey</option>
+                                        <option value="newmexico">New Mexico</option>
+                                        <option value="newyork">New York</option>
+                                        <option value="northcarolina">North Carolina</option>
+                                        <option value="northdakota">North Dakota</option>
+                                        <option value="ohio">Ohio</option>
+                                        <option value="oklahoma">Oklahoma</option>
+                                        <option value="oregon">Oregon</option>
+                                        <option value="pennsylvania">Pennsylvania</option>
+                                        <option value="rhodeisland">Rhode Island</option>
+                                        <option value="southcarolina">South Carolina</option>
+                                        <option value="southdakota">South Dakota</option>
+                                        <option value="tennessee">Tennessee</option>
+                                        <option value="texas">Texas</option>
+                                        <option value="utah">Utah</option>
+                                        <option value="vermont">Vermont</option>
+                                        <option value="virginia">Virginia</option>
+                                        <option value="washington">Washington</option>
+                                        <option value="westvirginia">West Virginia</option>
+                                        <option value="wisconsin">Wisconsin</option>
+                                        <option value="wyoming">Wyoming</option>
                                     </select>
                                 </div>
-                                <div class="col-md-9 d-flex justify-content-end gap-2">
-                                    <button type="button" id="fetchBtn" class="btn btn-success btn-sm" onclick="fetchABCProxies()">🔄SINCLAIR</button>
-                                    <button type="button" id="poolBtn" class="btn btn-info btn-sm text-white" onclick="fetchPoolProxies()">📦SPSCC</button>
-                                    <button type="button" id="sxBtn" class="btn btn-warning btn-sm" onclick="fetchSXProxies()">🌐SX.ORG</button>
+                                <div class="col-md-8 d-flex justify-content-end gap-2">
+                                    <button type="button" id="fetchBtn" class="btn btn-success btn-sm" onclick="fetchABCProxies()">
+                                        🔄SINCLAIR
+                                    </button>
+                                    <button type="button" id="poolBtn" class="btn btn-info btn-sm text-white" onclick="fetchPoolProxies()">
+                                        📦SPSCC
+                                    </button>
+                                    <button type="button" id="sxBtn" class="btn btn-warning btn-sm" onclick="fetchSXProxies()">
+                                        🌐SX.ORG
+                                    </button>
                                 </div>
                             </div>
                             {% endif %}
@@ -536,6 +737,7 @@
         let trackedProxiesThisSession = new Set();
         const MAX_LINES = {{ max_paste }};
 
+        // Theme functionality
         function initTheme() {
             const savedTheme = localStorage.getItem('theme') || 'light';
             document.documentElement.setAttribute('data-theme', savedTheme);
@@ -587,8 +789,8 @@
                     textarea.value = data.proxies.join('\n');
                     updateProxyCounter(textarea);
                     if (sourceField) sourceField.value = 'fetch';
-                } else alert(data.message);
-            } catch (err) { alert(err); } finally { btn.disabled = false; btn.textContent = "🔄SINCLAIR"; }
+                } else alert("Error: " + data.message);
+            } catch (err) { alert("Failed: " + err); } finally { btn.disabled = false; btn.textContent = "🔄SINCLAIR"; }
         }
 
         async function fetchSXProxies() {
@@ -603,8 +805,8 @@
                     textarea.value = data.proxies.join('\n');
                     updateProxyCounter(textarea);
                     if (sourceField) sourceField.value = 'fetch';
-                } else alert(data.message);
-            } catch (err) { alert(err); } finally { btn.disabled = false; btn.textContent = "🌐SX.ORG"; }
+                } else alert("Error: " + data.message);
+            } catch (err) { alert("Failed: " + err); } finally { btn.disabled = false; btn.textContent = "🌐SX.ORG"; }
         }
 
         async function fetchPoolProxies() {
@@ -619,8 +821,8 @@
                     textarea.value = data.proxies.join('\n');
                     updateProxyCounter(textarea);
                     if (sourceField) sourceField.value = 'fetch';
-                } else alert(data.message);
-            } catch (err) { alert(err); } finally { btn.disabled = false; btn.textContent = "📦SPSCC"; }
+                } else alert("Error: " + data.message);
+            } catch (err) { alert("Failed: " + err); } finally { btn.disabled = false; btn.textContent = "📦SPSCC"; }
         }
 
         let saveQueue = [];
@@ -635,8 +837,8 @@
                 const response = await fetch('/track-used', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ proxy: item.proxy, ip: item.ip }) });
                 if (!response.ok) { const errData = await response.json().catch(() => ({})); throw new Error(errData.message || `HTTP error ${response.status}`); }
                 const data = await response.json();
-                if (data && data.status === 'success') { console.log("Saved:", item.proxy); trackedProxiesThisSession.add(item.proxy); saveQueue.shift(); } else { throw new Error(data.message || 'API error'); }
-            } catch (error) { console.warn(`Retry 10s:`, error.message); }
+                if (data && data.status === 'success') { console.log("Successfully saved:", item.proxy); trackedProxiesThisSession.add(item.proxy); saveQueue.shift(); } else { throw new Error(data.message || 'API error'); }
+            } catch (error) { console.warn(`Save failed, retry in 10s:`, error.message); }
             isQueueWorkerRunning = false;
             setTimeout(processSaveQueue, WORKER_INTERVAL);
         }
@@ -649,22 +851,30 @@
             if (trackedProxiesThisSession.has(proxy) || saveQueue.some(item => item.proxy === proxy)) { clickedButton.textContent = 'Saved!'; clickedButton.disabled = true; return; }
             const parent = clickedButton.parentNode;
             if (!parent.querySelector('.badge.bg-secondary')) { const badge = document.createElement('span'); badge.className = 'badge bg-secondary me-1'; badge.textContent = 'USED IP'; parent.insertBefore(badge, clickedButton); }
-            clickedButton.textContent = 'Saved!'; clickedButton.classList.replace('btn-outline-secondary', 'btn-success'); clickedButton.disabled = true;
-            saveQueue.push({ proxy, ip });
+            clickedButton.textContent = 'Saved!';
+            clickedButton.classList.remove('btn-outline-secondary');
+            clickedButton.classList.add('btn-success');
+            clickedButton.disabled = true;
+            saveQueue.push({ proxy: proxy, ip: ip });
         }
 
         function copyTextToClipboard(textToCopy, clickedButton) {
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(textToCopy).then(() => {
                     const originalText = clickedButton.textContent;
-                    if (originalText === 'Copy') { clickedButton.textContent = 'Copied!'; setTimeout(() => { if (clickedButton.textContent === 'Copied!') clickedButton.textContent = 'Copy'; }, 1500); }
+                    if (originalText === 'Copy') { clickedButton.textContent = 'Copied!'; setTimeout(() => { if (clickedButton.textContent === 'Copied!') { clickedButton.textContent = 'Copy'; } }, 1500); }
                 }).catch(err => { copyUsingExecCommand(textToCopy, clickedButton); });
             } else { copyUsingExecCommand(textToCopy, clickedButton); }
         }
         function copyUsingExecCommand(textToCopy, clickedButton) {
-            const textArea = document.createElement("textarea"); textArea.value = textToCopy; textArea.style.position = "fixed"; textArea.style.top = "-9999px"; document.body.appendChild(textArea);
+            const textArea = document.createElement("textarea");
+            textArea.value = textToCopy;
+            textArea.style.position = "fixed"; textArea.style.top = "-9999px"; document.body.appendChild(textArea);
             textArea.focus(); textArea.select();
-            try { const successful = document.execCommand('copy'); if (successful && clickedButton.textContent === 'Copy') { clickedButton.textContent = 'Copied!'; setTimeout(() => { if (clickedButton.textContent === 'Copied!') clickedButton.textContent = 'Copy'; }, 1500); } } catch (err) {}
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) { const originalText = clickedButton.textContent; if (originalText === 'Copy') { clickedButton.textContent = 'Copied!'; setTimeout(() => { if (clickedButton.textContent === 'Copied!') { clickedButton.textContent = 'Copy'; } }, 1500); } }
+            } catch (err) {}
             document.body.removeChild(textArea);
         }
 
@@ -673,21 +883,17 @@
             document.getElementById('themeToggle').addEventListener('click', toggleTheme);
             const textArea = document.getElementById('proxytext');
             if(textArea) updateProxyCounter(textArea);
-            
             {% if results is defined and results is not none %}
             setTimeout(() => { window.location.href = window.location.pathname; }, 300000);
             {% endif %}
-            
             const toggleBtn = document.getElementById('notepad-toggle-btn');
             const notepad = document.getElementById('notepad-container');
             const closeBtn = document.getElementById('notepad-close-btn');
             const textarea = document.getElementById('notepad-textarea');
-            const storageKey = 'userNotepadContent';
-            if (textarea) { textarea.value = localStorage.getItem(storageKey) || ''; }
-            if (textarea) { textarea.addEventListener('input', () => { localStorage.setItem(storageKey, textarea.value); }); }
+            if (textarea) { textarea.value = localStorage.getItem('userNotepadContent') || ''; }
+            if (textarea) { textarea.addEventListener('input', () => { localStorage.setItem('userNotepadContent', textarea.value); }); }
             if (toggleBtn && notepad) { toggleBtn.addEventListener('click', () => { notepad.classList.toggle('hidden'); }); }
             if (closeBtn && notepad) { closeBtn.addEventListener('click', () => { notepad.classList.add('hidden'); }); }
-
             processSaveQueue();
         });
     </script>
