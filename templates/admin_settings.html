@@ -13,7 +13,7 @@
 </head>
 <body>
 <nav class="sidebar">
-    <div class="sidebar-header text-center"><h5 class="text-white">Admin Panel</h5></div>
+    <div class="sidebar-header text-center text-white"><h5>Admin Panel</h5></div>
     <ul class="list-unstyled mt-3">
         <li><a href="{{ url_for('admin') }}" class="nav-link">📊 Dashboard</a></li>
         <li><a href="{{ url_for('admin_pool') }}" class="nav-link">🏭 Proxy Pool</a></li>
@@ -27,7 +27,18 @@
     <h2>⚙️ Configuration</h2>
     <form method="POST">
         <div class="card mb-4">
-            <div class="card-header bg-primary text-white">Scamalytics API Settings</div>
+            <div class="card-header bg-primary text-white">General Settings</div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4"><label class="form-label">Max Paste</label><input type="number" class="form-control" name="max_paste" value="{{ settings.MAX_PASTE }}"></div>
+                    <div class="col-md-4"><label class="form-label">Fraud Limit</label><input type="number" class="form-control" name="fraud_score_level" value="{{ settings.FRAUD_SCORE_LEVEL }}"></div>
+                    <div class="col-md-4"><label class="form-label">Workers</label><input type="number" class="form-control" name="max_workers" value="{{ settings.MAX_WORKERS }}"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header bg-info text-white">Scamalytics API Configuration</div>
             <div class="card-body">
                 <div class="mb-3"><label class="form-label">Username(s)</label><input type="text" class="form-control" name="scamalytics_username" value="{{ settings.SCAMALYTICS_USERNAME }}"></div>
                 <div class="mb-3"><label class="form-label">API Key(s)</label><input type="text" class="form-control" name="scamalytics_api_key" value="{{ settings.SCAMALYTICS_API_KEY }}"></div>
@@ -36,30 +47,18 @@
         </div>
 
         <div class="card mb-4">
-            <div class="card-header bg-success text-white">Proxy Providers</div>
+            <div class="card-header bg-success text-white">Proxy Providers & SX.ORG</div>
             <div class="card-body">
                 <div class="mb-3"><label class="form-label">ABC Generation URL</label><input type="text" class="form-control" name="abc_generation_url" value="{{ settings.ABC_GENERATION_URL }}"></div>
                 <div class="mb-3"><label class="form-label">SX.ORG Generation URL</label><input type="text" class="form-control" name="sx_generation_url" value="{{ settings.SX_GENERATION_URL }}"></div>
                 <div class="row">
-                    <div class="col-md-6 mb-3"><label class="form-label">PyProxy Reset URL</label><input type="text" class="form-control" name="pyproxy_reset_url" value="{{ settings.PYPROXY_RESET_URL }}"></div>
-                    <div class="col-md-6 mb-3"><label class="form-label">PiaProxy Reset URL</label><input type="text" class="form-control" name="piaproxy_reset_url" value="{{ settings.PIAPROXY_RESET_URL }}"></div>
-                </div>
-            </div>
-        </div>
-
-        <div class="card mb-4">
-            <div class="card-header bg-dark text-white">System Controls</div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-4 mb-3"><label class="form-label">Max Paste</label><input type="number" class="form-control" name="max_paste" value="{{ settings.MAX_PASTE }}"></div>
-                    <div class="col-md-4 mb-3"><label class="form-label">Fraud Score Limit</label><input type="number" class="form-control" name="fraud_score_level" value="{{ settings.FRAUD_SCORE_LEVEL }}"></div>
-                    <div class="col-md-4 mb-3"><label class="form-label">Max Workers</label><input type="number" class="form-control" name="max_workers" value="{{ settings.MAX_WORKERS }}"></div>
+                    <div class="col-md-6"><label class="form-label">PyProxy Reset</label><input type="text" class="form-control" name="pyproxy_reset_url" value="{{ settings.PYPROXY_RESET_URL }}"></div>
+                    <div class="col-md-6"><label class="form-label">PiaProxy Reset</label><input type="text" class="form-control" name="piaproxy_reset_url" value="{{ settings.PIAPROXY_RESET_URL }}"></div>
                 </div>
             </div>
         </div>
         <button type="submit" class="btn btn-success float-end px-5">Save All Changes</button>
     </form>
 </div>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
