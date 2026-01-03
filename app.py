@@ -66,7 +66,7 @@ class User(UserMixin):
 users = {
     1: User(id=1, username="Boss", password="ADMIN123", role="admin", can_fetch=True),
     2: User(id=2, username="Work", password="password", role="user", can_fetch=True),
-    3: User(id=3, username="STONES", password="123456", role="guest", can_fetch=False),
+    3: User(id=3, username="STONES", password="123STONES", role="guest", can_fetch=False),
 }
 
 @login_manager.user_loader
