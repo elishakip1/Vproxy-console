@@ -1,16 +1,14 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
+<html lang="en" data-theme="light"><div id="in-page-channel-node-id" data-channel-name="in_page_channel_bPJSbV"></div><head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     
-    <link rel="icon" href="{{ url_for('static', filename='img/favicon.ico') }}" type="image/x-icon">
-    <link rel="shortcut icon" href="{{ url_for('static', filename='img/favicon.ico') }}" type="image/x-icon">
-    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}">
-    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='img/favicon-32x32.png') }}">
-    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='img/favicon-16x16.png') }}">
-    <link rel="manifest" href="{{ url_for('static', filename='img/site.webmanifest') }}">
+    <link rel="icon" href="/static/img/favicon.ico" type="image/x-icon">
+    <link rel="shortcut icon" href="/static/img/favicon.ico" type="image/x-icon">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/img/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/img/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/img/favicon-16x16.png">
+    <link rel="manifest" href="/static/img/site.webmanifest">
     
     <style>
         :root {
@@ -354,23 +352,205 @@
         /* State buttons styling */
         .state-buttons {
             display: flex;
-            flex-wrap: wrap;
+            flex-wrap: nowrap;              /* CHANGED: no wrapping */
             gap: 6px;
             margin-bottom: 10px;
+            overflow-x: auto;               /* CHANGED: enable horizontal scroll */
+            overflow-y: hidden;
+            padding-bottom: 6px;
+            -webkit-overflow-scrolling: touch;
         }
         
         .state-buttons .btn {
             flex: 0 0 auto;
             font-size: 0.75rem;
             padding: 4px 8px;
+            white-space: nowrap;            /* CHANGED: prevent text wrapping */
         }
     </style>
-</head>
+<style>@keyframes slide-in-one-tap {
+  from {
+    transform: translateY(80px);
+  }
+  to {
+    transform: translateY(0px);
+  }
+}
+
+.trust-hide-gracefully {
+  opacity: 0;
+}
+
+.trust-wallet-one-tap .hidden {
+    display: none;
+  }
+
+.trust-wallet-one-tap .semibold {
+    font-weight: 500;
+  }
+
+.trust-wallet-one-tap .binance-plex {
+    font-family: 'Binance';
+  }
+
+.trust-wallet-one-tap .rounded-full {
+    border-radius: 50%;
+  }
+
+.trust-wallet-one-tap .flex {
+    display: flex;
+  }
+
+.trust-wallet-one-tap .flex-col {
+    flex-direction: column;
+  }
+
+.trust-wallet-one-tap .items-center {
+    align-items: center;
+  }
+
+.trust-wallet-one-tap .space-between {
+    justify-content: space-between;
+  }
+
+.trust-wallet-one-tap .justify-center {
+    justify-content: center;
+  }
+
+.trust-wallet-one-tap .w-full {
+    width: 100%;
+  }
+
+.trust-wallet-one-tap .box {
+    transition: all 0.5s cubic-bezier(0, 0, 0, 1.43);
+    animation: slide-in-one-tap 0.5s cubic-bezier(0, 0, 0, 1.43);
+    width: 384px;
+    border-radius: 15px;
+    background: #fff;
+    box-shadow: 0px 2px 4px 0px rgba(0, 0, 0, 0.25);
+    position: fixed;
+    right: 30px;
+    bottom: 30px;
+    z-index: 1020;
+  }
+
+.trust-wallet-one-tap .header {
+    gap: 15px;
+    border-bottom: 1px solid #e6e6e6;
+    padding: 10px 18px;
+  }
+
+.trust-wallet-one-tap .header .left-items {
+      gap: 15px;
+    }
+
+.trust-wallet-one-tap .header .title {
+      color: #1e2329;
+      font-size: 18px;
+      font-weight: 600;
+      line-height: 28px;
+    }
+
+.trust-wallet-one-tap .header .subtitle {
+      color: #474d57;
+      font-size: 14px;
+      line-height: 20px;
+    }
+
+.trust-wallet-one-tap .header .close {
+      color: #1e2329;
+      cursor: pointer;
+    }
+
+.trust-wallet-one-tap .body {
+    padding: 9px 18px;
+    gap: 10px;
+  }
+
+.trust-wallet-one-tap .body .right-items {
+      gap: 10px;
+      width: 100%;
+    }
+
+.trust-wallet-one-tap .body .right-items .wallet-title {
+        color: #1e2329;
+        font-size: 16px;
+        font-weight: 600;
+        line-height: 20px;
+      }
+
+.trust-wallet-one-tap .body .right-items .wallet-subtitle {
+        color: #474d57;
+        font-size: 14px;
+        line-height: 20px;
+      }
+
+.trust-wallet-one-tap .connect-indicator {
+    gap: 15px;
+    padding: 8px 0;
+  }
+
+.trust-wallet-one-tap .connect-indicator .flow-icon {
+      color: #474d57;
+    }
+
+.trust-wallet-one-tap .loading-color {
+    color: #fff;
+  }
+
+.trust-wallet-one-tap .button {
+    border-radius: 50px;
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+    background-color: rgb(5, 0, 255);
+    border-color: rgb(229, 231, 235);
+    cursor: pointer;
+    text-align: center;
+    height: 45px;
+  }
+
+.trust-wallet-one-tap .button .button-text {
+      color: #fff;
+      font-size: 16px;
+      font-weight: 600;
+      line-height: 20px;
+    }
+
+.trust-wallet-one-tap .footer {
+    margin: 20px 30px;
+  }
+
+.trust-wallet-one-tap .check-icon {
+    color: #fff;
+  }
+
+@font-face {
+  font-family: 'Binance';
+  src: url(chrome-extension://egjidjbpglichdcondbcbdnbeeppgdph/fonts/BinancePlex-Regular.otf) format('opentype');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Binance';
+  src: url(chrome-extension://egjidjbpglichdcondbcbdnbeeppgdph/fonts/BinancePlex-Medium.otf) format('opentype');
+  font-weight: 500;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Binance';
+  src: url(chrome-extension://egjidjbpglichdcondbcbdnbeeppgdph/fonts/BinancePlex-SemiBold.otf) format('opentype');
+  font-weight: 600;
+  font-style: normal;
+}
+
+/*# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJzb3VyY2VzIjpbIndlYnBhY2s6Ly8uL2FwcC9zcmMvb25lVGFwL3N0eWxlLmNzcyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiQUFBQTtFQUNFO0lBQ0UsMkJBQTJCO0VBQzdCO0VBQ0E7SUFDRSwwQkFBMEI7RUFDNUI7QUFDRjs7QUFFQTtFQUNFLFVBQVU7QUFDWjs7QUFHRTtJQUNFLGFBQWE7RUFDZjs7QUFFQTtJQUNFLGdCQUFnQjtFQUNsQjs7QUFFQTtJQUNFLHNCQUFzQjtFQUN4Qjs7QUFFQTtJQUNFLGtCQUFrQjtFQUNwQjs7QUFFQTtJQUNFLGFBQWE7RUFDZjs7QUFFQTtJQUNFLHNCQUFzQjtFQUN4Qjs7QUFFQTtJQUNFLG1CQUFtQjtFQUNyQjs7QUFFQTtJQUNFLDhCQUE4QjtFQUNoQzs7QUFFQTtJQUNFLHVCQUF1QjtFQUN6Qjs7QUFFQTtJQUNFLFdBQVc7RUFDYjs7QUFFQTtJQUNFLGdEQUFnRDtJQUNoRCw0REFBNEQ7SUFDNUQsWUFBWTtJQUNaLG1CQUFtQjtJQUNuQixnQkFBZ0I7SUFDaEIsK0NBQStDO0lBQy9DLGVBQWU7SUFDZixXQUFXO0lBQ1gsWUFBWTtJQUNaLGFBQWE7RUFDZjs7QUFFQTtJQUNFLFNBQVM7SUFDVCxnQ0FBZ0M7SUFDaEMsa0JBQWtCO0VBdUJwQjs7QUFyQkU7TUFDRSxTQUFTO0lBQ1g7O0FBRUE7TUFDRSxjQUFjO01BQ2QsZUFBZTtNQUNmLGdCQUFnQjtNQUNoQixpQkFBaUI7SUFDbkI7O0FBRUE7TUFDRSxjQUFjO01BQ2QsZUFBZTtNQUNmLGlCQUFpQjtJQUNuQjs7QUFFQTtNQUNFLGNBQWM7TUFDZCxlQUFlO0lBQ2pCOztBQUdGO0lBQ0UsaUJBQWlCO0lBQ2pCLFNBQVM7RUFtQlg7O0FBakJFO01BQ0UsU0FBUztNQUNULFdBQVc7SUFjYjs7QUFaRTtRQUNFLGNBQWM7UUFDZCxlQUFlO1FBQ2YsZ0JBQWdCO1FBQ2hCLGlCQUFpQjtNQUNuQjs7QUFFQTtRQUNFLGNBQWM7UUFDZCxlQUFlO1FBQ2YsaUJBQWlCO01BQ25COztBQUlKO0lBQ0UsU0FBUztJQUNULGNBQWM7RUFLaEI7O0FBSEU7TUFDRSxjQUFjO0lBQ2hCOztBQUdGO0lBQ0UsV0FBVztFQUNiOztBQUVBO0lBQ0UsbUJBQW1CO0lBQ25CLDhCQUE4QjtJQUM5QixtQkFBbUI7SUFDbkIsZ0NBQWdDO0lBQ2hDLGdDQUFnQztJQUNoQyxlQUFlO0lBQ2Ysa0JBQWtCO0lBQ2xCLFlBQVk7RUFRZDs7QUFORTtNQUNFLFdBQVc7TUFDWCxlQUFlO01BQ2YsZ0JBQWdCO01BQ2hCLGlCQUFpQjtJQUNuQjs7QUFHRjtJQUNFLGlCQUFpQjtFQUNuQjs7QUFFQTtJQUNFLFdBQVc7RUFDYjs7QUFHRjtFQUNFLHNCQUFzQjtFQUN0QiwrREFBMEU7RUFDMUUsZ0JBQWdCO0VBQ2hCLGtCQUFrQjtBQUNwQjs7QUFFQTtFQUNFLHNCQUFzQjtFQUN0QiwrREFBeUU7RUFDekUsZ0JBQWdCO0VBQ2hCLGtCQUFrQjtBQUNwQjs7QUFFQTtFQUNFLHNCQUFzQjtFQUN0QiwrREFBMkU7RUFDM0UsZ0JBQWdCO0VBQ2hCLGtCQUFrQjtBQUNwQiIsInNvdXJjZXNDb250ZW50IjpbIkBrZXlmcmFtZXMgc2xpZGUtaW4tb25lLXRhcCB7XG4gIGZyb20ge1xuICAgIHRyYW5zZm9ybTogdHJhbnNsYXRlWSg4MHB4KTtcbiAgfVxuICB0byB7XG4gICAgdHJhbnNmb3JtOiB0cmFuc2xhdGVZKDBweCk7XG4gIH1cbn1cblxuLnRydXN0LWhpZGUtZ3JhY2VmdWxseSB7XG4gIG9wYWNpdHk6IDA7XG59XG5cbi50cnVzdC13YWxsZXQtb25lLXRhcCB7XG4gIC5oaWRkZW4ge1xuICAgIGRpc3BsYXk6IG5vbmU7XG4gIH1cblxuICAuc2VtaWJvbGQge1xuICAgIGZvbnQtd2VpZ2h0OiA1MDA7XG4gIH1cblxuICAuYmluYW5jZS1wbGV4IHtcbiAgICBmb250LWZhbWlseTogJ0JpbmFuY2UnO1xuICB9XG5cbiAgLnJvdW5kZWQtZnVsbCB7XG4gICAgYm9yZGVyLXJhZGl1czogNTAlO1xuICB9XG5cbiAgLmZsZXgge1xuICAgIGRpc3BsYXk6IGZsZXg7XG4gIH1cblxuICAuZmxleC1jb2wge1xuICAgIGZsZXgtZGlyZWN0aW9uOiBjb2x1bW47XG4gIH1cblxuICAuaXRlbXMtY2VudGVyIHtcbiAgICBhbGlnbi1pdGVtczogY2VudGVyO1xuICB9XG5cbiAgLnNwYWNlLWJldHdlZW4ge1xuICAgIGp1c3RpZnktY29udGVudDogc3BhY2UtYmV0d2VlbjtcbiAgfVxuXG4gIC5qdXN0aWZ5LWNlbnRlciB7XG4gICAganVzdGlmeS1jb250ZW50OiBjZW50ZXI7XG4gIH1cblxuICAudy1mdWxsIHtcbiAgICB3aWR0aDogMTAwJTtcbiAgfVxuXG4gIC5ib3gge1xuICAgIHRyYW5zaXRpb246IGFsbCAwLjVzIGN1YmljLWJlemllcigwLCAwLCAwLCAxLjQzKTtcbiAgICBhbmltYXRpb246IHNsaWRlLWluLW9uZS10YXAgMC41cyBjdWJpYy1iZXppZXIoMCwgMCwgMCwgMS40Myk7XG4gICAgd2lkdGg6IDM4NHB4O1xuICAgIGJvcmRlci1yYWRpdXM6IDE1cHg7XG4gICAgYmFja2dyb3VuZDogI2ZmZjtcbiAgICBib3gtc2hhZG93OiAwcHggMnB4IDRweCAwcHggcmdiYSgwLCAwLCAwLCAwLjI1KTtcbiAgICBwb3NpdGlvbjogZml4ZWQ7XG4gICAgcmlnaHQ6IDMwcHg7XG4gICAgYm90dG9tOiAzMHB4O1xuICAgIHotaW5kZXg6IDEwMjA7XG4gIH1cblxuICAuaGVhZGVyIHtcbiAgICBnYXA6IDE1cHg7XG4gICAgYm9yZGVyLWJvdHRvbTogMXB4IHNvbGlkICNlNmU2ZTY7XG4gICAgcGFkZGluZzogMTBweCAxOHB4O1xuXG4gICAgLmxlZnQtaXRlbXMge1xuICAgICAgZ2FwOiAxNXB4O1xuICAgIH1cblxuICAgIC50aXRsZSB7XG4gICAgICBjb2xvcjogIzFlMjMyOTtcbiAgICAgIGZvbnQtc2l6ZTogMThweDtcbiAgICAgIGZvbnQtd2VpZ2h0OiA2MDA7XG4gICAgICBsaW5lLWhlaWdodDogMjhweDtcbiAgICB9XG5cbiAgICAuc3VidGl0bGUge1xuICAgICAgY29sb3I6ICM0NzRkNTc7XG4gICAgICBmb250LXNpemU6IDE0cHg7XG4gICAgICBsaW5lLWhlaWdodDogMjBweDtcbiAgICB9XG5cbiAgICAuY2xvc2Uge1xuICAgICAgY29sb3I6ICMxZTIzMjk7XG4gICAgICBjdXJzb3I6IHBvaW50ZXI7XG4gICAgfVxuICB9XG5cbiAgLmJvZHkge1xuICAgIHBhZGRpbmc6IDlweCAxOHB4O1xuICAgIGdhcDogMTBweDtcblxuICAgIC5yaWdodC1pdGVtcyB7XG4gICAgICBnYXA6IDEwcHg7XG4gICAgICB3aWR0aDogMTAwJTtcblxuICAgICAgLndhbGxldC10aXRsZSB7XG4gICAgICAgIGNvbG9yOiAjMWUyMzI5O1xuICAgICAgICBmb250LXNpemU6IDE2cHg7XG4gICAgICAgIGZvbnQtd2VpZ2h0OiA2MDA7XG4gICAgICAgIGxpbmUtaGVpZ2h0OiAyMHB4O1xuICAgICAgfVxuXG4gICAgICAud2FsbGV0LXN1YnRpdGxlIHtcbiAgICAgICAgY29sb3I6ICM0NzRkNTc7XG4gICAgICAgIGZvbnQtc2l6ZTogMTRweDtcbiAgICAgICAgbGluZS1oZWlnaHQ6IDIwcHg7XG4gICAgICB9XG4gICAgfVxuICB9XG5cbiAgLmNvbm5lY3QtaW5kaWNhdG9yIHtcbiAgICBnYXA6IDE1cHg7XG4gICAgcGFkZGluZzogOHB4IDA7XG5cbiAgICAuZmxvdy1pY29uIHtcbiAgICAgIGNvbG9yOiAjNDc0ZDU3O1xuICAgIH1cbiAgfVxuXG4gIC5sb2FkaW5nLWNvbG9yIHtcbiAgICBjb2xvcjogI2ZmZjtcbiAgfVxuXG4gIC5idXR0b24ge1xuICAgIGJvcmRlci1yYWRpdXM6IDUwcHg7XG4gICAgb3V0bGluZTogMnB4IHNvbGlkIHRyYW5zcGFyZW50O1xuICAgIG91dGxpbmUtb2Zmc2V0OiAycHg7XG4gICAgYmFja2dyb3VuZC1jb2xvcjogcmdiKDUsIDAsIDI1NSk7XG4gICAgYm9yZGVyLWNvbG9yOiByZ2IoMjI5LCAyMzEsIDIzNSk7XG4gICAgY3Vyc29yOiBwb2ludGVyO1xuICAgIHRleHQtYWxpZ246IGNlbnRlcjtcbiAgICBoZWlnaHQ6IDQ1cHg7XG5cbiAgICAuYnV0dG9uLXRleHQge1xuICAgICAgY29sb3I6ICNmZmY7XG4gICAgICBmb250LXNpemU6IDE2cHg7XG4gICAgICBmb250LXdlaWdodDogNjAwO1xuICAgICAgbGluZS1oZWlnaHQ6IDIwcHg7XG4gICAgfVxuICB9XG5cbiAgLmZvb3RlciB7XG4gICAgbWFyZ2luOiAyMHB4IDMwcHg7XG4gIH1cblxuICAuY2hlY2staWNvbiB7XG4gICAgY29sb3I6ICNmZmY7XG4gIH1cbn1cblxuQGZvbnQtZmFjZSB7XG4gIGZvbnQtZmFtaWx5OiAnQmluYW5jZSc7XG4gIHNyYzogdXJsKCcuL2ZvbnRzL2JpbmFuY2VQbGV4L0JpbmFuY2VQbGV4LVJlZ3VsYXIub3RmJykgZm9ybWF0KCdvcGVudHlwZScpO1xuICBmb250LXdlaWdodDogNDAwO1xuICBmb250LXN0eWxlOiBub3JtYWw7XG59XG5cbkBmb250LWZhY2Uge1xuICBmb250LWZhbWlseTogJ0JpbmFuY2UnO1xuICBzcmM6IHVybCgnLi9mb250cy9iaW5hbmNlUGxleC9CaW5hbmNlUGxleC1NZWRpdW0ub3RmJykgZm9ybWF0KCdvcGVudHlwZScpO1xuICBmb250LXdlaWdodDogNTAwO1xuICBmb250LXN0eWxlOiBub3JtYWw7XG59XG5cbkBmb250LWZhY2Uge1xuICBmb250LWZhbWlseTogJ0JpbmFuY2UnO1xuICBzcmM6IHVybCgnLi9mb250cy9iaW5hbmNlUGxleC9CaW5hbmNlUGxleC1TZW1pQm9sZC5vdGYnKSBmb3JtYXQoJ29wZW50eXBlJyk7XG4gIGZvbnQtd2VpZ2h0OiA2MDA7XG4gIGZvbnQtc3R5bGU6IG5vcm1hbDtcbn1cbiJdLCJzb3VyY2VSb290IjoiIn0= */</style></head>
 <body>
     <div class="main-container">
         <div class="header-container">
             <div class="header-title-container">
-                <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Proxy Checker Logo" class="header-logo">
+                <img src="/static/img/logo.png" alt="Proxy Checker Logo" class="header-logo">
                 <h2 class="mb-0">Proxy Checker</h2>
             </div>
             <div class="header-buttons">
@@ -378,59 +558,34 @@
                     <span class="sun-icon">☀️ Light</span>
                     <span class="moon-icon">🌙 Dark</span>
                 </button>
-                {% if current_user.is_authenticated and current_user.is_admin %}
-                    <a href="{{ url_for('admin') }}" class="btn btn-outline-primary btn-sm">Admin Panel</a>
-                {% endif %}
-                {% if current_user.is_authenticated %}
-                    <a href="{{ url_for('logout') }}" class="btn btn-outline-secondary btn-sm">Logout ({{ current_user.username }})</a>
-                {% endif %}
+                
+                
+                    <a href="/logout" class="btn btn-outline-secondary btn-sm">Logout (Work)</a>
+                
             </div>
         </div>
 
         <div class="content-card">
-            {% if announcement %}
-            <div class="alert alert-primary alert-dismissible fade show" role="alert">
-                <strong>Notice:</strong> {{ announcement }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-            </div>
-            {% endif %}
+            
 
-            {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    {% for category, message in messages %}
-                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-                        {{ message }}
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                    </div>
-                    {% endfor %}
-                {% endif %}
-            {% endwith %}
+            
+                
+            
 
-            {% if message is defined and message %}
-            <div class="alert alert-info">{{ message }}</div>
-            {% endif %}
+            
 
-            {% if system_paused %}
-            <div class="alert alert-danger text-center p-5">
-                <h3>⚠️ System Halted</h3>
-                <p>Too many consecutive failures detected. Checking is currently paused.</p>
-                <p>Please contact the administrator.</p>
-            </div>
-            {% else %}
+            
             <div class="accordion" id="proxyAccordion">
                 <div class="accordion-item">
                     <h2 class="accordion-header" id="formHeading">
-                       <button class="accordion-button {% if results is defined and results %}collapsed{% endif %}" type="button"
-                                data-bs-toggle="collapse" data-bs-target="#proxyForm"
-                                aria-expanded="{{ 'false' if results is defined and results else 'true' }}" aria-controls="proxyForm">
-                            Paste Proxies (Max {{ max_paste }} Lines)
+                       <button class="accordion-button " type="button" data-bs-toggle="collapse" data-bs-target="#proxyForm" aria-expanded="true" aria-controls="proxyForm">
+                            Paste Proxies (Max 30 Lines)
                         </button>
                     </h2>
-                    <div id="proxyForm" class="accordion-collapse collapse {% if results is not defined or not results %}show{% endif %}"
-                         aria-labelledby="formHeading" data-bs-parent="#proxyAccordion">
+                    <div id="proxyForm" class="accordion-collapse collapse show" aria-labelledby="formHeading" data-bs-parent="#proxyAccordion">
                         <div class="accordion-body">
                             
-                            {% if current_user.can_fetch %}
+                            
                             <div class="row g-2 align-items-center mb-3">
                                 <div class="col-md-12">
                                     <label class="form-label mb-1" style="font-size: 0.75rem; color: var(--text-muted);">Fetch ABC Proxies by State</label>
@@ -449,74 +604,22 @@
                                         </button>
                                         <button type="button" class="btn btn-outline-primary btn-sm" onclick="fetchStateProxies('california')">
                                             California
-                                            </button>
-                                       <select class="form-select form-select-sm w-auto btn btn-outline-secondary"
-        onchange="fetchStateProxies(this.value)">
-    <option value="">All States</option>
-    <option value="alabama">Alabama</option>
-    <option value="alaska">Alaska</option>
-    <option value="arizona">Arizona</option>
-    <option value="arkansas">Arkansas</option>
-    <option value="california">California</option>
-    <option value="colorado">Colorado</option>
-    <option value="connecticut">Connecticut</option>
-    <option value="delaware">Delaware</option>
-    <option value="florida">Florida</option>
-    <option value="georgia">Georgia</option>
-    <option value="hawaii">Hawaii</option>
-    <option value="idaho">Idaho</option>
-    <option value="illinois">Illinois</option>
-    <option value="indiana">Indiana</option>
-    <option value="iowa">Iowa</option>
-    <option value="kansas">Kansas</option>
-    <option value="kentucky">Kentucky</option>
-    <option value="louisiana">Louisiana</option>
-    <option value="maine">Maine</option>
-    <option value="maryland">Maryland</option>
-    <option value="massachusetts">Massachusetts</option>
-    <option value="michigan">Michigan</option>
-    <option value="minnesota">Minnesota</option>
-    <option value="mississippi">Mississippi</option>
-    <option value="missouri">Missouri</option>
-    <option value="montana">Montana</option>
-    <option value="nebraska">Nebraska</option>
-    <option value="nevada">Nevada</option>
-    <option value="newhampshire">New Hampshire</option>
-    <option value="newjersey">New Jersey</option>
-    <option value="newmexico">New Mexico</option>
-    <option value="newyork">New York</option>
-    <option value="northcarolina">North Carolina</option>
-    <option value="northdakota">North Dakota</option>
-    <option value="ohio">Ohio</option>
-    <option value="oklahoma">Oklahoma</option>
-    <option value="oregon">Oregon</option>
-    <option value="pennsylvania">Pennsylvania</option>
-    <option value="rhodeisland">Rhode Island</option>
-    <option value="southcarolina">South Carolina</option>
-    <option value="southdakota">South Dakota</option>
-    <option value="tennessee">Tennessee</option>
-    <option value="texas">Texas</option>
-    <option value="utah">Utah</option>
-    <option value="vermont">Vermont</option>
-    <option value="virginia">Virginia</option>
-    <option value="washington">Washington</option>
-    <option value="westvirginia">West Virginia</option>
-    <option value="wisconsin">Wisconsin</option>
-    <option value="wyoming">Wyoming</option>
-</select>
-</button>
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="fetchStateProxies('')">
+                                            All States
+                                        </button>
                                     </div>
                                 </div>
                                 <div class="col-md-12 d-flex justify-content-end gap-2 mt-2">
                                     <button type="button" id="poolBtn" class="btn btn-info btn-sm text-white" onclick="fetchPoolProxies()">
                                      📦SPSCC
     </button>
-    <button type="button" id="sxBtn" class="btn btn-warning btn-sm" onclick="fetchSXProxies()" disabled>
+    <button type="button" id="sxBtn" class="btn btn-warning btn-sm" onclick="fetchSXProxies()" disabled="">
         🌐SX.ORG
                                     </button>
                                 </div>
                             </div>
-                            {% endif %}
+                            
 
                             <form method="POST" id="proxyFormElement">
                                 <input type="hidden" name="proxy_origin" id="proxy_origin" value="paste">
@@ -526,80 +629,26 @@
                                     <div class="textarea-container">
                                         <textarea name="proxytext" id="proxytext_hidden" style="display: none;"></textarea>
                                         
-                                        <textarea id="proxytext" class="form-control textarea-box"
-                                                  placeholder="{% if paste_disabled_for_user %}Manual pasting is disabled. Please use the fetch buttons above.{% else %}Paste proxies here (e.g., host:port:user:pass)...{% endif %}"
-                                                  oninput="{% if not paste_disabled_for_user %}updateProxyCounter(this){% endif %}"
-                                                  {% if paste_disabled_for_user %}readonly{% endif %}></textarea>
-                                        <div class="proxy-counter" id="proxyCounter">0/{{ max_paste }}</div>
+                                        <textarea id="proxytext" class="form-control textarea-box" placeholder="Paste proxies here (e.g., host:port:user:pass)..." oninput="updateProxyCounter(this)"></textarea>
+                                        <div class="proxy-counter counter-ok" id="proxyCounter">0/30</div>
                                     </div>
                                 </div>
-                                <button type="submit" id="submitBtn" class="btn btn-primary w-100">Check Proxies</button>
+                                <button type="submit" id="submitBtn" class="btn btn-primary w-100" disabled="">Check Proxies</button>
                             </form>
                         </div>
                     </div>
                 </div>
             </div>
-            {% endif %}
+            
 
-            {% if results is defined and results is not none %} 
-            <hr class="my-4">
-            <h5 class="mb-3">✅ Good Proxies Found (Score {{ settings.FRAUD_SCORE_LEVEL }})</h5>
-            <div class="table-responsive">
-                <table class="table table-sm table-bordered table-hover">
-                    <thead class="table-light">
-                        <tr>
-                            <th style="width: 28%;">Proxy</th>
-                            <th style="width: 12%;">IP Address</th>
-                            <th style="width: 8%;">Country</th>
-                            <th style="width: 10%;">State</th>
-                            <th style="width: 10%;">City</th>
-                            <th style="width: 8%;">Postcode</th>
-                            <th style="width: 7%;" class="text-center">Score</th>
-                            <th style="width: 17%;" class="text-end">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for item in results %}
-                        <tr>
-                            <td>
-                                <span class="proxy-masked" id="proxy-{{ loop.index }}" data-full-proxy="{{ item.proxy }}">
-                                    {{ item.proxy.split(':')[0] }}:{{ item.proxy.split(':')[1] }}:********
-                                </span>
-                            </td>
-                            <td>{{ item.ip | default('N/A') }}</td>
-                            <td>{{ item.geo.country_code | default('N/A') }}</td>
-                            <td>{{ item.geo.state | default('N/A') }}</td>
-                            <td>{{ item.geo.city | default('N/A') }}</td>
-                            <td>{{ item.geo.postcode | default('N/A') }}</td>
-                            <td class="text-center">{{ item.score if item.score is not none else 'N/A' }}</td>
-                            <td class="text-end">
-                                 {% if item.used %}
-                                 <span class="badge bg-secondary me-1">USED IP</span>
-                                 {% endif %}
-                                <button class="btn btn-sm btn-outline-secondary copy-btn {% if item.used %}disabled{% endif %}"
-                                        onclick="handleCopyAndTrack('proxy-{{ loop.index }}', this, '{{ item.proxy }}', '{{ item.ip | default('') }}')"
-                                        {% if item.used %}disabled{% endif %}>
-                                    Copy
-                                </button>
-                            </td>
-                        </tr>
-                        {% else %} 
-                        <tr>
-                            <td colspan="8" class="text-center text-muted">No good proxies found in this batch.</td>
-                        </tr>
-                        {% endfor %} 
-                    </tbody>
-                </table>
-            </div>
-            <p class="mt-3 text-muted text-end">Results will clear automatically after 5 minutes.</p>
-            {% endif %}
+            
         </div>
     </div>
 
     <div id="notepad-widget">
         <div id="notepad-container" class="hidden"> <div id="notepad-header">
                 <span>Quick Notes</span>
-                <button id="notepad-close-btn">&times;</button>
+                <button id="notepad-close-btn">×</button>
             </div>
             <textarea id="notepad-textarea" placeholder="Write notes here..."></textarea>
         </div>
@@ -613,7 +662,7 @@
 
     <script>
         let trackedProxiesThisSession = new Set();
-        const MAX_LINES = {{ max_paste }};
+        const MAX_LINES = 30;
 
         // Theme functionality
         function initTheme() {
@@ -770,9 +819,7 @@
             document.getElementById('themeToggle').addEventListener('click', toggleTheme);
             const textArea = document.getElementById('proxytext');
             if(textArea) updateProxyCounter(textArea);
-            {% if results is defined and results is not none %}
-            setTimeout(() => { window.location.href = window.location.pathname; }, 300000);
-            {% endif %}
+            
             const toggleBtn = document.getElementById('notepad-toggle-btn');
             const notepad = document.getElementById('notepad-container');
             const closeBtn = document.getElementById('notepad-close-btn');
@@ -786,5 +833,5 @@
         });
     </script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-</body>
-</html>
+
+</body></html>
