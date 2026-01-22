@@ -103,6 +103,18 @@
             flex: 1;
         }
 
+        .header-title-link {
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            color: var(--text-color);
+        }
+
+        .header-title-link:hover {
+            color: var(--text-color);
+            opacity: 0.9;
+        }
+
         .header-buttons {
             display: flex;
             gap: 10px;
@@ -113,6 +125,13 @@
         .header-logo { 
             height: 80px; 
             margin-right: 15px; 
+            border-radius: 50%;
+            object-fit: cover;
+            transition: opacity 0.2s ease;
+        }
+
+        .header-title-link:hover .header-logo {
+            opacity: 0.9;
         }
 
         .textarea-box { 
@@ -399,8 +418,11 @@
     <div class="main-container">
         <div class="header-container">
             <div class="header-title-container">
-                <a href="https://imgbb.com/"><img src="https://i.ibb.co/pjSD084t/proxychecker-logo-clear.png" alt="proxychecker logo clear" border="0"></a>
-                <h2 class="mb-0">Proxy Checker</h2>
+                <!-- CLICKABLE LOGO AND TITLE THAT RETURNS TO HOMEPAGE -->
+                <a href="{{ url_for('index') }}" class="header-title-link">
+                    <img src="https://i.ibb.co/pjSD084t/proxychecker-logo-clear.png" alt="Proxy Checker Logo" class="header-logo">
+                    <h2 class="mb-0">Proxy Checker</h2>
+                </a>
             </div>
             <div class="header-buttons">
                 <button class="theme-toggle" id="themeToggle">
