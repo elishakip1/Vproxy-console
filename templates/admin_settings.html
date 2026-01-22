@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>User Activity</title>
+  <title>Admin Settings</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   
@@ -11,7 +11,6 @@
 
   <style>
     body { background-color: #f0f2f5; font-family: sans-serif; }
-    /* Sidebar Styles */
     .sidebar { min-height: 100vh; width: 250px; background: #212529; color: #fff; position: fixed; top: 0; left: 0; z-index: 1000; padding-top: 20px; transition: all 0.3s; }
     .sidebar-header { padding: 20px; text-align: center; border-bottom: 1px solid #495057; }
     
@@ -58,9 +57,9 @@
     <ul class="sidebar-nav">
         <li><a href="{{ url_for('admin') }}" class="nav-link">📊 Dashboard</a></li>
         <li><a href="{{ url_for('admin_pool') }}" class="nav-link">🏭 Proxy Pool</a></li>
-        <li><a href="{{ url_for('admin_users') }}" class="nav-link active-nav">👥 User Activity</a></li>
+        <li><a href="{{ url_for('admin_users') }}" class="nav-link">👥 User Activity</a></li>
         <li><a href="{{ url_for('admin_logs') }}" class="nav-link">📋 System Logs</a></li>
-        <li><a href="{{ url_for('admin_settings') }}" class="nav-link">⚙️ Settings</a></li>
+        <li><a href="{{ url_for('admin_settings') }}" class="nav-link active-nav">⚙️ Settings</a></li>
         <li class="mt-5"><a href="/" class="nav-link text-warning">← Back to Checker</a></li>
     </ul>
 </nav>
@@ -68,52 +67,108 @@
 <div class="content-wrapper">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <button class="btn btn-dark d-md-none" id="sidebarToggle">☰ Menu</button>
-        <h2>👥 User Activity Monitor</h2>
+        <h2>⚙️ Configuration</h2>
     </div>
 
-    <div class="card">
-        <div class="card-header bg-secondary text-white">User Statistics</div>
-        <div class="card-body p-0">
-            <div class="table-responsive">
-                <table class="table table-hover mb-0">
-                    <thead class="table-light">
-                        <tr>
-                            <th>Username</th>
-                            <th>Status</th>
-                            <th>Last Active</th>
-                            <th>Total Sessions</th>
-                            <th>API Checks</th>
-                            <th>Good Proxies</th>
-                            <th>Last Known IP</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for user in stats %}
-                        <tr>
-                            <td class="fw-bold">{{ user.username }}</td>
-                            <td>
-                                {% if user.status == 'Active' %}
-                                    <span class="badge bg-success">Active</span>
-                                {% elif user.status == 'Offline' %}
-                                    <span class="badge bg-warning text-dark">Offline (>24h)</span>
-                                {% else %}
-                                    <span class="badge bg-secondary">Inactive (>7d)</span>
-                                {% endif %}
-                            </td>
-                            <td>{{ user.last_active | replace('T', ' ') | truncate(19, True, '') }}</td>
-                            <td>{{ user.total_sessions }}</td>
-                            <td>{{ user.total_api_calls }}</td>
-                            <td class="text-success fw-bold">{{ user.total_good_proxies }}</td>
-                            <td class="small text-muted">{{ user.last_ip }}</td>
-                        </tr>
-                        {% else %}
-                        <tr><td colspan="7" class="text-center">No activity logs found yet.</td></tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+            <div class="alert alert-{{ category }} fade show">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <form method="POST">
+        <div class="row">
+            <div class="col-md-3">
+                <div class="list-group" id="list-tab" role="tablist">
+                    <a class="list-group-item list-group-item-action active" id="list-general-list" data-bs-toggle="list" href="#list-general" role="tab">General</a>
+                    <a class="list-group-item list-group-item-action" id="list-api-list" data-bs-toggle="list" href="#list-api" role="tab">API Configuration</a>
+                    <a class="list-group-item list-group-item-action" id="list-proxies-list" data-bs-toggle="list" href="#list-proxies" role="tab">Proxy Providers</a>
+                </div>
+            </div>
+            <div class="col-md-9">
+                <div class="tab-content" id="nav-tabContent">
+                    
+                    <div class="tab-pane fade show active" id="list-general" role="tabpanel">
+                        <div class="card">
+                            <div class="card-header bg-primary text-white">General Settings</div>
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <label class="form-label">Max Proxies Per Check</label>
+                                    <input type="number" class="form-control" name="max_paste" value="{{ settings.MAX_PASTE }}">
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Max Fraud Score (0-100)</label>
+                                    <input type="number" class="form-control" name="fraud_score_level" value="{{ settings.FRAUD_SCORE_LEVEL }}">
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Concurrent Workers</label>
+                                    <input type="number" class="form-control" name="max_workers" value="{{ settings.MAX_WORKERS }}">
+                                </div>
+                                <hr>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" name="force_fetch_for_users" value="TRUE" id="forceFetch" {% if settings.FORCE_FETCH_FOR_USERS == 'TRUE' %}checked{% endif %}>
+                                    <label class="form-check-label" for="forceFetch">Force Users to Fetch (Disable Pasting)</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tab-pane fade" id="list-api" role="tabpanel">
+                        <div class="card">
+                            <div class="card-header bg-info text-white">Scamalytics API</div>
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <label class="form-label">Username(s)</label>
+                                    <input type="text" class="form-control" name="scamalytics_username" value="{{ settings.SCAMALYTICS_USERNAME }}">
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">API Key(s)</label>
+                                    <input type="text" class="form-control" name="scamalytics_api_key" value="{{ settings.SCAMALYTICS_API_KEY }}">
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">API URL</label>
+                                    <input type="text" class="form-control" name="scamalytics_api_url" value="{{ settings.SCAMALYTICS_API_URL }}">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tab-pane fade" id="list-proxies" role="tabpanel">
+                        <div class="card mb-3 border-success">
+                            <div class="card-header bg-success text-white">Proxy Generation URLs</div>
+                            <div class="card-body">
+                                <label class="form-label">ABC Generation URL</label>
+                                <input type="text" class="form-control mb-3" name="abc_generation_url" value="{{ settings.ABC_GENERATION_URL }}">
+                                
+                                <label class="form-label">SX.ORG Generation URL</label>
+                                <input type="text" class="form-control" name="sx_generation_url" value="{{ settings.SX_GENERATION_URL }}">
+                            </div>
+                        </div>
+                        
+                        <div class="card mb-3 border-warning">
+                            <div class="card-header bg-warning text-dark">Pool Reset URLs</div>
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <label class="form-label">PyProxy Reset URL</label>
+                                    <input type="text" class="form-control" name="pyproxy_reset_url" value="{{ settings.PYPROXY_RESET_URL }}">
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">PiaProxy Reset URL</label>
+                                    <input type="text" class="form-control" name="piaproxy_reset_url" value="{{ settings.PIAPROXY_RESET_URL }}">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+                <div class="mt-4 text-end">
+                    <button type="submit" class="btn btn-success px-4">Save All Changes</button>
+                </div>
             </div>
         </div>
-    </div>
+    </form>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
