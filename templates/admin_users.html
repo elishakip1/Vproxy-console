@@ -19,6 +19,9 @@
       display: inline-block;
       text-decoration: none;
       margin-bottom: 15px;
+      background-color: white;
+      border-radius: 50%;
+      padding: 5px;
     }
     
     .logo-link img {
@@ -27,6 +30,7 @@
       border-radius: 50%;
       object-fit: cover;
       transition: opacity 0.2s ease;
+      display: block;
     }
     
     .logo-link:hover img {
@@ -45,11 +49,11 @@
 
 <nav class="sidebar" id="sidebar">
     <div class="sidebar-header">
-        <!-- CLICKABLE LOGO THAT RETURNS TO HOMEPAGE -->
+        <!-- CLICKABLE LOGO WITH WHITE BACKGROUND -->
         <a href="{{ url_for('index') }}" class="logo-link">
             <img src="https://i.ibb.co/pjSD084t/proxychecker-logo-clear.png" alt="Proxy Checker Logo">
         </a>
-        <h5 class="text-white">Admin Panel</h5>
+        <h5 class="text-white mt-2">Admin Panel</h5>
     </div>
     <ul class="sidebar-nav">
         <li><a href="{{ url_for('admin') }}" class="nav-link">📊 Dashboard</a></li>
