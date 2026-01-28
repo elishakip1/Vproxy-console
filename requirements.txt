@@ -5,4 +5,3 @@ gunicorn==21.2.0
 pytz==2023.3
 supabase==1.0.3
 urllib3==1.26.16
-pytz==2023.3
