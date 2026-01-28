@@ -1,0 +1,18 @@
+[
+  {
+    "id": 1,
+    "username": "EL",
+    "password": "ADMIN123",
+    "role": "admin",
+    "can_fetch": true,
+    "daily_api_limit": 0
+  },
+  {
+    "id": 2,
+    "username": "Work2",
+    "password": "password",
+    "role": "user",
+    "can_fetch": true,
+    "daily_api_limit": 0
+  }
+]
