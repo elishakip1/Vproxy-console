@@ -12,7 +12,7 @@
         .logo-link img { height: 70px; width: 70px; border-radius: 50%; object-fit: cover; display: block; }
         .sidebar-nav { list-style: none; padding: 0; margin-top: 20px; }
         .nav-link { display: block; padding: 15px 20px; color: rgba(255,255,255,.75); text-decoration: none; border-left: 4px solid transparent; }
-        .nav-link:hover, .nav-link.active { color: #fff; background: rgba(255,255,255,.1); border-left-color: #0d6efd; }
+        .nav-link.active { color: #fff; background: rgba(255,255,255,.1); border-left-color: #0d6efd; }
         .content-wrapper { margin-left: 250px; padding: 30px; }
     </style>
 </head>
@@ -25,11 +25,6 @@
     <ul class="sidebar-nav">
         <li><a href="{{ url_for('admin') }}" class="nav-link">📊 Dashboard</a></li>
         <li><a href="{{ url_for('admin_pool') }}" class="nav-link active">🏭 Proxy Pool</a></li>
-        <li><a href="{{ url_for('admin_users') }}" class="nav-link">👥 User Activity</a></li>
-        <li><a href="{{ url_for('admin_users_manage') }}" class="nav-link">⚙️ Manage Users</a></li>
-        <li><a href="{{ url_for('admin_logs') }}" class="nav-link">📋 System Logs</a></li>
-        <li><a href="{{ url_for('admin_settings') }}" class="nav-link">⚙️ Settings</a></li>
-        <li class="mt-5"><a href="/" class="nav-link text-warning">← Back to Checker</a></li>
     </ul>
 </nav>
 <div class="content-wrapper">
@@ -44,12 +39,16 @@
         <form method="POST">
             <textarea name="bulk_proxies" class="form-control mb-2" rows="5" placeholder="host:port:user:pass"></textarea>
             <div class="d-flex gap-2">
-                <select name="provider" class="form-select w-auto">
-                    <option value="pyproxy">PyProxy</option>
-                    <option value="piaproxy">PiaProxy</option>
-                </select>
+                <select name="provider" class="form-select w-auto"><option value="pyproxy">PyProxy</option><option value="piaproxy">PiaProxy</option></select>
                 <button class="btn btn-primary">Add to Pool</button>
             </div>
+        </form>
+    </div>
+    <div class="card p-4 border-0 shadow-sm">
+        <form method="POST">
+            <h5>Wipe Pool</h5>
+            <select name="clear_target" class="form-select w-auto d-inline"><option value="all">Entire Pool</option><option value="pyproxy">PyProxy Only</option><option value="piaproxy">PiaProxy Only</option></select>
+            <button name="clear_pool" class="btn btn-danger" onclick="return confirm('Clear pool?')">Wipe Selected</button>
         </form>
     </div>
 </div>
