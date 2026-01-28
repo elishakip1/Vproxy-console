@@ -250,6 +250,8 @@ def clear_proxy_pool(provider=None):
 
 # --- USER MANAGEMENT FUNCTIONS ---
 
+# --- USER MANAGEMENT FUNCTIONS ---
+
 def get_all_users():
     """Get all users from database"""
     if not supabase: return []
@@ -350,7 +352,7 @@ def init_default_users():
     try:
         users = get_all_users()
         if not users:
-            # Create default admin user
+            # Create default admin user (only admin, no STONES or Work2)
             create_user("EL", "ADMIN123", "admin", True, 0)
             return True
         return False
