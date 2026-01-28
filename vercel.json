@@ -1,18 +1,10 @@
 {
   "builds": [
     {
-      "src": "app.py",
+      "src": "api/app.py",
       "use": "@vercel/python",
       "config": {
-        "runtime": "python3.11",
-        "maxLambdaSize": "15mb",
-        "includeFiles": [
-          "templates/**",
-          "static/**",
-          "*.py",
-          "requirements.txt",
-          "runtime.txt"
-        ]
+        "maxLambdaSize": "15mb"
       }
     }
   ],
@@ -25,8 +17,28 @@
       "dest": "/static/$1"
     },
     {
+      "src": "/favicon.ico",
+      "dest": "/static/img/favicon.ico"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "dest": "/static/img/apple-touch-icon.png"
+    },
+    {
+      "src": "/favicon-32x32.png",
+      "dest": "/static/img/favicon-32x32.png"
+    },
+    {
+      "src": "/favicon-16x16.png",
+      "dest": "/static/img/favicon-16x16.png"
+    },
+    {
+      "src": "/site.webmanifest",
+      "dest": "/static/img/site.webmanifest"
+    },
+    {
       "src": "/(.*)",
-      "dest": "app.py"
+      "dest": "api/app.py"
     }
   ],
   "env": {
