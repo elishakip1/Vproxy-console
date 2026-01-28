@@ -62,7 +62,7 @@ def add_used_ip(ip, proxy, username="Unknown"):
 def delete_used_ip(ip):
     if not supabase: return False
     try:
-        supabase.table('used_proxies').delete().eq("ip", ip).execute()
+        supabase.table('used_proxies').delete().eq('ip', ip).execute()
         return True
     except Exception: return False
 
@@ -84,7 +84,6 @@ def log_bad_proxy(proxy, ip, score):
     try:
         exists = supabase.table('bad_proxies').select("id").eq("ip", ip).execute()
         if exists.data: return True
-
         supabase.table('bad_proxies').insert({"proxy": proxy, "ip": ip, "score": score}).execute()
         return True
     except Exception: return False
@@ -151,33 +150,30 @@ def get_user_stats_summary():
         return []
 
 def get_daily_api_usage_for_user(username):
-    """Get total API calls for a user today"""
     if not supabase: return 0
     try:
         today = datetime.utcnow().strftime("%Y-%m-%d")
         response = supabase.table('api_usage').select("api_calls_count, created_at").eq("username", username).execute()
         total = 0
         for row in response.data:
-            created_at = row.get('created_at', '')
-            if created_at.startswith(today):
+            if row.get('created_at', '').startswith(today):
                 total += int(row.get('api_calls_count', 0))
         return total
     except Exception as e:
-        logger.error(f"Error getting daily API usage: {e}")
+        logger.error(f"Error getting daily usage: {e}")
         return 0
 
 def delete_user_activity_logs(username):
-    """Wipes all usage and system logs for a specific user to reset their stats."""
     if not supabase: return False
     try:
         supabase.table('api_usage').delete().eq('username', username).execute()
         supabase.table('system_logs').delete().eq('username', username).execute()
         return True
     except Exception as e:
-        logger.error(f"Error clearing logs for {username}: {e}")
+        logger.error(f"Error clearing logs: {e}")
         return False
 
-# --- DYNAMIC BUTTON MANAGEMENT ---
+# --- DYNAMIC BUTTONS ---
 def get_active_fetch_buttons():
     if not supabase: return []
     try:
@@ -206,19 +202,17 @@ def delete_fetch_button(btn_id):
         return True
     except: return False
 
-# --- API CREDITS MANAGEMENT ---
+# --- API CREDITS ---
 def update_api_credits(used, remaining):
+    """Update API credit settings in DB."""
     if not supabase: return False
     try:
-        supabase.table('settings').upsert({"key": "API_CREDITS_USED", "value": str(used)}).execute()
-        supabase.table('settings').upsert({"key": "API_CREDITS_REMAINING", "value": str(remaining)}).execute()
+        update_setting("API_CREDITS_USED", str(used))
+        update_setting("API_CREDITS_REMAINING", str(remaining))
         return True
-    except Exception as e:
-        logger.error(f"Error updating API credits: {e}")
-        return False
+    except: return False
 
-# --- PROXY POOL FUNCTIONS ---
-
+# --- PROXY POOL ---
 def add_bulk_proxies(proxy_list, provider="manual"):
     if not supabase or not proxy_list: return 0
     data = [{"proxy": p.strip(), "provider": provider} for p in proxy_list if p.strip()]
@@ -228,15 +222,14 @@ def add_bulk_proxies(proxy_list, provider="manual"):
         try:
             supabase.table('proxy_pool').upsert(chunk, on_conflict='proxy', ignore_duplicates=True).execute()
             total_added += len(chunk)
-        except Exception as e: logger.error(f"Error adding bulk proxies: {e}")
+        except: pass
     return total_added
 
 def get_random_proxies_from_pool(limit=100):
     if not supabase: return []
     try:
         response = supabase.rpc('get_random_proxies', {'limit_count': limit}).execute()
-        proxies = [r['proxy'] for r in response.data]
-        return proxies
+        return [r['proxy'] for r in response.data]
     except Exception as e:
         logger.error(f"Error fetching from pool: {e}")
         return []
@@ -247,18 +240,11 @@ def get_pool_stats():
     def safe_count(query):
         try:
             res = query.limit(1).execute()
-            if hasattr(res, 'count') and res.count is not None:
-                return res.count
-            return 0
-        except Exception as e:
-            logger.error(f"Count error: {e}")
-            return 0
-    try:
-        stats["total"] = safe_count(supabase.table('proxy_pool').select("id", count="exact"))
-        stats["pyproxy"] = safe_count(supabase.table('proxy_pool').select("id", count="exact").eq('provider', 'pyproxy'))
-        stats["piaproxy"] = safe_count(supabase.table('proxy_pool').select("id", count="exact").eq('provider', 'piaproxy'))
-    except Exception as e:
-        logger.error(f"Pool stats error: {e}")
+            return res.count if hasattr(res, 'count') and res.count is not None else 0
+        except: return 0
+    stats["total"] = safe_count(supabase.table('proxy_pool').select("id", count="exact"))
+    stats["pyproxy"] = safe_count(supabase.table('proxy_pool').select("id", count="exact").eq('provider', 'pyproxy'))
+    stats["piaproxy"] = safe_count(supabase.table('proxy_pool').select("id", count="exact").eq('provider', 'piaproxy'))
     return stats
 
 def get_pool_preview(provider, limit=50):
@@ -266,92 +252,64 @@ def get_pool_preview(provider, limit=50):
     try:
         res = supabase.table('proxy_pool').select("proxy, created_at").eq('provider', provider).order('created_at', desc=True).limit(limit).execute()
         return res.data
-    except Exception as e:
-        logger.error(f"Preview fetch error: {e}")
-        return []
+    except: return []
 
 def clear_proxy_pool(provider=None):
     if not supabase: return False
     try:
         query = supabase.table('proxy_pool').delete()
-        if provider and provider != 'all': 
-            query = query.eq('provider', provider)
-        else: 
-            query = query.neq('id', 0) 
+        if provider and provider != 'all': query = query.eq('provider', provider)
+        else: query = query.neq('id', 0) 
         query.execute()
         return True
-    except Exception as e: logger.error(f"Error clearing pool: {e}"); return False
+    except: return False
 
-# --- USER MANAGEMENT FUNCTIONS ---
-
+# --- USER MANAGEMENT ---
 def get_all_users():
     if not supabase: return []
     try:
         response = supabase.table('users').select("*").order('id').execute()
         return response.data
-    except Exception as e:
-        logger.error(f"Error fetching users: {e}")
-        return []
+    except: return []
 
 def get_user_by_username(username):
     if not supabase: return None
     try:
         response = supabase.table('users').select("*").eq('username', username).execute()
-        if response.data:
-            return response.data[0]
-        return None
-    except Exception as e:
-        logger.error(f"Error fetching user {username}: {e}")
-        return None
+        return response.data[0] if response.data else None
+    except: return None
 
 def create_user(username, password, role="user", can_fetch=False, daily_api_limit=0):
     if not supabase: return False
     try:
-        existing = get_user_by_username(username)
-        if existing: return False
-        all_users = get_all_users()
-        new_id = max([u['id'] for u in all_users]) + 1 if all_users else 1
-        user_data = {
-            "id": new_id, "username": username, "password": password, 
-            "role": role, "can_fetch": can_fetch, "daily_api_limit": daily_api_limit
-        }
-        supabase.table('users').insert(user_data).execute()
+        if get_user_by_username(username): return False
+        all_u = get_all_users()
+        new_id = max([u['id'] for u in all_u]) + 1 if all_u else 1
+        supabase.table('users').insert({"id": new_id, "username": username, "password": password, "role": role, "can_fetch": can_fetch, "daily_api_limit": daily_api_limit}).execute()
         return True
-    except Exception as e:
-        logger.error(f"Error creating user {username}: {e}")
-        return False
+    except: return False
 
 def update_user(user_id, **updates):
     if not supabase: return False
     try:
-        if user_id == 1 and 'role' in updates and updates['role'] != 'admin':
-            return False
+        if user_id == 1 and 'role' in updates and updates['role'] != 'admin': return False
         clean_updates = {k: v for k, v in updates.items() if v is not None}
-        if clean_updates:
-            supabase.table('users').update(clean_updates).eq('id', user_id).execute()
+        if clean_updates: supabase.table('users').update(clean_updates).eq('id', user_id).execute()
         return True
-    except Exception as e:
-        logger.error(f"Error updating user {user_id}: {e}")
-        return False
+    except: return False
 
 def delete_user(user_id):
-    if not supabase: return False
+    if not supabase or user_id == 1: return False
     try:
-        if user_id == 1: return False
         supabase.table('users').delete().eq('id', user_id).execute()
         return True
-    except Exception as e:
-        logger.error(f"Error deleting user {user_id}: {e}")
-        return False
+    except: return False
 
 def init_default_users():
     if not supabase: return False
     try:
-        users = get_all_users()
-        if not users:
+        if not get_all_users():
             create_user("EL", "ADMIN123", "admin", True, 0)
             return True
         return False
-    except Exception as e:
-        logger.error(f"Error initializing default users: {e}")
-        return False
+    except: return False
