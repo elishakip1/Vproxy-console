@@ -974,3 +974,7 @@ if __name__ == "__main__":
     init_default_users()
     add_log_entry("INFO", "Server starting up.")
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False)
+else:
+    # This runs when imported by Vercel
+    init_default_users()
+    add_log_entry("INFO", "Serverless function initialized.")
