@@ -75,11 +75,10 @@ class User(UserMixin):
             'daily_api_limit': self.daily_api_limit
         }
 
-# Load users from Supabase database
 def load_users_from_db():
     try:
         users_data = get_all_users()
-        users = {}
+        users_map = {}
         for user_data in users_data:
             user = User(
                 id=user_data['id'],
@@ -89,12 +88,10 @@ def load_users_from_db():
                 can_fetch=user_data.get('can_fetch', False),
                 daily_api_limit=user_data.get('daily_api_limit', 0)
             )
-            users[user.id] = user
+            users_map[user.id] = user
         
-        # Initialize default users if no users exist
-        if not users:
+        if not users_map:
             init_default_users()
-            # Reload after initialization
             users_data = get_all_users()
             for user_data in users_data:
                 user = User(
@@ -105,17 +102,13 @@ def load_users_from_db():
                     can_fetch=user_data.get('can_fetch', False),
                     daily_api_limit=user_data.get('daily_api_limit', 0)
                 )
-                users[user.id] = user
-        
-        return users
+                users_map[user.id] = user
+        return users_map
     except Exception as e:
         logger.error(f"Error loading users from DB: {e}")
-        # Fallback to admin only if DB fails
-        return {
-            1: User(id=1, username="EL", password="ADMIN123", role="admin", can_fetch=True, daily_api_limit=0),
-        }
+        return {1: User(id=1, username="EL", password="ADMIN123", role="admin", can_fetch=True, daily_api_limit=0)}
 
-# Initialize users - module level variable
+# Initialize users
 users = load_users_from_db()
 
 @login_manager.user_loader
@@ -167,15 +160,12 @@ def get_app_settings(force_refresh=False):
     global _SETTINGS_CACHE, _SETTINGS_CACHE_TIME
     if not force_refresh and _SETTINGS_CACHE and (time.time() - _SETTINGS_CACHE_TIME < CACHE_DURATION):
         return _SETTINGS_CACHE
-    
     try:
         db_settings = get_settings()
     except:
         db_settings = {}
-    
     final_settings = DEFAULT_SETTINGS.copy()
     final_settings.update(db_settings)
-    
     try:
         final_settings["MAX_PASTE"] = int(final_settings["MAX_PASTE"])
         final_settings["FRAUD_SCORE_LEVEL"] = int(final_settings["FRAUD_SCORE_LEVEL"])
@@ -183,7 +173,6 @@ def get_app_settings(force_refresh=False):
         final_settings["CONSECUTIVE_FAILS"] = int(final_settings.get("CONSECUTIVE_FAILS", 0))
     except:
         pass
-    
     _SETTINGS_CACHE = final_settings
     _SETTINGS_CACHE_TIME = time.time()
     return final_settings
@@ -201,24 +190,15 @@ def parse_api_credentials(settings):
     raw_keys = settings.get("SCAMALYTICS_API_KEY", "")
     raw_users = settings.get("SCAMALYTICS_USERNAME", "")
     raw_urls = settings.get("SCAMALYTICS_API_URL", "")
-    
     keys = [k.strip() for k in raw_keys.split(',') if k.strip()]
-    users = [u.strip() for u in raw_users.split(',') if u.strip()]
+    user_list = [u.strip() for u in raw_users.split(',') if u.strip()]
     urls = [u.strip() for u in raw_urls.split(',') if u.strip()]
-    
-    if not keys:
-        return []
-    
-    if len(users) == 1 and len(keys) > 1:
-        users = users * len(keys)
-    
-    if len(urls) == 1 and len(keys) > 1:
-        urls = urls * len(keys)
-    
+    if not keys: return []
+    if len(user_list) == 1 and len(keys) > 1: user_list = user_list * len(keys)
+    if len(urls) == 1 and len(keys) > 1: urls = urls * len(keys)
     credentials = []
-    for k, u, url in zip(keys, users, urls):
+    for k, u, url in zip(keys, user_list, urls):
         credentials.append({"key": k, "user": u, "url": url})
-    
     return credentials
 
 def validate_proxy_format(proxy_line):
@@ -229,148 +209,84 @@ def validate_proxy_format(proxy_line):
         return False
 
 def extract_ip_local(proxy_line):
-    try:
-        return proxy_line.split(':')[0].strip()
-    except:
-        return None
+    try: return proxy_line.split(':')[0].strip()
+    except: return None
 
 def get_ip_from_proxy(proxy_line):
-    if not validate_proxy_format(proxy_line):
-        return None
-    
+    if not validate_proxy_format(proxy_line): return None
     try:
         host, port, user, pw = proxy_line.strip().split(":")
-        proxy_dict = {
-            "http": f"http://{user}:{pw}@{host}:{port}",
-            "https": f"http://{user}:{pw}@{host}:{port}"
-        }
-        
-        session = requests.Session()
+        proxy_dict = {"http": f"http://{user}:{pw}@{host}:{port}", "https": f"http://{user}:{pw}@{host}:{port}"}
+        session_req = requests.Session()
         retries = Retry(total=1, backoff_factor=0.2, status_forcelist=[500, 502, 503, 504])
-        session.mount('http://', HTTPAdapter(max_retries=retries))
-        session.mount('https://', HTTPAdapter(max_retries=retries))
-        
-        response = session.get("https://ipv4.icanhazip.com", proxies=proxy_dict, 
+        session_req.mount('http://', HTTPAdapter(max_retries=retries))
+        session_req.mount('https://', HTTPAdapter(max_retries=retries))
+        response = session_req.get("https://ipv4.icanhazip.com", proxies=proxy_dict, 
                              timeout=REQUEST_TIMEOUT-1, headers={"User-Agent": random.choice(USER_AGENTS)})
         response.raise_for_status()
         ip = response.text.strip()
-        
-        if ip and '.' in ip:
-            return ip
-        return None
-    except:
-        return None
+        return ip if (ip and '.' in ip) else None
+    except: return None
 
 def verify_ip_stability(proxy_line, required_stable_checks=3, max_attempts=5):
-    """
-    Verify that a proxy returns the same IP address multiple times.
-    Returns the stable IP if consistent, None if unstable.
-    """
-    if not validate_proxy_format(proxy_line):
-        return None
-    
+    if not validate_proxy_format(proxy_line): return None
     seen_ips = set()
-    stable_ip = None
-    
     for attempt in range(max_attempts):
         ip = get_ip_from_proxy(proxy_line)
-        
         if not ip:
-            # If we can't get an IP at all, wait and retry
             time.sleep(random.uniform(0.1, 0.3))
             continue
-        
         seen_ips.add(ip)
-        
-        # If we have enough checks and all IPs are the same
-        if len(seen_ips) == 1 and (attempt + 1) >= required_stable_checks:
-            stable_ip = ip
-            break
-        
-        # If we see different IPs, it's unstable
-        if len(seen_ips) > 1:
-            logger.warning(f"Proxy {proxy_line.split(':')[0]} shows unstable IPs: {seen_ips}")
-            return None
-        
-        # Small delay between checks
-        if attempt < max_attempts - 1:
-            time.sleep(random.uniform(0.1, 0.3))
-    
-    return stable_ip
+        if len(seen_ips) == 1 and (attempt + 1) >= required_stable_checks: return ip
+        if len(seen_ips) > 1: return None
+        if attempt < max_attempts - 1: time.sleep(random.uniform(0.1, 0.3))
+    return None
 
 def get_fraud_score_detailed(ip, proxy_line, credentials_list):
-    if not validate_proxy_format(proxy_line) or not ip or not credentials_list:
-        return None
-    
+    if not validate_proxy_format(proxy_line) or not ip or not credentials_list: return None
     for cred in credentials_list:
         try:
             host, port, user, pw = proxy_line.strip().split(":")
             proxy_url = f"http://{user}:{pw}@{host}:{port}"
             proxies = {"http": proxy_url, "https": proxy_url}
             url = f"{cred['url'].rstrip('/')}/{cred['user']}/?key={cred['key']}&ip={ip}"
-            
             resp = requests.get(url, headers={"User-Agent": random.choice(USER_AGENTS)}, 
                               proxies=proxies, timeout=REQUEST_TIMEOUT)
-            
             if resp.status_code == 200:
                 data = resp.json()
                 scam = data.get("scamalytics", {})
-                
                 if scam.get("status") == "error" and scam.get("error") == "out of credits":
                     add_log_entry("WARNING", f"Out of credits: {cred['user']}", ip="System")
                     update_setting("API_CREDITS_REMAINING", "0")
-                    update_setting("API_CREDITS_USED", "N/A")
                     continue
-                
                 if scam.get("status") == "ok" and scam.get("credits"):
-                    used = scam.get("credits", {}).get("used", 0)
-                    remaining = scam.get("credits", {}).get("remaining", 0)
-                    update_setting("API_CREDITS_USED", str(used))
-                    update_setting("API_CREDITS_REMAINING", str(remaining))
-                
+                    update_setting("API_CREDITS_USED", str(scam.get("credits", {}).get("used", 0)))
+                    update_setting("API_CREDITS_REMAINING", str(scam.get("credits", {}).get("remaining", 0)))
                 return data
-        except:
-            continue
-    
+        except: continue
     return None
 
 def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list, used_ip_set, bad_ip_set, is_strict_mode=False):
     res = {"proxy": None, "ip": None, "credits": {}, "geo": {}, "score": None, 
            "status": "error", "used": False, "cached_bad": False, "unstable": False}
-    
-    if not validate_proxy_format(proxy_line):
-        return res
-    
-    # First verify IP stability
+    if not validate_proxy_format(proxy_line): return res
     ip = verify_ip_stability(proxy_line, required_stable_checks=3, max_attempts=5)
-    
     if not ip:
-        # If we get None from verify_ip_stability, it means the IP was unstable
         res["status"] = "unstable_ip"
         res["unstable"] = True
         return res
-    
     res["ip"] = ip
-    
-    if not ip:
-        return res
-
     if str(ip).strip() in used_ip_set:
         res["used"] = True
         res["status"] = "used_cache"
         return res
-    
     if str(ip).strip() in bad_ip_set:
         res["cached_bad"] = True
         res["status"] = "bad_cache"
         return res
-
     time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
     data = get_fraud_score_detailed(ip, proxy_line, credentials_list)
-    
-    if data and data.get("scamalytics", {}).get("credits"):
-        res["credits"] = data.get("scamalytics", {}).get("credits", {})
-    
+    if data and data.get("scamalytics", {}).get("credits"): res["credits"] = data.get("scamalytics", {}).get("credits", {})
     try:
         ext_src = data.get("external_datasources", {}) if data else {}
         geo = {}
@@ -382,44 +298,31 @@ def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list,
             if db and "PREMIUM" not in db.get("ip_country_code", ""):
                 geo = {"country_code": db.get("ip_country_code"), "state": db.get("ip_state_name"), "city": db.get("ip_city"), "postcode": db.get("ip_postcode")}
         res["geo"] = geo if geo else {"country_code": "N/A", "state": "N/A", "city": "N/A", "postcode": "N/A"}
-    except:
-        res["geo"] = {"country_code": "ERR", "state": "ERR", "city": "ERR", "postcode": "ERR"}
-    
+    except: res["geo"] = {"country_code": "ERR", "state": "ERR", "city": "ERR", "postcode": "ERR"}
     if data and data.get("scamalytics"):
         scam = data.get("scamalytics", {})
         score = scam.get("scamalytics_score")
         res["score"] = score
-        
-        if scam.get("status") != "ok":
-            return res
-        
+        if scam.get("status") != "ok": return res
         try:
             score_int = int(score)
             res["score"] = score_int
             passed = True
-            
-            if score_int > fraud_score_level:
-                passed = False
-            
+            if score_int > fraud_score_level: passed = False
             if passed and is_strict_mode:
                 if scam.get("scamalytics_risk") != "low": passed = False
                 if scam.get("is_blacklisted_external") is True: passed = False
                 pf = scam.get("scamalytics_proxy", {})
                 for f in ["is_datacenter", "is_vpn", "is_apple_icloud_private_relay", "is_amazon_aws", "is_google"]:
                     if pf.get(f) is True: passed = False
-                
             if passed:
                 res["proxy"] = proxy_line
                 res["status"] = "success"
             elif score_int > fraud_score_level:
-                try:
-                    log_bad_proxy(proxy_line, ip, score_int)
-                except:
-                    pass
+                try: log_bad_proxy(proxy_line, ip, score_int)
+                except: pass
                 res["status"] = "bad_score"
-        except:
-            pass
-    
+        except: pass
     return res
 
 @app.before_request
@@ -457,56 +360,39 @@ def logout():
 def fetch_abc_proxies():
     if not current_user.can_fetch: return jsonify({"status": "error", "message": "Permission denied."}), 403
     settings = get_app_settings()
-    generation_url = settings.get("ABC_GENERATION_URL", "").strip()
-    max_paste_limit = int(settings.get("MAX_PASTE", 30))
-    selected_state = request.args.get('state', '').lower()
-
-    if not generation_url: return jsonify({"status": "error", "message": "ABC Generation URL not set."})
+    gen_url = settings.get("ABC_GENERATION_URL", "").strip()
+    limit = int(settings.get("MAX_PASTE", 30))
+    state = request.args.get('state', '').lower()
+    if not gen_url: return jsonify({"status": "error", "message": "ABC Generation URL not set."})
     try:
-        parsed_url = urlparse(generation_url)
-        query_params = parse_qs(parsed_url.query)
-        
-        # Logic to dynamically replace the state in the username parameter
-        if selected_state:
-            username_val = query_params.get('username', [''])[0]
-            if 'st-' in username_val:
-                new_username = re.sub(r'st-[a-zA-Z0-9]+', f'st-{selected_state}', username_val)
-            else:
-                new_username = username_val + f"-st-{selected_state}"
-            query_params['username'] = [new_username]
-
-        query_params['num'] = [str(max_paste_limit)]
-        new_query_string = urlencode(query_params, doseq=True)
-        final_url = urlunparse(parsed_url._replace(query=new_query_string))
-        
-        logger.info(f"Fetching proxies for {current_user.username}: {final_url}")
-        response = requests.get(final_url, timeout=10)
-        if response.status_code == 200:
-            content = response.text.strip()
-            lines = [l.strip() for l in content.splitlines() if l.strip()]
-            if len(lines) > max_paste_limit: lines = lines[:max_paste_limit]
+        parsed = urlparse(gen_url)
+        params = parse_qs(parsed.query)
+        if state:
+            user_val = params.get('username', [''])[0]
+            new_user = re.sub(r'st-[a-zA-Z0-9]+', f'st-{state}', user_val) if 'st-' in user_val else user_val + f"-st-{state}"
+            params['username'] = [new_user]
+        params['num'] = [str(limit)]
+        final_url = urlunparse(parsed._replace(query=urlencode(params, doseq=True)))
+        resp = requests.get(final_url, timeout=10)
+        if resp.status_code == 200:
+            lines = [l.strip() for l in resp.text.strip().splitlines() if l.strip()][:limit]
             return jsonify({"status": "success", "proxies": lines})
-        return jsonify({"status": "error", "message": f"HTTP Error: {response.status_code}"})
+        return jsonify({"status": "error", "message": f"HTTP Error: {resp.status_code}"})
     except Exception as e: return jsonify({"status": "error", "message": f"Server Error: {str(e)}"})
 
-# Standalone SX.ORG fetcher
 @app.route('/api/fetch-sx-proxies')
 @login_required
 def fetch_sx_proxies():
     if not current_user.can_fetch: return jsonify({"status": "error", "message": "Permission denied."}), 403
-    settings = get_app_settings()
-    generation_url = settings.get("SX_GENERATION_URL", "").strip()
-    max_paste_limit = int(settings.get("MAX_PASTE", 30))
-    if not generation_url: return jsonify({"status": "error", "message": "SX Generation URL not set."})
+    gen_url = get_app_settings().get("SX_GENERATION_URL", "").strip()
+    limit = int(get_app_settings().get("MAX_PASTE", 30))
+    if not gen_url: return jsonify({"status": "error", "message": "SX Generation URL not set."})
     try:
-        logger.info(f"Fetching SX proxies for {current_user.username}")
-        response = requests.get(generation_url, timeout=10)
-        if response.status_code == 200:
-            content = response.text.strip()
-            lines = [l.strip() for l in content.splitlines() if l.strip()]
-            if len(lines) > max_paste_limit: lines = lines[:max_paste_limit]
+        resp = requests.get(gen_url, timeout=10)
+        if resp.status_code == 200:
+            lines = [l.strip() for l in resp.text.strip().splitlines() if l.strip()][:limit]
             return jsonify({"status": "success", "proxies": lines})
-        return jsonify({"status": "error", "message": f"HTTP Error: {response.status_code}"})
+        return jsonify({"status": "error", "message": f"HTTP Error: {resp.status_code}"})
     except Exception as e: return jsonify({"status": "error", "message": f"Server Error: {str(e)}"})
 
 @app.route('/admin/pool', methods=['GET', 'POST'])
@@ -515,36 +401,24 @@ def admin_pool():
     settings = get_app_settings()
     if request.method == 'POST':
         if 'bulk_proxies' in request.form:
-            provider = request.form.get('provider', 'manual')
             text = request.form.get('bulk_proxies', '')
             lines = [l.strip() for l in text.splitlines() if validate_proxy_format(l)]
-            if lines:
-                count = add_bulk_proxies(lines, provider)
-                flash(f"Added {count} proxies to {provider}.", "success")
-            else:
-                flash("No valid proxies.", "warning")
+            if lines: flash(f"Added {add_bulk_proxies(lines, request.form.get('provider', 'manual'))} proxies.", "success")
+            else: flash("No valid proxies.", "warning")
         elif 'clear_pool' in request.form:
             target = request.form.get('clear_target', 'all')
-            if clear_proxy_pool(target):
-                flash(f"Pool cleared ({target}).", "success")
-            else:
-                flash("Error clearing pool.", "danger")
+            if clear_proxy_pool(target): flash(f"Pool cleared ({target}).", "success")
+            else: flash("Error clearing pool.", "danger")
         return redirect(url_for('admin_pool'))
-    
-    counts = get_pool_stats()
-    preview_py = get_pool_preview('pyproxy')
-    preview_pia = get_pool_preview('piaproxy')
-    
-    return render_template('admin_pool.html', counts=counts, settings=settings, preview_py=preview_py, preview_pia=preview_pia)
+    return render_template('admin_pool.html', counts=get_pool_stats(), settings=settings, preview_py=get_pool_preview('pyproxy'), preview_pia=get_pool_preview('piaproxy'))
 
 @app.route('/api/trigger-reset/<provider>')
 @admin_required
 def trigger_reset(provider):
-    settings = get_app_settings()
-    target_url = settings.get("PYPROXY_RESET_URL") if provider == 'pyproxy' else settings.get("PIAPROXY_RESET_URL")
-    if not target_url: return jsonify({"status": "error", "message": "Reset URL not configured."})
+    target = get_app_settings().get("PYPROXY_RESET_URL") if provider == 'pyproxy' else get_app_settings().get("PIAPROXY_RESET_URL")
+    if not target: return jsonify({"status": "error", "message": "Reset URL not configured."})
     try:
-        resp = requests.get(target_url, timeout=10)
+        resp = requests.get(target, timeout=10)
         return jsonify({"status": "success", "message": f"Signal Sent. Response: {resp.text}"})
     except Exception as e: return jsonify({"status": "error", "message": str(e)})
 
@@ -552,9 +426,7 @@ def trigger_reset(provider):
 @login_required
 def fetch_pool_proxies():
     if not current_user.can_fetch: return jsonify({"status": "error", "message": "Permission denied."}), 403
-    settings = get_app_settings()
-    limit = int(settings.get("MAX_PASTE", 30))
-    proxies = get_random_proxies_from_pool(limit)
+    proxies = get_random_proxies_from_pool(int(get_app_settings().get("MAX_PASTE", 30)))
     if not proxies: return jsonify({"status": "error", "message": "Pool is empty!"})
     return jsonify({"status": "success", "proxies": proxies})
 
@@ -563,73 +435,45 @@ def fetch_pool_proxies():
 def index():
     settings = get_app_settings()
     MAX_PASTE = settings["MAX_PASTE"]
-    FRAUD_SCORE_LEVEL = settings["FRAUD_SCORE_LEVEL"]
     api_credentials = parse_api_credentials(settings)
     system_paused = str(settings.get("SYSTEM_PAUSED", "FALSE")).upper() == "TRUE"
-    admin_bypass = False
+    admin_bypass = current_user.is_admin and system_paused
     
-    # Check daily API limit for guest users
     if current_user.is_guest and current_user.daily_api_limit > 0:
-        daily_usage = get_daily_api_usage_for_user(current_user.username)
-        if daily_usage >= current_user.daily_api_limit:
+        if get_daily_api_usage_for_user(current_user.username) >= current_user.daily_api_limit:
             return render_template("index.html", results=None, message=f"Daily API limit reached ({current_user.daily_api_limit} calls).", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False)
     
-    force_fetch_for_users = str(settings.get("FORCE_FETCH_FOR_USERS", "FALSE")).upper() == "TRUE"
-    paste_disabled_for_user = (current_user.role == "user" and force_fetch_for_users)
+    paste_disabled = (current_user.role == "user" and str(settings.get("FORCE_FETCH_FOR_USERS", "FALSE")).upper() == "TRUE")
     
-    if system_paused:
-        if current_user.is_admin: admin_bypass = True
-        else: return render_template("index.html", results=None, message="⚠️ System Under Maintenance.", max_paste=MAX_PASTE, settings=settings, system_paused=True, announcement=settings.get("ANNOUNCEMENT"))
+    if system_paused and not current_user.is_admin:
+        return render_template("index.html", results=None, message="⚠️ System Under Maintenance.", max_paste=MAX_PASTE, settings=settings, system_paused=True, announcement=settings.get("ANNOUNCEMENT"))
     
     if request.method == "POST":
-        if system_paused and not admin_bypass:
-            return render_template("index.html", results=None, message="System Paused.", max_paste=MAX_PASTE, settings=settings, system_paused=True)
-        
-        # Check daily API limit for guest users
-        if current_user.is_guest and current_user.daily_api_limit > 0:
-            daily_usage = get_daily_api_usage_for_user(current_user.username)
-            remaining_calls = max(0, current_user.daily_api_limit - daily_usage)
-            if remaining_calls <= 0:
-                return render_template("index.html", results=[], message=f"Daily API limit reached ({current_user.daily_api_limit} calls).", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False)
+        if system_paused and not current_user.is_admin: return render_template("index.html", results=None, message="System Paused.", max_paste=MAX_PASTE, settings=settings, system_paused=True)
         
         origin = request.form.get('proxy_origin', 'paste')
-        if paste_disabled_for_user and origin != 'fetch' and 'proxytext' in request.form:
-             return render_template("index.html", results=[], message="Submission rejected: Manual pasting is disabled. Please use the fetch buttons.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, paste_disabled_for_user=paste_disabled_for_user)
+        if paste_disabled and origin != 'fetch' and 'proxytext' in request.form:
+             return render_template("index.html", results=[], message="Manual pasting disabled.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, paste_disabled_for_user=paste_disabled)
         
-        proxies_input = request.form.get("proxytext", "").strip().splitlines()[:MAX_PASTE] if 'proxytext' in request.form else []
-        if not proxies_input:
-            return render_template("index.html", results=[], message="No proxies submitted.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), paste_disabled_for_user=paste_disabled_for_user)
+        proxies_input = request.form.get("proxytext", "").strip().splitlines()[:MAX_PASTE]
+        if not proxies_input: return render_template("index.html", results=[], message="No proxies submitted.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), paste_disabled_for_user=paste_disabled)
         
-        # Check and limit proxies for guest users
-        if current_user.is_guest and current_user.daily_api_limit > 0:
-            daily_usage = get_daily_api_usage_for_user(current_user.username)
-            remaining_calls = max(0, current_user.daily_api_limit - daily_usage)
-            if remaining_calls < len(proxies_input):
-                proxies_input = proxies_input[:remaining_calls]
-        
-        used_rows = get_all_used_ips()
-        used_ip_set = {str(r['IP']).strip() for r in used_rows if r.get('IP')}
-        bad_rows = get_bad_proxies_list()
+        used_ip_set = {str(r['IP']).strip() for r in get_all_used_ips() if r.get('IP')}
         bad_ip_set = set()
-        for r in bad_rows:
+        for r in get_bad_proxies_list():
             if r.get('ip'): bad_ip_set.add(str(r['ip']).strip())
             elif r.get('proxy'):
-                local_ip = extract_ip_local(r['proxy'])
-                if local_ip: bad_ip_set.add(local_ip)
+                lip = extract_ip_local(r['proxy'])
+                if lip: bad_ip_set.add(lip)
 
         proxies_raw = [p.strip() for p in proxies_input if validate_proxy_format(p.strip())]
-        
         good_proxy_results = []
         stats = {"used": 0, "bad": 0, "api": 0, "unstable": 0}
-        target_good = 2
         
-        batch_size = settings["MAX_WORKERS"]
-        with ThreadPoolExecutor(max_workers=batch_size) as executor:
-            for i in range(0, len(proxies_raw), batch_size):
-                good_count = len([r for r in good_proxy_results if not r['used'] and not r['cached_bad']])
-                if good_count >= target_good: break
-                batch = proxies_raw[i : i + batch_size]
-                futures = {executor.submit(single_check_proxy_detailed, p, FRAUD_SCORE_LEVEL, api_credentials, used_ip_set, bad_ip_set, is_strict_mode=True): p for p in batch}
+        with ThreadPoolExecutor(max_workers=settings["MAX_WORKERS"]) as executor:
+            for i in range(0, len(proxies_raw), settings["MAX_WORKERS"]):
+                if len([r for r in good_proxy_results if not r['used'] and not r['cached_bad']]) >= 2: break
+                futures = {executor.submit(single_check_proxy_detailed, p, settings["FRAUD_SCORE_LEVEL"], api_credentials, used_ip_set, bad_ip_set, is_strict_mode=True): p for p in proxies_raw[i : i + settings["MAX_WORKERS"]]}
                 for f in as_completed(futures):
                     res = f.result()
                     if res["status"] == "used_cache": stats["used"] += 1
@@ -637,8 +481,6 @@ def index():
                     elif res["status"] == "unstable_ip": stats["unstable"] += 1
                     elif res["status"] in ["success", "bad_score"]: stats["api"] += 1
                     if res.get("proxy"): good_proxy_results.append(res)
-                good_count = len([r for r in good_proxy_results if not r['used'] and not r['cached_bad']])
-                if good_count >= target_good: break
 
         unique_results = []
         seen = set()
@@ -650,39 +492,25 @@ def index():
         results = sorted(unique_results, key=lambda x: x.get('used', False))
         good_final = len(results)
         
-        fails = settings.get("CONSECUTIVE_FAILS", 0)
-        if good_final > 0 and fails > 0:
-            update_setting("CONSECUTIVE_FAILS", "0")
-            _SETTINGS_CACHE["CONSECUTIVE_FAILS"] = 0
-        elif not good_final and proxies_raw:
-            new_fails = fails + len(proxies_raw)
+        if good_final > 0: update_setting("CONSECUTIVE_FAILS", "0")
+        elif proxies_raw:
+            new_fails = settings.get("CONSECUTIVE_FAILS", 0) + len(proxies_raw)
             update_setting("CONSECUTIVE_FAILS", str(new_fails))
-            if new_fails > 1000:
-                update_setting("SYSTEM_PAUSED", "TRUE")
-                add_log_entry("CRITICAL", "Auto-paused.", ip="System")
+            if new_fails > 1000: update_setting("SYSTEM_PAUSED", "TRUE")
         
-        try: 
-            add_api_usage_log(current_user.username, get_user_ip(), len(proxies_input), stats["api"], good_final)
-        except: 
-            pass
+        try: add_api_usage_log(current_user.username, get_user_ip(), len(proxies_input), stats["api"], good_final)
+        except: pass
         
-        msg_prefix = "⚠️ MAINTENANCE (Admin) - " if admin_bypass else ""
-        if current_user.is_guest and good_final == 0: 
-            message = "No good proxies found in this batch."
-        else: 
-            message = f"{msg_prefix}Found {good_final} good proxies. ({stats['used']} from cache, {stats['bad']} skipped bad, {stats['unstable']} unstable, {stats['api']} live checked)"
-        
-        return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, paste_disabled_for_user=paste_disabled_for_user)
+        message = f"Found {good_final} good proxies."
+        return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, paste_disabled_for_user=paste_disabled)
 
-    msg_prefix = "⚠️ MAINTENANCE (Admin)" if admin_bypass else ""
-    return render_template("index.html", results=None, message=msg_prefix, max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, paste_disabled_for_user=paste_disabled_for_user)
+    return render_template("index.html", results=None, message="⚠️ MAINTENANCE (Admin)" if admin_bypass else "", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, paste_disabled_for_user=paste_disabled)
 
 @app.route("/track-used", methods=["POST"])
 @login_required
 def track_used():
     data = request.get_json()
-    proxy = data.get("proxy")
-    ip = data.get("ip")
+    proxy, ip = data.get("proxy"), data.get("ip")
     if not proxy or not ip or not validate_proxy_format(proxy): return jsonify({"status": "error"}), 400
     if add_used_ip(ip, proxy, username=current_user.username):
         add_log_entry("INFO", f"Used: {ip}", ip=get_user_ip())
@@ -693,46 +521,21 @@ def track_used():
 @admin_required
 def admin():
     settings = get_app_settings()
-    
-    # Fix total API calls calculation
     total_api = 0
     try:
-        api_logs = get_all_api_usage_logs()
-        if api_logs:
-            for log in api_logs:
-                try:
-                    total_api += int(log.get("api_calls_count", 0))
-                except (ValueError, TypeError):
-                    # Skip invalid entries
-                    continue
-    except Exception as e:
-        logger.error(f"Error calculating total API calls: {e}")
-        total_api = "Error"
-    
-    # STONES user has been removed, so show 0
-    stones_daily_usage = 0
+        logs = get_all_api_usage_logs()
+        total_api = sum(int(log.get("api_calls_count", 0)) for log in logs if log)
+    except: total_api = "Error"
     
     stats = {
-        "max_paste": settings["MAX_PASTE"],
-        "fraud_score_level": settings["FRAUD_SCORE_LEVEL"],
-        "max_workers": settings["MAX_WORKERS"],
-        "scamalytics_username": settings["SCAMALYTICS_USERNAME"],
-        "api_credits_used": settings.get("API_CREDITS_USED", "N/A"),
-        "api_credits_remaining": settings.get("API_CREDITS_REMAINING", "N/A"),
-        "consecutive_fails": settings.get("CONSECUTIVE_FAILS"),
-        "system_paused": settings.get("SYSTEM_PAUSED"),
-        "total_api_calls_logged": total_api,
-        "abc_generation_url": settings.get("ABC_GENERATION_URL"),
-        "sx_generation_url": settings.get("SX_GENERATION_URL"),
-        "force_fetch_for_users": settings.get("FORCE_FETCH_FOR_USERS", "FALSE")
+        "max_paste": settings["MAX_PASTE"], "fraud_score_level": settings["FRAUD_SCORE_LEVEL"],
+        "max_workers": settings["MAX_WORKERS"], "scamalytics_username": settings["SCAMALYTICS_USERNAME"],
+        "api_credits_used": settings.get("API_CREDITS_USED", "N/A"), "api_credits_remaining": settings.get("API_CREDITS_REMAINING", "N/A"),
+        "consecutive_fails": settings.get("CONSECUTIVE_FAILS"), "system_paused": settings.get("SYSTEM_PAUSED"),
+        "total_api_calls_logged": total_api, "abc_generation_url": settings.get("ABC_GENERATION_URL"),
+        "sx_generation_url": settings.get("SX_GENERATION_URL"), "force_fetch_for_users": settings.get("FORCE_FETCH_FOR_USERS", "FALSE")
     }
-    
-    return render_template("admin.html", 
-                         stats=stats, 
-                         used_ips=get_all_used_ips(), 
-                         announcement=settings.get("ANNOUNCEMENT"), 
-                         settings=settings, 
-                         stones_daily_usage=stones_daily_usage)
+    return render_template("admin.html", stats=stats, used_ips=get_all_used_ips(), announcement=settings.get("ANNOUNCEMENT"), settings=settings, stones_daily_usage=0)
 
 @app.route("/admin/reset-system", methods=["POST"])
 @admin_required
@@ -746,25 +549,19 @@ def admin_reset_system():
 @app.route("/admin/toggle-maintenance", methods=["POST"])
 @admin_required
 def admin_toggle_maintenance():
-    curr = get_app_settings()
-    is_paused = str(curr.get("SYSTEM_PAUSED", "FALSE")).upper() == "TRUE"
-    new_state = "FALSE" if is_paused else "TRUE"
+    new_state = "FALSE" if str(get_app_settings().get("SYSTEM_PAUSED", "FALSE")).upper() == "TRUE" else "TRUE"
     if update_setting("SYSTEM_PAUSED", new_state):
         get_app_settings(force_refresh=True)
         flash(f"Maintenance {'Activated' if new_state=='TRUE' else 'Deactivated'}.", "success")
-    else: flash("Failed to toggle.", "danger")
     return redirect(url_for("admin"))
 
 @app.route("/admin/toggle-force-fetch", methods=["POST"])
 @admin_required
 def admin_toggle_force_fetch():
-    curr = get_app_settings()
-    is_forced = str(curr.get("FORCE_FETCH_FOR_USERS", "FALSE")).upper() == "TRUE"
-    new_state = "FALSE" if is_forced else "TRUE"
+    new_state = "FALSE" if str(get_app_settings().get("FORCE_FETCH_FOR_USERS", "FALSE")).upper() == "TRUE" else "TRUE"
     if update_setting("FORCE_FETCH_FOR_USERS", new_state):
         get_app_settings(force_refresh=True)
-        flash(f"Force fetch for users {'Activated' if new_state=='TRUE' else 'Deactivated'}.", "success")
-    else: flash("Failed to toggle.", "danger")
+        flash(f"Force fetch {'Activated' if new_state=='TRUE' else 'Deactivated'}.", "success")
     return redirect(url_for("admin"))
 
 @app.route("/admin/users")
@@ -773,159 +570,71 @@ def admin_users():
     stats = get_user_stats_summary()
     for s in stats:
         try:
-            last = datetime.datetime.fromisoformat(s['last_active'].replace('Z', '+00:00'))
-            diff = datetime.datetime.now(datetime.timezone.utc) - last
-            if diff.days > 7: s['status'] = 'Inactive'
-            elif diff.total_seconds() > 86400: s['status'] = 'Offline'
-            else: s['status'] = 'Active'
+            diff = datetime.datetime.now(datetime.timezone.utc) - datetime.datetime.fromisoformat(s['last_active'].replace('Z', '+00:00'))
+            s['status'] = 'Inactive' if diff.days > 7 else ('Offline' if diff.total_seconds() > 86400 else 'Active')
         except: s['status'] = 'Unknown'
     return render_template("admin_users.html", stats=stats)
 
-# User Management Routes - FIXED SECTION
+# --- USER MANAGEMENT SECTION (FIXED) ---
 @app.route('/admin/users/manage', methods=['GET'])
 @admin_required
 def admin_users_manage():
-    # Reload users from DB to get latest data
-    # FIXED: Removed problematic global declaration that was causing syntax error
-    # The 'users' variable is already accessible at module level
+    # FIXED: Access global 'users' without problematic re-declaration
     users_refresh = load_users_from_db()
-    
-    # Get daily API usage for each user
     user_list = []
     for user in users_refresh.values():
-        user_dict = user.to_dict()
-        # Get today's API usage for this user
-        daily_usage = get_daily_api_usage_for_user(user.username)
-        user_dict['daily_api_usage'] = daily_usage
-        user_list.append(user_dict)
-    
+        u_dict = user.to_dict()
+        u_dict['daily_api_usage'] = get_daily_api_usage_for_user(user.username)
+        user_list.append(u_dict)
     return render_template('admin_users_manage.html', users=user_list)
 
 @app.route('/admin/users/add', methods=['POST'])
 @admin_required
 def admin_add_user():
-    username = request.form.get('username', '').strip()
-    password = request.form.get('password', '').strip()
+    username, password = request.form.get('username', '').strip(), request.form.get('password', '').strip()
     role = request.form.get('role', 'user')
-    daily_api_limit = int(request.form.get('daily_api_limit', 150))
-    can_fetch = request.form.get('can_fetch') == 'on'
-    
-    # Validate inputs
     if not username or not password:
-        flash('Username and password are required.', 'danger')
+        flash('Required fields missing.', 'danger')
         return redirect(url_for('admin_users_manage'))
-    
-    # Check if username already exists
-    if any(user.username == username for user in users.values()):
-        flash(f'Username "{username}" already exists.', 'danger')
+    if any(u.username == username for u in users.values()):
+        flash('Username exists.', 'danger')
         return redirect(url_for('admin_users_manage'))
-    
-    # Create user in database
-    success = create_user(username, password, role, can_fetch, daily_api_limit if role == 'guest' else 0)
-    
-    if success:
-        # Reload users from DB
-        users_refresh = load_users_from_db()
-        # Update the global users dictionary
+    if create_user(username, password, role, request.form.get('can_fetch') == 'on', int(request.form.get('daily_api_limit', 150)) if role == 'guest' else 0):
         users.clear()
-        users.update(users_refresh)
-        
-        add_log_entry("INFO", f"User {username} created by {current_user.username}.", ip=get_user_ip())
-        flash(f'User {username} created successfully.', 'success')
-    else:
-        flash(f'Failed to create user {username}.', 'danger')
-    
+        users.update(load_users_from_db())
+        flash(f'User {username} created.', 'success')
     return redirect(url_for('admin_users_manage'))
 
 @app.route('/admin/users/edit/<int:user_id>', methods=['POST'])
 @admin_required
 def admin_edit_user(user_id):
-    # Access the module-level users variable directly
-    if user_id not in users:
-        flash('User not found.', 'danger')
+    if user_id not in users or user_id == 1:
+        flash('Invalid action.', 'danger')
         return redirect(url_for('admin_users_manage'))
-    
-    user = users[user_id]
-    
-    # Don't allow editing user ID 1 (owner)
-    if user_id == 1:
-        flash('Cannot edit the owner account.', 'danger')
-        return redirect(url_for('admin_users_manage'))
-    
-    # Get form data
-    new_password = request.form.get('password', '').strip()
-    role = request.form.get('role', user.role)
-    daily_api_limit = int(request.form.get('daily_api_limit', user.daily_api_limit))
-    can_fetch = request.form.get('can_fetch') == 'on'
-    
-    # Prepare updates
-    updates = {
-        'role': role,
-        'can_fetch': can_fetch,
-        'daily_api_limit': daily_api_limit if role == 'guest' else 0
-    }
-    
-    # Only update password if provided
-    if new_password:
-        updates['password'] = new_password
-    
-    # Update user in database
-    success = update_user(user_id, **updates)
-    
-    if success:
-        # Reload users from DB
-        users_refresh = load_users_from_db()
-        # Update the global users dictionary
+    role = request.form.get('role')
+    updates = {'role': role, 'can_fetch': request.form.get('can_fetch') == 'on', 'daily_api_limit': int(request.form.get('daily_api_limit', 0)) if role == 'guest' else 0}
+    if request.form.get('password'): updates['password'] = request.form.get('password')
+    if update_user(user_id, **updates):
         users.clear()
-        users.update(users_refresh)
-        
-        add_log_entry("INFO", f"User {user.username} updated by {current_user.username}.", ip=get_user_ip())
-        flash(f'User {user.username} updated successfully.', 'success')
-    else:
-        flash(f'Failed to update user {user.username}.', 'danger')
-    
+        users.update(load_users_from_db())
+        flash('User updated.', 'success')
     return redirect(url_for('admin_users_manage'))
 
 @app.route('/admin/users/delete/<int:user_id>')
 @admin_required
 def admin_delete_user(user_id):
-    # Access the module-level users variable directly
-    if user_id not in users:
-        flash('User not found.', 'danger')
+    if user_id not in users or user_id == 1 or user_id == current_user.id:
+        flash('Cannot delete user.', 'danger')
         return redirect(url_for('admin_users_manage'))
-    
-    user = users[user_id]
-    
-    # Don't allow deleting user ID 1 (owner) or current user
-    if user_id == 1:
-        flash('Cannot delete the owner account.', 'danger')
-        return redirect(url_for('admin_users_manage'))
-    
-    if user_id == current_user.id:
-        flash('Cannot delete your own account.', 'danger')
-        return redirect(url_for('admin_users_manage'))
-    
-    # Delete user from database
-    success = delete_user(user_id)
-    
-    if success:
-        # Reload users from DB
-        users_refresh = load_users_from_db()
-        # Update the global users dictionary
+    if delete_user(user_id):
         users.clear()
-        users.update(users_refresh)
-        
-        add_log_entry("INFO", f"User {user.username} deleted by {current_user.username}.", ip=get_user_ip())
-        flash(f'User {user.username} deleted successfully.', 'success')
-    else:
-        flash(f'Failed to delete user {user.username}.', 'danger')
-    
+        users.update(load_users_from_db())
+        flash('User deleted.', 'success')
     return redirect(url_for('admin_users_manage'))
 
 @app.route("/admin/logs")
 @admin_required
-def admin_logs():
-    return render_template("admin_logs.html", logs=get_all_system_logs()[::-1])
+def admin_logs(): return render_template("admin_logs.html", logs=get_all_system_logs()[::-1])
 
 @app.route("/admin/clear-logs", methods=["POST"])
 @admin_required
@@ -936,34 +645,18 @@ def admin_clear_logs():
 @app.route("/admin/settings", methods=["GET", "POST"])
 @admin_required
 def admin_settings():
-    curr = get_app_settings()
     if request.method == "POST":
         f = request.form
-        upd = {
-            "MAX_PASTE": f.get("max_paste"),
-            "FRAUD_SCORE_LEVEL": f.get("fraud_score_level"),
-            "MAX_WORKERS": f.get("max_workers"),
-            "SCAMALYTICS_API_KEY": f.get("scamalytics_api_key", "").strip(),
-            "SCAMALYTICS_API_URL": f.get("scamalytics_api_url", "").strip(),
-            "SCAMALYTICS_USERNAME": f.get("scamalytics_username", "").strip(),
-            "ABC_GENERATION_URL": f.get("abc_generation_url", "").strip(),
-            "SX_GENERATION_URL": f.get("sx_generation_url", "").strip(),
-            "PYPROXY_RESET_URL": f.get("pyproxy_reset_url", "").strip(),
-            "PIAPROXY_RESET_URL": f.get("piaproxy_reset_url", "").strip(),
-            "FORCE_FETCH_FOR_USERS": f.get("force_fetch_for_users", "FALSE")
-        }
-        for k, v in upd.items():
-            update_setting(k, str(v))
-            time.sleep(0.1)
+        upd = {"MAX_PASTE": f.get("max_paste"), "FRAUD_SCORE_LEVEL": f.get("fraud_score_level"), "MAX_WORKERS": f.get("max_workers"), "SCAMALYTICS_API_KEY": f.get("scamalytics_api_key", "").strip(), "SCAMALYTICS_API_URL": f.get("scamalytics_api_url", "").strip(), "SCAMALYTICS_USERNAME": f.get("scamalytics_username", "").strip(), "ABC_GENERATION_URL": f.get("abc_generation_url", "").strip(), "SX_GENERATION_URL": f.get("sx_generation_url", "").strip(), "PYPROXY_RESET_URL": f.get("pyproxy_reset_url", "").strip(), "PIAPROXY_RESET_URL": f.get("piaproxy_reset_url", "").strip(), "FORCE_FETCH_FOR_USERS": f.get("force_fetch_for_users", "FALSE")}
+        for k, v in upd.items(): update_setting(k, str(v))
+        get_app_settings(force_refresh=True)
         flash("Settings updated.", "success")
-        curr = get_app_settings(force_refresh=True)
-    return render_template("admin_settings.html", settings=curr)
+    return render_template("admin_settings.html", settings=get_app_settings())
 
 @app.route("/admin/announcement", methods=["POST"])
 @admin_required
 def admin_announcement():
-    val = request.form.get("announcement_text", "").strip() if "save_announcement" in request.form else ""
-    update_setting("ANNOUNCEMENT", val)
+    update_setting("ANNOUNCEMENT", request.form.get("announcement_text", "").strip() if "save_announcement" in request.form else "")
     get_app_settings(force_refresh=True)
     return redirect(url_for("admin"))
 
@@ -979,11 +672,7 @@ def page_not_found(e): return render_template('error.html', error='Page not foun
 def internal_server_error(e): return render_template('error.html', error='Server Error.'), 500
 
 if __name__ == "__main__":
-    # Initialize default users if needed
     init_default_users()
-    add_log_entry("INFO", "Server starting up.")
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False)
 else:
-    # This runs when imported by Vercel
     init_default_users()
-    add_log_entry("INFO", "Serverless function initialized.")
