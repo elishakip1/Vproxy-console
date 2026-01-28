@@ -1,59 +1,50 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8"><title>Manage Users</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>body{background:#f8f9fa}.sidebar{width:250px;position:fixed;height:100vh;background:#212529;color:white;padding:20px}.main{margin-left:250px;padding:40px}</style>
+    <meta charset="UTF-8"><title>Manage Users - Admin</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f0f2f5; font-family: sans-serif; }
+        .sidebar { min-height: 100vh; width: 250px; background: #212529; color: #fff; position: fixed; top: 0; left: 0; z-index: 1000; padding-top: 20px; }
+        .sidebar-header { padding: 20px; text-align: center; border-bottom: 1px solid #495057; }
+        .logo-link { display: inline-block; text-decoration: none; margin-bottom: 15px; background-color: white; border-radius: 50%; padding: 5px; }
+        .logo-link img { height: 70px; width: 70px; border-radius: 50%; object-fit: cover; display: block; }
+        .sidebar-nav { list-style: none; padding: 0; margin-top: 20px; }
+        .nav-link { display: block; padding: 15px 20px; color: rgba(255,255,255,.75); text-decoration: none; border-left: 4px solid transparent; }
+        .nav-link:hover, .nav-link.active { color: #fff; background: rgba(255,255,255,.1); border-left-color: #0d6efd; }
+        .content-wrapper { margin-left: 250px; padding: 30px; }
+    </style>
 </head>
 <body>
-    <div class="sidebar">
-        <h4 class="mb-4">Admin Panel</h4>
-        <nav class="nav flex-column">
-            <a href="/admin" class="nav-link text-white mb-2">📊 Dashboard</a>
-            <a href="/admin/users" class="nav-link text-white mb-2">👥 User Activity</a>
-            <a href="/admin/users/manage" class="nav-link text-white mb-2 active fw-bold">⚙️ Manage Users</a>
-            <a href="/admin/settings" class="nav-link text-white">🔧 Settings</a>
-        </nav>
+<nav class="sidebar">
+    <div class="sidebar-header">
+        <a href="{{ url_for('index') }}" class="logo-link"><img src="https://i.ibb.co/pjSD084t/proxychecker-logo-clear.png" alt="Logo"></a>
+        <h5 class="text-white mt-2">Admin Panel</h5>
     </div>
-    <div class="main">
-        <h2>⚙️ User Account Management</h2>
-        <div class="card p-4 shadow-sm mb-4 border-0">
-            <h5>Create New Account</h5>
-            <form action="/admin/users/add" method="POST" class="row g-3">
-                <div class="col-md-3"><input name="username" class="form-control" placeholder="Username" required></div>
-                <div class="col-md-3"><input name="password" class="form-control" placeholder="Password" required></div>
-                <div class="col-md-3">
-                    <select name="role" class="form-select">
-                        <option value="user">User</option>
-                        <option value="guest">Guest (Limited)</option>
-                        <option value="admin">Administrator</option>
-                    </select>
-                </div>
-                <div class="col-md-3 d-flex align-items-center">
-                    <div class="form-check"><input class="form-check-input" type="checkbox" name="can_fetch" id="cf"><label class="form-check-label" for="cf">Can Fetch</label></div>
-                    <button class="btn btn-success ms-auto">Add User</button>
-                </div>
-            </form>
-        </div>
-
-        <div class="card shadow-sm border-0">
-            <table class="table table-hover align-middle mb-0">
-                <thead class="table-light"><tr><th>ID</th><th>Username</th><th>Role</th><th>Can Fetch</th><th>API Usage</th><th>Actions</th></tr></thead>
-                <tbody>
-                    {% for u in users %}
-                    <tr>
-                        <td>{{ u.id }}</td><td><strong>{{ u.username }}</strong></td>
-                        <td><span class="badge bg-info text-dark">{{ u.role }}</span></td>
-                        <td>{{ '✅' if u.can_fetch else '❌' }}</td>
-                        <td>{{ u.daily_api_usage }}</td>
-                        <td>
-                            <a href="/admin/users/delete/{{ u.id }}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete user?')">Delete</a>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
+    <ul class="sidebar-nav">
+        <li><a href="{{ url_for('admin') }}" class="nav-link">📊 Dashboard</a></li>
+        <li><a href="{{ url_for('admin_pool') }}" class="nav-link">🏭 Proxy Pool</a></li>
+        <li><a href="{{ url_for('admin_users') }}" class="nav-link">👥 User Activity</a></li>
+        <li><a href="{{ url_for('admin_users_manage') }}" class="nav-link active">⚙️ Manage Users</a></li>
+        <li><a href="{{ url_for('admin_logs') }}" class="nav-link">📋 System Logs</a></li>
+        <li><a href="{{ url_for('admin_settings') }}" class="nav-link">⚙️ Settings</a></li>
+        <li class="mt-5"><a href="/" class="nav-link text-warning">← Back to Checker</a></li>
+    </ul>
+</nav>
+<div class="content-wrapper">
+    <h2>⚙️ User Account Management</h2>
+    <div class="card p-4 shadow-sm border-0 mt-4">
+        <h5>Create New Account</h5>
+        <form action="/admin/users/add" method="POST" class="row g-3">
+            <div class="col-md-3"><input name="username" class="form-control" placeholder="Username" required></div>
+            <div class="col-md-3"><input name="password" class="form-control" placeholder="Password" required></div>
+            <div class="col-md-3">
+                <select name="role" class="form-select"><option value="user">User</option><option value="admin">Admin</option></select>
+            </div>
+            <button class="btn btn-success col-md-3">Add User</button>
+        </form>
     </div>
+</div>
 </body>
 </html>
