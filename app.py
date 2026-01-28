@@ -690,7 +690,9 @@ def admin():
         logger.error(f"Error calculating total API calls: {e}")
         total_api = "Error"
     
-    stones_daily_usage = get_daily_api_usage_for_user("STONES") if any(u.username == "STONES" for u in users.values()) else 0
+    # Get STONES user daily usage if exists
+    stones_user = next((u for u in users.values() if u.username == "STONES"), None)
+    stones_daily_usage = get_daily_api_usage_for_user("STONES") if stones_user else 0
     
     stats = {
         "max_paste": settings["MAX_PASTE"],
