@@ -19,7 +19,6 @@ from requests.packages.urllib3.util.retry import Retry
 import logging
 import sys
 import re
-import json
 
 # Import from db_util
 from db_util import (
@@ -31,7 +30,9 @@ from db_util import (
     add_api_usage_log, get_all_api_usage_logs,
     get_user_stats_summary,
     add_bulk_proxies, get_random_proxies_from_pool, get_pool_stats, clear_proxy_pool,
-    get_daily_api_usage_for_user, update_api_credits, get_pool_preview
+    get_daily_api_usage_for_user, update_api_credits, get_pool_preview,
+    # User management imports
+    get_all_users, create_user, update_user, delete_user, get_user_by_username, init_default_users
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', stream=sys.stdout)
@@ -74,37 +75,55 @@ class User(UserMixin):
             'daily_api_limit': self.daily_api_limit
         }
 
-# Load users from JSON file or use defaults
-def load_users_from_file():
+# Load users from Supabase database
+def load_users_from_db():
     try:
-        with open('users.json', 'r') as f:
-            users_data = json.load(f)
-            users = {}
+        users_data = get_all_users()
+        users = {}
+        for user_data in users_data:
+            user = User(
+                id=user_data['id'],
+                username=user_data['username'],
+                password=user_data['password'],
+                role=user_data.get('role', 'user'),
+                can_fetch=user_data.get('can_fetch', False),
+                daily_api_limit=user_data.get('daily_api_limit', 0)
+            )
+            users[user.id] = user
+        
+        # Initialize default users if no users exist
+        if not users:
+            init_default_users()
+            # Reload after initialization
+            users_data = get_all_users()
             for user_data in users_data:
-                user = User(**user_data)
+                user = User(
+                    id=user_data['id'],
+                    username=user_data['username'],
+                    password=user_data['password'],
+                    role=user_data.get('role', 'user'),
+                    can_fetch=user_data.get('can_fetch', False),
+                    daily_api_limit=user_data.get('daily_api_limit', 0)
+                )
                 users[user.id] = user
-            return users
-    except FileNotFoundError:
-        # Default users if file doesn't exist
-        default_users = {
+        
+        return users
+    except Exception as e:
+        logger.error(f"Error loading users from DB: {e}")
+        # Fallback to admin only if DB fails
+        return {
             1: User(id=1, username="EL", password="ADMIN123", role="admin", can_fetch=True, daily_api_limit=0),
-            2: User(id=2, username="Work2", password="password", role="user", can_fetch=True, daily_api_limit=0),
         }
-        # Save defaults to file
-        save_users_to_file(default_users)
-        return default_users
-
-def save_users_to_file(users_dict):
-    users_list = [user.to_dict() for user in users_dict.values()]
-    with open('users.json', 'w') as f:
-        json.dump(users_list, f, indent=2)
 
 # Initialize users
-users = load_users_from_file()
+users = load_users_from_db()
 
 @login_manager.user_loader
 def load_user(user_id):
-    return users.get(int(user_id))
+    try:
+        return users.get(int(user_id))
+    except:
+        return None
 
 def admin_required(f):
     @wraps(f)
@@ -690,9 +709,8 @@ def admin():
         logger.error(f"Error calculating total API calls: {e}")
         total_api = "Error"
     
-    # Get STONES user daily usage if exists
-    stones_user = next((u for u in users.values() if u.username == "STONES"), None)
-    stones_daily_usage = get_daily_api_usage_for_user("STONES") if stones_user else 0
+    # STONES user has been removed, so show 0
+    stones_daily_usage = 0
     
     stats = {
         "max_paste": settings["MAX_PASTE"],
@@ -767,6 +785,10 @@ def admin_users():
 @app.route('/admin/users/manage', methods=['GET'])
 @admin_required
 def admin_users_manage():
+    # Reload users from DB to get latest data
+    global users
+    users = load_users_from_db()
+    
     # Get daily API usage for each user
     user_list = []
     for user in users.values():
@@ -797,24 +819,19 @@ def admin_add_user():
         flash(f'Username "{username}" already exists.', 'danger')
         return redirect(url_for('admin_users_manage'))
     
-    # Generate new user ID
-    new_id = max(users.keys()) + 1 if users else 1
+    # Create user in database
+    success = create_user(username, password, role, can_fetch, daily_api_limit if role == 'guest' else 0)
     
-    # Create new user
-    new_user = User(
-        id=new_id,
-        username=username,
-        password=password,
-        role=role,
-        can_fetch=can_fetch,
-        daily_api_limit=daily_api_limit if role == 'guest' else 0
-    )
+    if success:
+        # Reload users from DB
+        global users
+        users = load_users_from_db()
+        
+        add_log_entry("INFO", f"User {username} created by {current_user.username}.", ip=get_user_ip())
+        flash(f'User {username} created successfully.', 'success')
+    else:
+        flash(f'Failed to create user {username}.', 'danger')
     
-    users[new_id] = new_user
-    save_users_to_file(users)
-    
-    add_log_entry("INFO", f"User {username} created by {current_user.username}.", ip=get_user_ip())
-    flash(f'User {username} created successfully.', 'success')
     return redirect(url_for('admin_users_manage'))
 
 @app.route('/admin/users/edit/<int:user_id>', methods=['POST'])
@@ -837,24 +854,30 @@ def admin_edit_user(user_id):
     daily_api_limit = int(request.form.get('daily_api_limit', user.daily_api_limit))
     can_fetch = request.form.get('can_fetch') == 'on'
     
-    # Update password if provided
+    # Prepare updates
+    updates = {
+        'role': role,
+        'can_fetch': can_fetch,
+        'daily_api_limit': daily_api_limit if role == 'guest' else 0
+    }
+    
+    # Only update password if provided
     if new_password:
-        user.password = new_password
+        updates['password'] = new_password
     
-    # Update other fields
-    user.role = role
-    user.can_fetch = can_fetch
+    # Update user in database
+    success = update_user(user_id, **updates)
     
-    # Only set daily API limit for guests
-    if role == 'guest':
-        user.daily_api_limit = daily_api_limit
+    if success:
+        # Reload users from DB
+        global users
+        users = load_users_from_db()
+        
+        add_log_entry("INFO", f"User {user.username} updated by {current_user.username}.", ip=get_user_ip())
+        flash(f'User {user.username} updated successfully.', 'success')
     else:
-        user.daily_api_limit = 0
+        flash(f'Failed to update user {user.username}.', 'danger')
     
-    save_users_to_file(users)
-    
-    add_log_entry("INFO", f"User {user.username} updated by {current_user.username}.", ip=get_user_ip())
-    flash(f'User {user.username} updated successfully.', 'success')
     return redirect(url_for('admin_users_manage'))
 
 @app.route('/admin/users/delete/<int:user_id>')
@@ -875,12 +898,19 @@ def admin_delete_user(user_id):
         flash('Cannot delete your own account.', 'danger')
         return redirect(url_for('admin_users_manage'))
     
-    # Delete user
-    del users[user_id]
-    save_users_to_file(users)
+    # Delete user from database
+    success = delete_user(user_id)
     
-    add_log_entry("INFO", f"User {user.username} deleted by {current_user.username}.", ip=get_user_ip())
-    flash(f'User {user.username} deleted successfully.', 'success')
+    if success:
+        # Reload users from DB
+        global users
+        users = load_users_from_db()
+        
+        add_log_entry("INFO", f"User {user.username} deleted by {current_user.username}.", ip=get_user_ip())
+        flash(f'User {user.username} deleted successfully.', 'success')
+    else:
+        flash(f'Failed to delete user {user.username}.', 'danger')
+    
     return redirect(url_for('admin_users_manage'))
 
 @app.route("/admin/logs")
@@ -940,5 +970,7 @@ def page_not_found(e): return render_template('error.html', error='Page not foun
 def internal_server_error(e): return render_template('error.html', error='Server Error.'), 500
 
 if __name__ == "__main__":
+    # Initialize default users if needed
+    init_default_users()
     add_log_entry("INFO", "Server starting up.")
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False)
