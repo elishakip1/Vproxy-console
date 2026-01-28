@@ -1,373 +1,59 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>User Management</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-  
-  <link rel="icon" href="{{ url_for('static', filename='img/favicon.ico') }}" type="image/x-icon">
-  <link rel="shortcut icon" href="{{ url_for('static', filename='img/favicon.ico') }}" type="image/x-icon">
-
-  <style>
-    body { background-color: #f0f2f5; font-family: sans-serif; }
-    /* Sidebar Styles */
-    .sidebar { min-height: 100vh; width: 250px; background: #212529; color: #fff; position: fixed; top: 0; left: 0; z-index: 1000; padding-top: 20px; transition: all 0.3s; }
-    .sidebar-header { padding: 20px; text-align: center; border-bottom: 1px solid #495057; }
-    
-    .logo-link {
-      display: inline-block;
-      text-decoration: none;
-      margin-bottom: 15px;
-      background-color: white;
-      border-radius: 50%;
-      padding: 5px;
-    }
-    
-    .logo-link img {
-      height: 70px;
-      width: 70px;
-      border-radius: 50%;
-      object-fit: cover;
-      transition: opacity 0.2s ease;
-      display: block;
-    }
-    
-    .logo-link:hover img {
-      opacity: 0.9;
-    }
-    
-    .sidebar-nav { list-style: none; padding: 0; margin-top: 20px; }
-    .sidebar-nav li { width: 100%; }
-    .nav-link { display: block; padding: 15px 20px; color: rgba(255,255,255,.75); text-decoration: none; border-left: 4px solid transparent; }
-    .nav-link:hover, .nav-link.active-nav { color: #fff; background: rgba(255,255,255,.1); border-left-color: #0d6efd; }
-    .content-wrapper { margin-left: 250px; padding: 30px; }
-    @media (max-width: 768px) { .sidebar { margin-left: -250px; } .sidebar.active { margin-left: 0; } .content-wrapper { margin-left: 0; } }
-    
-    .user-badge { font-size: 0.75rem; }
-    .api-usage-bar { height: 8px; border-radius: 4px; overflow: hidden; }
-    .api-usage-fill { height: 100%; }
-    .api-limit-input { max-width: 150px; }
-  </style>
+    <meta charset="UTF-8"><title>Manage Users</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>body{background:#f8f9fa}.sidebar{width:250px;position:fixed;height:100vh;background:#212529;color:white;padding:20px}.main{margin-left:250px;padding:40px}</style>
 </head>
 <body>
-
-<nav class="sidebar" id="sidebar">
-    <div class="sidebar-header">
-        <!-- CLICKABLE LOGO WITH WHITE BACKGROUND -->
-        <a href="{{ url_for('index') }}" class="logo-link">
-            <img src="https://i.ibb.co/pjSD084t/proxychecker-logo-clear.png" alt="Proxy Checker Logo">
-        </a>
-        <h5 class="text-white mt-2">Admin Panel</h5>
+    <div class="sidebar">
+        <h4 class="mb-4">Admin Panel</h4>
+        <nav class="nav flex-column">
+            <a href="/admin" class="nav-link text-white mb-2">📊 Dashboard</a>
+            <a href="/admin/users" class="nav-link text-white mb-2">👥 User Activity</a>
+            <a href="/admin/users/manage" class="nav-link text-white mb-2 active fw-bold">⚙️ Manage Users</a>
+            <a href="/admin/settings" class="nav-link text-white">🔧 Settings</a>
+        </nav>
     </div>
-    <ul class="sidebar-nav">
-        <li><a href="{{ url_for('admin') }}" class="nav-link">📊 Dashboard</a></li>
-        <li><a href="{{ url_for('admin_pool') }}" class="nav-link">🏭 Proxy Pool</a></li>
-        <li><a href="{{ url_for('admin_users') }}" class="nav-link">👥 User Activity</a></li>
-        <li><a href="{{ url_for('admin_users_manage') }}" class="nav-link active-nav">👤 Manage Users</a></li>
-        <li><a href="{{ url_for('admin_logs') }}" class="nav-link">📋 System Logs</a></li>
-        <li><a href="{{ url_for('admin_settings') }}" class="nav-link">⚙️ Settings</a></li>
-        <li class="mt-5"><a href="/" class="nav-link text-warning">← Back to Checker</a></li>
-    </ul>
-</nav>
-
-<div class="content-wrapper">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <button class="btn btn-dark d-md-none" id="sidebarToggle">☰ Menu</button>
-        <h2>👤 User Management</h2>
-    </div>
-
-    {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            {% for category, message in messages %}
-            <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-                {{ message }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-            </div>
-            {% endfor %}
-        {% endif %}
-    {% endwith %}
-
-    <div class="row">
-        <!-- Add User Form -->
-        <div class="col-md-5 mb-4">
-            <div class="card">
-                <div class="card-header bg-primary text-white">
-                    <h5 class="mb-0">➕ Add New User</h5>
+    <div class="main">
+        <h2>⚙️ User Account Management</h2>
+        <div class="card p-4 shadow-sm mb-4 border-0">
+            <h5>Create New Account</h5>
+            <form action="/admin/users/add" method="POST" class="row g-3">
+                <div class="col-md-3"><input name="username" class="form-control" placeholder="Username" required></div>
+                <div class="col-md-3"><input name="password" class="form-control" placeholder="Password" required></div>
+                <div class="col-md-3">
+                    <select name="role" class="form-select">
+                        <option value="user">User</option>
+                        <option value="guest">Guest (Limited)</option>
+                        <option value="admin">Administrator</option>
+                    </select>
                 </div>
-                <div class="card-body">
-                    <form method="POST" action="{{ url_for('admin_add_user') }}">
-                        <div class="mb-3">
-                            <label class="form-label">Username</label>
-                            <input type="text" class="form-control" name="username" required 
-                                   placeholder="Enter unique username">
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Password</label>
-                            <input type="password" class="form-control" name="password" required 
-                                   placeholder="Enter password">
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Role</label>
-                            <select class="form-select" name="role" required id="roleSelect" onchange="toggleApiLimit()">
-                                <option value="admin">Administrator</option>
-                                <option value="user" selected>Regular User</option>
-                                <option value="guest">Guest (Limited API)</option>
-                            </select>
-                            <div class="form-text">
-                                Admin: Full access, User: Normal access, Guest: Limited API calls
-                            </div>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Daily API Call Limit</label>
-                            <input type="number" class="form-control api-limit-input" name="daily_api_limit" 
-                                   value="150" min="0" max="10000" id="apiLimitInput">
-                            <div class="form-text" id="apiLimitHelp">
-                                Maximum API calls allowed per day (0 = unlimited for admin/user)
-                            </div>
-                        </div>
-                        <div class="mb-3 form-check">
-                            <input type="checkbox" class="form-check-input" name="can_fetch" id="can_fetch" checked>
-                            <label class="form-check-label" for="can_fetch">
-                                Can Fetch Proxies (ABC/SX/Pool)
-                            </label>
-                        </div>
-                        <button type="submit" class="btn btn-success w-100">
-                            Create User
-                        </button>
-                    </form>
+                <div class="col-md-3 d-flex align-items-center">
+                    <div class="form-check"><input class="form-check-input" type="checkbox" name="can_fetch" id="cf"><label class="form-check-label" for="cf">Can Fetch</label></div>
+                    <button class="btn btn-success ms-auto">Add User</button>
                 </div>
-            </div>
+            </form>
         </div>
 
-        <!-- Users List -->
-        <div class="col-md-7 mb-4">
-            <div class="card">
-                <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0">Current Users ({{ users|length }})</h5>
-                    <span class="badge bg-light text-dark">{{ users|length }} users</span>
-                </div>
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table table-hover mb-0">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Username</th>
-                                    <th>Role</th>
-                                    <th>API Limit</th>
-                                    <th>Features</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for user in users %}
-                                <tr>
-                                    <td class="fw-bold">
-                                        {{ user.username }}
-                                        {% if user.id == 1 %}
-                                        <span class="badge bg-warning text-dark user-badge">Owner</span>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        {% if user.role == 'admin' %}
-                                        <span class="badge bg-danger">Admin</span>
-                                        {% elif user.role == 'user' %}
-                                        <span class="badge bg-primary">User</span>
-                                        {% else %}
-                                        <span class="badge bg-secondary">Guest</span>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        {% if user.daily_api_limit == 0 %}
-                                        <span class="text-muted">Unlimited</span>
-                                        {% else %}
-                                        {{ user.daily_api_limit }}
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        {% if user.can_fetch %}
-                                        <span class="badge bg-success user-badge">Fetch</span>
-                                        {% else %}
-                                        <span class="badge bg-secondary user-badge">No Fetch</span>
-                                        {% endif %}
-                                        {% if user.id == current_user.id %}
-                                        <span class="badge bg-info user-badge">You</span>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        {% if user.id != 1 and user.id != current_user.id %}
-                                        <div class="btn-group btn-group-sm" role="group">
-                                            <button type="button" class="btn btn-outline-primary" 
-                                                    data-bs-toggle="modal" data-bs-target="#editModal{{ user.id }}">
-                                                Edit
-                                            </button>
-                                            <a href="{{ url_for('admin_delete_user', user_id=user.id) }}" 
-                                               class="btn btn-outline-danger"
-                                               onclick="return confirm('Are you sure you want to delete user: {{ user.username }}? This action cannot be undone.')">
-                                                Delete
-                                            </a>
-                                        </div>
-                                        {% else %}
-                                        <span class="text-muted">Protected</span>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                                
-                                <!-- Edit Modal for each user -->
-                                <div class="modal fade" id="editModal{{ user.id }}" tabindex="-1" aria-hidden="true">
-                                    <div class="modal-dialog">
-                                        <div class="modal-content">
-                                            <div class="modal-header">
-                                                <h5 class="modal-title">Edit User: {{ user.username }}</h5>
-                                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                                            </div>
-                                            <form method="POST" action="{{ url_for('admin_edit_user', user_id=user.id) }}">
-                                                <div class="modal-body">
-                                                    <div class="mb-3">
-                                                        <label class="form-label">New Password (leave blank to keep current)</label>
-                                                        <input type="password" class="form-control" name="password" 
-                                                               placeholder="Enter new password">
-                                                    </div>
-                                                    <div class="mb-3">
-                                                        <label class="form-label">Role</label>
-                                                        <select class="form-select edit-role-select" name="role" required data-user-id="{{ user.id }}">
-                                                            <option value="admin" {% if user.role == 'admin' %}selected{% endif %}>Administrator</option>
-                                                            <option value="user" {% if user.role == 'user' %}selected{% endif %}>Regular User</option>
-                                                            <option value="guest" {% if user.role == 'guest' %}selected{% endif %}>Guest (Limited API)</option>
-                                                        </select>
-                                                    </div>
-                                                    <div class="mb-3">
-                                                        <label class="form-label">Daily API Call Limit</label>
-                                                        <input type="number" class="form-control api-limit-input edit-api-limit" 
-                                                               name="daily_api_limit" value="{{ user.daily_api_limit }}" 
-                                                               min="0" max="10000" required data-user-id="{{ user.id }}">
-                                                    </div>
-                                                    <div class="mb-3 form-check">
-                                                        <input type="checkbox" class="form-check-input" name="can_fetch" id="edit_can_fetch{{ user.id }}"
-                                                               {% if user.can_fetch %}checked{% endif %}>
-                                                        <label class="form-check-label" for="edit_can_fetch{{ user.id }}">
-                                                            Can Fetch Proxies (ABC/SX/Pool)
-                                                        </label>
-                                                    </div>
-                                                </div>
-                                                <div class="modal-footer">
-                                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                                    <button type="submit" class="btn btn-primary">Save Changes</button>
-                                                </div>
-                                            </form>
-                                        </div>
-                                    </div>
-                                </div>
-                                {% else %}
-                                <tr>
-                                    <td colspan="5" class="text-center text-muted">No users found.</td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- User API Usage Stats -->
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header bg-info text-white">
-                    <h5 class="mb-0">📊 Today's API Usage</h5>
-                </div>
-                <div class="card-body">
-                    <div class="row">
-                        {% for user in users %}
-                        <div class="col-md-4 mb-3">
-                            <div class="card h-100">
-                                <div class="card-body">
-                                    <h6 class="card-title">
-                                        {{ user.username }}
-                                        <span class="badge bg-{% if user.role == 'admin' %}danger{% elif user.role == 'user' %}primary{% else %}secondary{% endif %} float-end">
-                                            {{ user.role|title }}
-                                        </span>
-                                    </h6>
-                                    <p class="card-text small">
-                                        {% set usage = user.daily_api_usage or 0 %}
-                                        {% set limit = user.daily_api_limit %}
-                                        <strong>Today's Usage:</strong> {{ usage }} / {% if limit == 0 %}∞{% else %}{{ limit }}{% endif %}
-                                    </p>
-                                    {% if limit > 0 %}
-                                    <div class="api-usage-bar bg-light mb-2">
-                                        <div class="api-usage-fill bg-{% if usage >= limit %}danger{% elif usage >= limit * 0.8 %}warning{% else %}success{% endif %}" 
-                                             style="width: {{ (usage / limit * 100)|round|int if limit > 0 else 0 }}%">
-                                        </div>
-                                    </div>
-                                    <p class="small text-muted mb-0">
-                                        {{ ((usage / limit * 100) if limit > 0 else 0)|round|int }}% used
-                                        {% if usage >= limit %}
-                                        <span class="badge bg-danger ms-2">Limit Reached</span>
-                                        {% endif %}
-                                    </p>
-                                    {% else %}
-                                    <p class="small text-success">Unlimited API calls</p>
-                                    {% endif %}
-                                </div>
-                            </div>
-                        </div>
-                        {% endfor %}
-                    </div>
-                </div>
-            </div>
+        <div class="card shadow-sm border-0">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light"><tr><th>ID</th><th>Username</th><th>Role</th><th>Can Fetch</th><th>API Usage</th><th>Actions</th></tr></thead>
+                <tbody>
+                    {% for u in users %}
+                    <tr>
+                        <td>{{ u.id }}</td><td><strong>{{ u.username }}</strong></td>
+                        <td><span class="badge bg-info text-dark">{{ u.role }}</span></td>
+                        <td>{{ '✅' if u.can_fetch else '❌' }}</td>
+                        <td>{{ u.daily_api_usage }}</td>
+                        <td>
+                            <a href="/admin/users/delete/{{ u.id }}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete user?')">Delete</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     </div>
-</div>
-
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-<script>
-    document.getElementById('sidebarToggle').addEventListener('click', function() {
-        document.getElementById('sidebar').classList.toggle('active');
-    });
-
-    // Function to toggle API limit field based on role selection
-    function toggleApiLimit() {
-        const roleSelect = document.getElementById('roleSelect');
-        const apiLimitInput = document.getElementById('apiLimitInput');
-        const apiLimitHelp = document.getElementById('apiLimitHelp');
-        
-        if (roleSelect.value === 'guest') {
-            apiLimitInput.disabled = false;
-            apiLimitInput.required = true;
-            apiLimitInput.value = '150';
-            apiLimitHelp.textContent = 'Maximum API calls allowed per day (required for guest users)';
-        } else {
-            apiLimitInput.disabled = true;
-            apiLimitInput.required = false;
-            apiLimitInput.value = '0';
-            apiLimitHelp.textContent = 'Unlimited API calls (admin/user)';
-        }
-    }
-
-    // Initialize on page load
-    document.addEventListener('DOMContentLoaded', function() {
-        toggleApiLimit();
-        
-        // Add event listeners to edit modal role selects
-        document.querySelectorAll('.edit-role-select').forEach(select => {
-            select.addEventListener('change', function() {
-                const userId = this.getAttribute('data-user-id');
-                const apiLimitInput = document.querySelector(`.edit-api-limit[data-user-id="${userId}"]`);
-                
-                if (this.value === 'guest') {
-                    apiLimitInput.disabled = false;
-                    apiLimitInput.required = true;
-                    if (apiLimitInput.value === '0') {
-                        apiLimitInput.value = '150';
-                    }
-                } else {
-                    apiLimitInput.disabled = true;
-                    apiLimitInput.required = false;
-                    apiLimitInput.value = '0';
-                }
-            });
-        });
-    });
-</script>
 </body>
 </html>
