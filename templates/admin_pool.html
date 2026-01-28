@@ -1,230 +1,52 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Proxy Pool Manager</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-  
-  <link rel="icon" href="{{ url_for('static', filename='img/favicon.ico') }}" type="image/x-icon">
-  <link rel="shortcut icon" href="{{ url_for('static', filename='img/favicon.ico') }}" type="image/x-icon">
-
-  <style>
-    body { background-color: #f0f2f5; font-family: sans-serif; }
-    .sidebar { min-height: 100vh; width: 250px; background: #212529; color: #fff; position: fixed; top: 0; left: 0; z-index: 1000; padding-top: 20px; transition: all 0.3s; }
-    .sidebar-header { padding: 20px; text-align: center; border-bottom: 1px solid #495057; }
-    
-    .logo-link {
-      display: inline-block;
-      text-decoration: none;
-      margin-bottom: 15px;
-      background-color: white;
-      border-radius: 50%;
-      padding: 5px;
-    }
-    
-    .logo-link img {
-      height: 70px;
-      width: 70px;
-      border-radius: 50%;
-      object-fit: cover;
-      transition: opacity 0.2s ease;
-      display: block;
-    }
-    
-    .logo-link:hover img {
-      opacity: 0.9;
-    }
-    
-    .sidebar-nav { list-style: none; padding: 0; margin-top: 20px; }
-    .sidebar-nav li { width: 100%; }
-    .nav-link { display: block; padding: 15px 20px; color: rgba(255,255,255,.75); text-decoration: none; border-left: 4px solid transparent; }
-    .nav-link:hover, .nav-link.active-nav { color: #fff; background: rgba(255,255,255,.1); border-left-color: #0d6efd; }
-    .content-wrapper { margin-left: 250px; padding: 30px; }
-    .proxy-item { font-family: monospace; font-size: 0.8rem; }
-    @media (max-width: 768px) { .sidebar { margin-left: -250px; } .sidebar.active { margin-left: 0; } .content-wrapper { margin-left: 0; } }
-  </style>
+    <meta charset="UTF-8"><title>Proxy Pool</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>body{background:#f8f9fa}.sidebar{width:250px;position:fixed;height:100vh;background:#212529;color:white;padding:20px}.main{margin-left:250px;padding:40px}</style>
 </head>
 <body>
-
-<nav class="sidebar" id="sidebar">
-    <div class="sidebar-header">
-        <!-- CLICKABLE LOGO WITH WHITE BACKGROUND -->
-        <a href="{{ url_for('index') }}" class="logo-link">
-            <img src="https://i.ibb.co/pjSD084t/proxychecker-logo-clear.png" alt="Proxy Checker Logo">
-        </a>
-        <h5 class="text-white mt-2">Admin Panel</h5>
+    <div class="sidebar">
+        <h4 class="mb-4">Admin Panel</h4>
+        <nav class="nav flex-column">
+            <a href="/admin" class="nav-link text-white mb-2">📊 Dashboard</a>
+            <a href="/admin/pool" class="nav-link text-white mb-2 active fw-bold">🏭 Proxy Pool</a>
+            <a href="/admin/settings" class="nav-link text-white">🔧 Settings</a>
+        </nav>
     </div>
-    <ul class="sidebar-nav">
-        <li><a href="{{ url_for('admin') }}" class="nav-link">📊 Dashboard</a></li>
-        <li><a href="{{ url_for('admin_pool') }}" class="nav-link active-nav">🏭 Proxy Pool</a></li>
-        <li><a href="{{ url_for('admin_users') }}" class="nav-link">👥 User Activity</a></li>
-        <li><a href="{{ url_for('admin_logs') }}" class="nav-link">📋 System Logs</a></li>
-        <li><a href="{{ url_for('admin_settings') }}" class="nav-link">⚙️ Settings</a></li>
-        <li class="mt-5"><a href="/" class="nav-link text-warning">← Back to Checker</a></li>
-    </ul>
-</nav>
-
-<div class="content-wrapper">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <button class="btn btn-dark d-md-none" id="sidebarToggle">☰ Menu</button>
+    <div class="main">
         <h2>🏭 Proxy Pool Manager</h2>
-    </div>
-
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        {% for category, message in messages %}
-        <div class="alert alert-{{ category }}">{{ message }}</div>
-        {% endfor %}
-      {% endif %}
-    {% endwith %}
-
-    <div class="row mb-4 text-center">
-        <div class="col-md-4 mb-3">
-            <div class="card bg-light h-100">
-                <div class="card-body">
-                    <h1 class="display-5 text-primary fw-bold">{{ counts.total }}</h1>
-                    <p class="text-muted mb-0">Total Proxies</p>
-                    <form method="POST" class="mt-2" onsubmit="return confirm('Clear ALL proxies?');">
-                        <input type="hidden" name="clear_pool" value="1">
-                        <input type="hidden" name="clear_target" value="all">
-                        <button class="btn btn-danger btn-sm w-100">Clear All</button>
-                    </form>
-                </div>
-            </div>
-        </div>
-        
-        <div class="col-md-4 mb-3">
-            <div class="card h-100 border-info">
-                <div class="card-body">
-                    <h1 class="display-5 text-info fw-bold">{{ counts.pyproxy }}</h1>
-                    <p class="text-muted mb-0">PyProxy Pool</p>
-                    <div class="d-grid gap-2 mt-2">
-                        <button class="btn btn-outline-primary btn-sm" onclick="triggerReset('pyproxy')">Rotate IP</button>
-                        <form method="POST" onsubmit="return confirm('Clear ONLY PyProxies?');">
-                            <input type="hidden" name="clear_pool" value="1">
-                            <input type="hidden" name="clear_target" value="pyproxy">
-                            <button class="btn btn-outline-danger btn-sm w-100">Clear PyProxy</button>
-                        </form>
-                    </div>
-                </div>
-            </div>
+        <div class="row mb-4">
+            <div class="col-md-4"><div class="card p-3 text-center"><h6>Total Pool</h6><h3>{{ counts.total }}</h3></div></div>
+            <div class="col-md-4"><div class="card p-3 text-center"><h6>PyProxy</h6><h3>{{ counts.pyproxy }}</h3></div></div>
+            <div class="col-md-4"><div class="card p-3 text-center"><h6>PiaProxy</h6><h3>{{ counts.piaproxy }}</h3></div></div>
         </div>
 
-        <div class="col-md-4 mb-3">
-            <div class="card h-100 border-warning">
-                <div class="card-body">
-                    <h1 class="display-5 text-warning fw-bold">{{ counts.piaproxy }}</h1>
-                    <p class="text-muted mb-0">PiaProxy Pool</p>
-                    <div class="d-grid gap-2 mt-2">
-                        <button class="btn btn-outline-warning btn-sm" onclick="triggerReset('piaproxy')">Rotate IP</button>
-                        <form method="POST" onsubmit="return confirm('Clear ONLY PiaProxies?');">
-                            <input type="hidden" name="clear_pool" value="1">
-                            <input type="hidden" name="clear_target" value="piaproxy">
-                            <button class="btn btn-outline-danger btn-sm w-100">Clear PiaProxy</button>
-                        </form>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="card mb-4">
-        <div class="card-header bg-primary text-white">📥 Upload Bulk Proxies</div>
-        <div class="card-body">
+        <div class="card p-4 border-0 shadow-sm mb-4">
+            <h5>Bulk Upload</h5>
             <form method="POST">
-                <div class="mb-3">
-                    <label class="form-label">Provider Tag</label>
-                    <select name="provider" class="form-select">
+                <textarea name="bulk_proxies" class="form-control mb-2" rows="5" placeholder="host:port:user:pass"></textarea>
+                <div class="d-flex gap-2">
+                    <select name="provider" class="form-select w-auto">
                         <option value="pyproxy">PyProxy</option>
                         <option value="piaproxy">PiaProxy</option>
-                        <option value="other">Other</option>
                     </select>
+                    <button class="btn btn-primary">Add to Pool</button>
                 </div>
-                <div class="mb-3">
-                    <label class="form-label">Paste List (Format: host:port:user:pass)</label>
-                    <textarea name="bulk_proxies" class="form-control" rows="10" placeholder="1.2.3.4:8000:user:pass..."></textarea>
-                </div>
-                <button type="submit" class="btn btn-success w-100">Add to Pool</button>
+            </form>
+        </div>
+
+        <div class="card p-4 border-0 shadow-sm">
+            <form method="POST">
+                <h5>Wipe Pool</h5>
+                <select name="clear_target" class="form-select w-auto d-inline">
+                    <option value="all">Entire Pool</option>
+                    <option value="pyproxy">PyProxy Only</option>
+                    <option value="piaproxy">PiaProxy Only</option>
+                </select>
+                <button name="clear_pool" class="btn btn-danger" onclick="return confirm('Clear pool?')">Wipe Selected</button>
             </form>
         </div>
     </div>
-
-    <div class="card">
-        <div class="card-header">
-            <ul class="nav nav-tabs card-header-tabs" id="poolTabs" role="tablist">
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link active" id="py-tab" data-bs-toggle="tab" data-bs-target="#py-content" type="button" role="tab">PyProxy List (Last 50)</button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="pia-tab" data-bs-toggle="tab" data-bs-target="#pia-content" type="button" role="tab">PiaProxy List (Last 50)</button>
-                </li>
-            </ul>
-        </div>
-        <div class="card-body">
-            <div class="tab-content" id="poolTabsContent">
-                <div class="tab-pane fade show active" id="py-content" role="tabpanel">
-                    <div class="table-responsive">
-                        <table class="table table-sm table-striped">
-                            <thead><tr><th>Proxy</th><th>Added At</th></tr></thead>
-                            <tbody>
-                                {% for p in preview_py %}
-                                <tr>
-                                    <td class="proxy-item">{{ p.proxy }}</td>
-                                    <td>{{ p.created_at | replace('T', ' ') | truncate(19, True, '') }}</td>
-                                </tr>
-                                {% else %}
-                                <tr><td colspan="2" class="text-center text-muted">No proxies found for PyProxy.</td></tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-                <div class="tab-pane fade" id="pia-content" role="tabpanel">
-                    <div class="table-responsive">
-                        <table class="table table-sm table-striped">
-                            <thead><tr><th>Proxy</th><th>Added At</th></tr></thead>
-                            <tbody>
-                                {% for p in preview_pia %}
-                                <tr>
-                                    <td class="proxy-item">{{ p.proxy }}</td>
-                                    <td>{{ p.created_at | replace('T', ' ') | truncate(19, True, '') }}</td>
-                                </tr>
-                                {% else %}
-                                <tr><td colspan="2" class="text-center text-muted">No proxies found for PiaProxy.</td></tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-<script>
-    document.getElementById('sidebarToggle').addEventListener('click', function() {
-        document.getElementById('sidebar').classList.toggle('active');
-    });
-
-    async function triggerReset(provider) {
-        if(!confirm("Trigger IP Rotation for " + provider + "?")) return;
-        try {
-            let btn = event.target;
-            let originalText = btn.innerText;
-            btn.innerText = "Wait...";
-            btn.disabled = true;
-
-            let res = await fetch('/api/trigger-reset/' + provider);
-            let data = await res.json();
-            alert(data.message);
-            
-            btn.innerText = originalText;
-            btn.disabled = false;
-        } catch (e) {
-            alert("Error: " + e);
-        }
-    }
-</script>
 </body>
 </html>
