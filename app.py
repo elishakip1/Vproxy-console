@@ -115,7 +115,7 @@ def load_users_from_db():
             1: User(id=1, username="EL", password="ADMIN123", role="admin", can_fetch=True, daily_api_limit=0),
         }
 
-# Initialize users
+# Initialize users - module level variable
 users = load_users_from_db()
 
 @login_manager.user_loader
@@ -781,17 +781,18 @@ def admin_users():
         except: s['status'] = 'Unknown'
     return render_template("admin_users.html", stats=stats)
 
-# User Management Routes
+# User Management Routes - FIXED SECTION
 @app.route('/admin/users/manage', methods=['GET'])
 @admin_required
 def admin_users_manage():
     # Reload users from DB to get latest data
-    global users
-    users = load_users_from_db()
+    # FIXED: Removed problematic global declaration that was causing syntax error
+    # The 'users' variable is already accessible at module level
+    users_refresh = load_users_from_db()
     
     # Get daily API usage for each user
     user_list = []
-    for user in users.values():
+    for user in users_refresh.values():
         user_dict = user.to_dict()
         # Get today's API usage for this user
         daily_usage = get_daily_api_usage_for_user(user.username)
@@ -824,8 +825,10 @@ def admin_add_user():
     
     if success:
         # Reload users from DB
-        global users
-        users = load_users_from_db()
+        users_refresh = load_users_from_db()
+        # Update the global users dictionary
+        users.clear()
+        users.update(users_refresh)
         
         add_log_entry("INFO", f"User {username} created by {current_user.username}.", ip=get_user_ip())
         flash(f'User {username} created successfully.', 'success')
@@ -837,6 +840,7 @@ def admin_add_user():
 @app.route('/admin/users/edit/<int:user_id>', methods=['POST'])
 @admin_required
 def admin_edit_user(user_id):
+    # Access the module-level users variable directly
     if user_id not in users:
         flash('User not found.', 'danger')
         return redirect(url_for('admin_users_manage'))
@@ -870,8 +874,10 @@ def admin_edit_user(user_id):
     
     if success:
         # Reload users from DB
-        global users
-        users = load_users_from_db()
+        users_refresh = load_users_from_db()
+        # Update the global users dictionary
+        users.clear()
+        users.update(users_refresh)
         
         add_log_entry("INFO", f"User {user.username} updated by {current_user.username}.", ip=get_user_ip())
         flash(f'User {user.username} updated successfully.', 'success')
@@ -883,6 +889,7 @@ def admin_edit_user(user_id):
 @app.route('/admin/users/delete/<int:user_id>')
 @admin_required
 def admin_delete_user(user_id):
+    # Access the module-level users variable directly
     if user_id not in users:
         flash('User not found.', 'danger')
         return redirect(url_for('admin_users_manage'))
@@ -903,8 +910,10 @@ def admin_delete_user(user_id):
     
     if success:
         # Reload users from DB
-        global users
-        users = load_users_from_db()
+        users_refresh = load_users_from_db()
+        # Update the global users dictionary
+        users.clear()
+        users.update(users_refresh)
         
         add_log_entry("INFO", f"User {user.username} deleted by {current_user.username}.", ip=get_user_ip())
         flash(f'User {user.username} deleted successfully.', 'success')
