@@ -1,24 +1,36 @@
 {
-  "version": 2,
   "builds": [
     {
       "src": "app.py",
       "use": "@vercel/python",
-      "config": { 
+      "config": {
+        "runtime": "python3.11",
         "maxLambdaSize": "15mb",
-        "runtime": "python3.9"
+        "includeFiles": [
+          "templates/**",
+          "static/**",
+          "*.py",
+          "requirements.txt",
+          "runtime.txt"
+        ]
       }
     }
   ],
   "routes": [
+    {
+      "src": "/static/(.*)",
+      "headers": {
+        "Cache-Control": "public, max-age=31536000"
+      },
+      "dest": "/static/$1"
+    },
     {
       "src": "/(.*)",
       "dest": "app.py"
     }
   ],
   "env": {
-    "FLASK_SECRET_KEY": "your-secret-key-here-change-this",
-    "SUPABASE_URL": "@supabase_url",
-    "SUPABASE_KEY": "@supabase_key"
+    "PYTHONUNBUFFERED": "1",
+    "FLASK_ENV": "production"
   }
 }
