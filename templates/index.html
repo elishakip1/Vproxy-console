@@ -1,658 +1,779 @@
-# --- IMPORTS ---
-from flask import (
-    Flask, request, render_template, redirect, url_for,
-    jsonify, send_from_directory, flash, session, abort
-)
-from flask_login import (
-    LoginManager, UserMixin, login_user, logout_user, login_required, current_user
-)
-from functools import wraps
-import os
-import time
-import requests
-from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import datetime
-import random
-from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
-import logging
-import sys
-import re
-
-# Import from db_util
-from db_util import (
-    get_settings, update_setting, add_used_ip, delete_used_ip,
-    get_all_used_ips,
-    log_bad_proxy, get_bad_proxies_list,
-    get_all_system_logs, add_log_entry,
-    clear_all_system_logs,
-    add_api_usage_log, get_all_api_usage_logs,
-    get_user_stats_summary,
-    add_bulk_proxies, get_random_proxies_from_pool, get_pool_stats, clear_proxy_pool,
-    get_daily_api_usage_for_user, update_api_credits, get_pool_preview,
-    get_all_users, create_user, update_user, delete_user, get_user_by_username, init_default_users,
-    get_active_fetch_buttons, get_all_fetch_buttons, add_fetch_button, delete_fetch_button, delete_user_activity_logs
-)
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', stream=sys.stdout)
-logger = logging.getLogger(__name__)
-
-app = Flask(__name__)
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", "change-this-super-secret-key-in-production")
-
-login_manager = LoginManager()
-login_manager.init_app(app)
-login_manager.login_view = 'login'
-login_manager.login_message_category = "warning"
-
-BLOCKED_IPS = {"192.168.1.50", "10.0.0.5"}
-
-class User(UserMixin):
-    def __init__(self, id, username, password, role="user", can_fetch=False, daily_api_limit=0):
-        self.id = id
-        self.username = username
-        self.password = password
-        self.role = role
-        self.can_fetch = can_fetch
-        self.daily_api_limit = daily_api_limit
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     
-    @property
-    def is_admin(self):
-        return self.role == "admin"
+    <link rel="icon" href="{{ url_for('static', filename='img/favicon.ico') }}" type="image/x-icon">
+    <link rel="shortcut icon" href="{{ url_for('static', filename='img/favicon.ico') }}" type="image/x-icon">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='img/favicon-32x32.png') }}">
+    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='img/favicon-16x16.png') }}">
+    <link rel="manifest" href="{{ url_for('static', filename='img/site.webmanifest') }}">
     
-    @property 
-    def is_guest(self):
-        return self.role == "guest"
-    
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'username': self.username,
-            'password': self.password,
-            'role': self.role,
-            'can_fetch': self.can_fetch,
-            'daily_api_limit': self.daily_api_limit
+    <style>
+        :root {
+            --bg-color: #f0f2f5;
+            --card-bg: #ffffff;
+            --text-color: #212529;
+            --text-muted: #6c757d;
+            --border-color: #dee2e6;
+            --header-bg: #ffffff;
+            --table-header-bg: #f8f9fa;
+            --table-row-hover: #f8f9fa;
+            --btn-primary: #0d6efd;
+            --btn-primary-hover: #0b5ed7;
+            --btn-secondary: #6c757d;
+            --btn-secondary-hover: #5c636a;
+            --success-color: #198754;
+            --warning-color: #ffc107;
+            --danger-color: #dc3545;
+            --info-color: #0dcaf0;
+            --shadow-color: rgba(0,0,0,0.1);
+            --input-bg: #ffffff;
+            --input-border: #ced4da;
+            --input-color: #212529;
+            --placeholder-color: #6c757d;
         }
 
-def load_users_from_db():
-    try:
-        users_data = get_all_users()
-        users_map = {}
-        for user_data in users_data:
-            user = User(
-                id=user_data['id'],
-                username=user_data['username'],
-                password=user_data['password'],
-                role=user_data.get('role', 'user'),
-                can_fetch=user_data.get('can_fetch', False),
-                daily_api_limit=user_data.get('daily_api_limit', 0)
-            )
-            users_map[user.id] = user
+        [data-theme="dark"] {
+            --bg-color: #121212;
+            --card-bg: #1e1e1e;
+            --text-color: #e9ecef;
+            --text-muted: #adb5bd;
+            --border-color: #343a40;
+            --header-bg: #1e1e1e;
+            --table-header-bg: #2d3748;
+            --table-row-hover: #2d3748;
+            --btn-primary: #0d6efd;
+            --btn-primary-hover: #0b5ed7;
+            --btn-secondary: #6c757d;
+            --btn-secondary-hover: #5c636a;
+            --success-color: #198754;
+            --warning-color: #ffc107;
+            --danger-color: #dc3545;
+            --info-color: #0dcaf0;
+            --shadow-color: rgba(0,0,0,0.3);
+            --input-bg: #2d3748;
+            --input-border: #4a5568;
+            --input-color: #e9ecef;
+            --placeholder-color: #a0aec0;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: sans-serif;
+            padding-bottom: 80px;
+            margin: 0;
+            min-height: 100vh;
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+
+        .main-container {
+            width: 100%;
+            max-width: 1000px;
+            margin: 30px auto;
+            padding: 0 20px;
+        }
+
+        .content-card {
+            background-color: var(--card-bg);
+            border-radius: 8px;
+            box-shadow: 0 4px 6px var(--shadow-color);
+            padding: 25px;
+            transition: background-color 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .header-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 0;
+            margin-bottom: 20px;
+            background-color: var(--header-bg);
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        .header-title-container { 
+            display: flex; 
+            align-items: center; 
+            flex: 1;
+        }
+
+        .header-title-link {
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            color: var(--text-color);
+        }
+
+        .header-title-link:hover {
+            color: var(--text-color);
+            opacity: 0.9;
+        }
+
+        .header-buttons {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            justify-content: flex-end;
+        }
+
+        .header-logo { 
+            height: 80px; 
+            margin-right: 15px; 
+            border-radius: 50%;
+            object-fit: cover;
+            transition: opacity 0.2s ease;
+        }
+
+        .header-title-link:hover .header-logo {
+            opacity: 0.9;
+        }
+
+        .textarea-box { 
+            height: 200px; 
+            background-color: var(--input-bg);
+            color: var(--input-color);
+            border-color: var(--input-border);
+            transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+        }
+
+        .textarea-box::placeholder {
+            color: var(--placeholder-color);
+        }
+
+        .copy-btn { 
+            font-size: 12px; 
+        }
+
+        .proxy-masked { 
+            font-family: monospace; 
+            word-break: break-all; 
+            color: var(--text-color);
+        }
+
+        .copy-btn.disabled { 
+            opacity: 0.5; 
+            cursor: not-allowed; 
+        }
+
+        .proxy-counter { 
+            position: absolute; 
+            right: 20px; 
+            bottom: 10px; 
+            font-size: 0.85rem; 
+            color: var(--text-muted); 
+            background: rgba(255, 255, 255, 0.1); 
+            padding: 2px 5px; 
+            border-radius: 3px; 
+            backdrop-filter: blur(5px);
+        }
+
+        [data-theme="dark"] .proxy-counter {
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .counter-error { 
+            color: var(--danger-color); 
+            font-weight: bold; 
+        }
+
+        .counter-warning { 
+            color: var(--warning-color); 
+            font-weight: bold; 
+        }
+
+        .counter-ok { 
+            color: var(--success-color); 
+        }
+
+        .textarea-container { 
+            position: relative; 
+        }
+
+        .alert-dismissible .btn-close { 
+            top: 0; 
+            right: 0; 
+            z-index: 2; 
+            padding: 1.25rem 1rem;
+        }
+
+        .table {
+            color: var(--text-color);
+            background-color: var(--card-bg);
+            margin-bottom: 0;
+        }
+
+        .table th, .table td { 
+            vertical-align: middle; 
+            padding: 0.6rem; 
+            border-color: var(--border-color);
+        }
+
+        .table th { 
+            font-size: 0.85rem; 
+            white-space: nowrap; 
+            background-color: var(--table-header-bg);
+            font-weight: 600;
+        }
+
+        .table td { 
+            font-size: 0.8rem; 
+        }
+
+        .table .text-end { 
+            text-align: right !important; 
+        }
+
+        .table .text-center { 
+            text-align: center !important; 
+        }
+
+        .table-hover tbody tr:hover {
+            background-color: var(--table-row-hover);
+        }
+
+        /* Theme Toggle Button */
+        .theme-toggle {
+            background-color: var(--btn-secondary);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 14px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            transition: background-color 0.3s ease;
+        }
+
+        .theme-toggle:hover {
+            background-color: var(--btn-secondary-hover);
+        }
+
+        .theme-toggle .sun-icon {
+            display: none;
+        }
+
+        .theme-toggle .moon-icon {
+            display: inline-block;
+        }
+
+        [data-theme="dark"] .theme-toggle .sun-icon {
+            display: inline-block;
+        }
+
+        [data-theme="dark"] .theme-toggle .moon-icon {
+            display: none;
+        }
+
+        /* Notepad Widget Styles */
+        #notepad-widget { 
+            position: fixed; 
+            bottom: 20px; 
+            right: 20px; 
+            z-index: 1050; 
+        }
+
+        #notepad-toggle-btn { 
+            background-color: var(--btn-primary); 
+            color: white; 
+            border: none; 
+            border-radius: 50%; 
+            width: 50px; 
+            height: 50px; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            box-shadow: 0 4px 8px var(--shadow-color); 
+            cursor: pointer; 
+            transition: background-color 0.2s; 
+        }
+
+        #notepad-toggle-btn:hover { 
+            background-color: var(--btn-primary-hover); 
+        }
+
+        #notepad-container { 
+            position: absolute; 
+            bottom: 65px; 
+            right: 0; 
+            width: 300px; 
+            height: 350px; 
+            background-color: var(--card-bg); 
+            border-radius: 8px; 
+            box-shadow: 0 5px 15px var(--shadow-color); 
+            display: flex; 
+            flex-direction: column; 
+            overflow: hidden; 
+            transition: all 0.3s ease-in-out; 
+            opacity: 1; 
+            transform: translateY(0); 
+            pointer-events: auto; 
+            border: 1px solid var(--border-color);
+        }
+
+        #notepad-container.hidden { 
+            display: none; 
+            opacity: 0; 
+            transform: translateY(10px); 
+            pointer-events: none; 
+        }
+
+        #notepad-header { 
+            background-color: var(--table-header-bg); 
+            padding: 12px 15px; 
+            border-bottom: 1px solid var(--border-color); 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            font-weight: bold; 
+            cursor: grab; 
+            color: var(--text-color);
+        }
+
+        #notepad-close-btn { 
+            background: none; 
+            border: none; 
+            font-size: 1.5rem; 
+            line-height: 1; 
+            padding: 0 5px; 
+            cursor: pointer; 
+            color: var(--text-muted); 
+        }
+
+        #notepad-close-btn:hover { 
+            color: var(--text-color); 
+        }
+
+        #notepad-textarea { 
+            flex-grow: 1; 
+            border: none; 
+            padding: 15px; 
+            resize: none; 
+            font-family: sans-serif; 
+            font-size: 14px; 
+            color: var(--text-color); 
+            background-color: var(--input-bg);
+        }
+
+        #notepad-textarea:focus { 
+            outline: none; 
+        }
+
+        #notepad-textarea::placeholder {
+            color: var(--placeholder-color);
+        }
         
-        if not users_map:
-            init_default_users()
-            users_data = get_all_users()
-            for user_data in users_data:
-                user = User(
-                    id=user_data['id'],
-                    username=user_data['username'],
-                    password=user_data['password'],
-                    role=user_data.get('role', 'user'),
-                    can_fetch=user_data.get('can_fetch', False),
-                    daily_api_limit=user_data.get('daily_api_limit', 0)
-                )
-                users_map[user.id] = user
-        return users_map
-    except Exception as e:
-        logger.error(f"Error loading users from DB: {e}")
-        return {1: User(id=1, username="EL", password="ADMIN123", role="admin", can_fetch=True, daily_api_limit=0)}
-
-users = load_users_from_db()
-
-@login_manager.user_loader
-def load_user(user_id):
-    try:
-        return users.get(int(user_id))
-    except:
-        return None
-
-def admin_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if not current_user.is_authenticated or not current_user.is_admin:
-            return redirect(url_for('login', next=request.url))
-        return f(*args, **kwargs)
-    return decorated_function
-
-def get_user_ip():
-    ip = request.headers.get('X-Forwarded-For')
-    if ip:
-        return ip.split(',')[0].strip()
-    return request.remote_addr or "Unknown"
-
-DEFAULT_SETTINGS = {
-    "MAX_PASTE": 30,
-    "FRAUD_SCORE_LEVEL": 0,
-    "MAX_WORKERS": 5,
-    "SCAMALYTICS_API_KEY": "",
-    "SCAMALYTICS_API_URL": "https://api11.scamalytics.com/v3/",
-    "SCAMALYTICS_USERNAME": "",
-    "ANNOUNCEMENT": "",
-    "API_CREDITS_USED": "N/A",
-    "API_CREDITS_REMAINING": "N/A",
-    "CONSECUTIVE_FAILS": 0,
-    "SYSTEM_PAUSED": "FALSE",
-    "ABC_GENERATION_URL": "",
-    "SX_GENERATION_URL": "https://api.sx.org/port/list/rkocd4za052HM0HkruFuQvE6x37cMNsG.txt?proxy_template_id=3729&all=true&except_id[]=[]",
-    "PYPROXY_RESET_URL": "",
-    "PIAPROXY_RESET_URL": "",
-    "PASTE_INPUT_DISABLED": "FALSE",
-    "FORCE_FETCH_FOR_USERS": "FALSE"
-}
-
-_SETTINGS_CACHE = None
-_SETTINGS_CACHE_TIME = 0
-CACHE_DURATION = 300
-
-def get_app_settings(force_refresh=False):
-    global _SETTINGS_CACHE, _SETTINGS_CACHE_TIME
-    if not force_refresh and _SETTINGS_CACHE and (time.time() - _SETTINGS_CACHE_TIME < CACHE_DURATION):
-        return _SETTINGS_CACHE
-    try:
-        db_settings = get_settings()
-    except:
-        db_settings = {}
-    final_settings = DEFAULT_SETTINGS.copy()
-    final_settings.update(db_settings)
-    try:
-        final_settings["MAX_PASTE"] = int(final_settings["MAX_PASTE"])
-        final_settings["FRAUD_SCORE_LEVEL"] = int(final_settings["FRAUD_SCORE_LEVEL"])
-        final_settings["MAX_WORKERS"] = int(final_settings["MAX_WORKERS"])
-        final_settings["CONSECUTIVE_FAILS"] = int(final_settings.get("CONSECUTIVE_FAILS", 0))
-    except:
-        pass
-    _SETTINGS_CACHE = final_settings
-    _SETTINGS_CACHE_TIME = time.time()
-    return final_settings
-
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15"
-]
-
-REQUEST_TIMEOUT = 5
-MIN_DELAY = 0.5
-MAX_DELAY = 1.5
-
-def parse_api_credentials(settings):
-    raw_keys = settings.get("SCAMALYTICS_API_KEY", "")
-    raw_users = settings.get("SCAMALYTICS_USERNAME", "")
-    raw_urls = settings.get("SCAMALYTICS_API_URL", "")
-    keys = [k.strip() for k in raw_keys.split(',') if k.strip()]
-    user_list = [u.strip() for u in raw_users.split(',') if u.strip()]
-    urls = [u.strip() for u in raw_urls.split(',') if u.strip()]
-    if not keys: return []
-    if len(user_list) == 1 and len(keys) > 1: user_list = user_list * len(keys)
-    if len(urls) == 1 and len(keys) > 1: urls = urls * len(keys)
-    credentials = []
-    for k, u, url in zip(keys, user_list, urls):
-        credentials.append({"key": k, "user": u, "url": url})
-    return credentials
-
-def validate_proxy_format(proxy_line):
-    try:
-        parts = proxy_line.strip().split(":")
-        return len(parts) == 4 and all(part for part in parts)
-    except:
-        return False
-
-def extract_ip_local(proxy_line):
-    try: return proxy_line.split(':')[0].strip()
-    except: return None
-
-def get_ip_from_proxy(proxy_line):
-    if not validate_proxy_format(proxy_line): return None
-    try:
-        host, port, user, pw = proxy_line.strip().split(":")
-        proxy_dict = {"http": f"http://{user}:{pw}@{host}:{port}", "https": f"http://{user}:{pw}@{host}:{port}"}
-        session_req = requests.Session()
-        retries = Retry(total=1, backoff_factor=0.2, status_forcelist=[500, 502, 503, 504])
-        session_req.mount('http://', HTTPAdapter(max_retries=retries))
-        session_req.mount('https://', HTTPAdapter(max_retries=retries))
-        response = session_req.get("https://ipv4.icanhazip.com", proxies=proxy_dict, 
-                             timeout=REQUEST_TIMEOUT-1, headers={"User-Agent": random.choice(USER_AGENTS)})
-        response.raise_for_status()
-        ip = response.text.strip()
-        return ip if (ip and '.' in ip) else None
-    except: return None
-
-def verify_ip_stability(proxy_line, required_stable_checks=3, max_attempts=5):
-    if not validate_proxy_format(proxy_line): return None
-    seen_ips = set()
-    for attempt in range(max_attempts):
-        ip = get_ip_from_proxy(proxy_line)
-        if not ip:
-            time.sleep(random.uniform(0.1, 0.3))
-            continue
-        seen_ips.add(ip)
-        if len(seen_ips) == 1 and (attempt + 1) >= required_stable_checks: return ip
-        if len(seen_ips) > 1: return None
-        if attempt < max_attempts - 1: time.sleep(random.uniform(0.1, 0.3))
-    return None
-
-def get_fraud_score_detailed(ip, proxy_line, credentials_list):
-    if not validate_proxy_format(proxy_line) or not ip or not credentials_list: return None
-    for cred in credentials_list:
-        try:
-            host, port, user, pw = proxy_line.strip().split(":")
-            proxy_url = f"http://{user}:{pw}@{host}:{port}"
-            proxies = {"http": proxy_url, "https": proxy_url}
-            url = f"{cred['url'].rstrip('/')}/{cred['user']}/?key={cred['key']}&ip={ip}"
-            resp = requests.get(url, headers={"User-Agent": random.choice(USER_AGENTS)}, 
-                              proxies=proxies, timeout=REQUEST_TIMEOUT)
-            if resp.status_code == 200:
-                data = resp.json()
-                scam = data.get("scamalytics", {})
-                if scam.get("status") == "error" and scam.get("error") == "out of credits":
-                    add_log_entry("WARNING", f"Out of credits: {cred['user']}", ip="System")
-                    update_setting("API_CREDITS_REMAINING", "0")
-                    continue
-                if scam.get("status") == "ok" and scam.get("credits"):
-                    update_setting("API_CREDITS_USED", str(scam.get("credits", {}).get("used", 0)))
-                    update_setting("API_CREDITS_REMAINING", str(scam.get("credits", {}).get("remaining", 0)))
-                return data
-        except: continue
-    return None
-
-def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list, used_ip_set, bad_ip_set, is_strict_mode=False):
-    res = {"proxy": None, "ip": None, "credits": {}, "geo": {}, "score": None, 
-           "status": "error", "used": False, "cached_bad": False, "unstable": False}
-    if not validate_proxy_format(proxy_line): return res
-    ip = verify_ip_stability(proxy_line, required_stable_checks=3, max_attempts=5)
-    if not ip:
-        res["status"] = "unstable_ip"
-        res["unstable"] = True
-        return res
-    res["ip"] = ip
-    if str(ip).strip() in used_ip_set:
-        res["used"] = True
-        res["status"] = "used_cache"
-        return res
-    if str(ip).strip() in bad_ip_set:
-        res["cached_bad"] = True
-        res["status"] = "bad_cache"
-        return res
-    time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
-    data = get_fraud_score_detailed(ip, proxy_line, credentials_list)
-    if data and data.get("scamalytics", {}).get("credits"): res["credits"] = data.get("scamalytics", {}).get("credits", {})
-    try:
-        ext_src = data.get("external_datasources", {}) if data else {}
-        geo = {}
-        mm = ext_src.get("maxmind_geolite2", {})
-        if mm and "PREMIUM" not in mm.get("ip_country_code", ""):
-            geo = {"country_code": mm.get("ip_country_code"), "state": mm.get("ip_state_name"), "city": mm.get("ip_city"), "postcode": mm.get("ip_postcode")}
-        if not geo:
-            db = ext_src.get("dbip", {})
-            if db and "PREMIUM" not in db.get("ip_country_code", ""):
-                geo = {"country_code": db.get("ip_country_code"), "state": db.get("ip_state_name"), "city": db.get("ip_city"), "postcode": db.get("ip_postcode")}
-        res["geo"] = geo if geo else {"country_code": "N/A", "state": "N/A", "city": "N/A", "postcode": "N/A"}
-    except: res["geo"] = {"country_code": "ERR", "state": "ERR", "city": "ERR", "postcode": "ERR"}
-    if data and data.get("scamalytics"):
-        scam = data.get("scamalytics", {})
-        score = scam.get("scamalytics_score")
-        res["score"] = score
-        if scam.get("status") != "ok": return res
-        try:
-            score_int = int(score)
-            res["score"] = score_int
-            passed = True
-            if score_int > fraud_score_level: passed = False
-            if passed and is_strict_mode:
-                if scam.get("scamalytics_risk") != "low": passed = False
-                if scam.get("is_blacklisted_external") is True: passed = False
-                pf = scam.get("scamalytics_proxy", {})
-                for f in ["is_datacenter", "is_vpn", "is_apple_icloud_private_relay", "is_amazon_aws", "is_google"]:
-                    if pf.get(f) is True: passed = False
-            if passed:
-                res["proxy"] = proxy_line
-                res["status"] = "success"
-            elif score_int > fraud_score_level:
-                try: log_bad_proxy(proxy_line, ip, score_int)
-                except: pass
-                res["status"] = "bad_score"
-        except: pass
-    return res
-
-@app.before_request
-def before_request_func():
-    if get_user_ip() in BLOCKED_IPS: abort(404)
-    if request.path.startswith(('/static', '/login', '/logout')) or request.path.endswith(('.ico', '.png')): return
-
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if current_user.is_authenticated:
-        return redirect(url_for('admin') if current_user.is_admin else url_for('index'))
-    error = None
-    if request.method == 'POST':
-        user = next((u for u in users.values() if u.username == request.form.get('username')), None)
-        if user and user.password == request.form.get('password'):
-            login_user(user, remember=(request.form.get('remember') == 'on'))
-            next_p = request.args.get('next')
-            if next_p and not current_user.is_admin and '/admin' in next_p: next_p = url_for('index')
-            if current_user.is_admin and next_p == url_for('index'): next_p = url_for('admin')
-            add_log_entry("INFO", f"User {user.username} logged in.", ip=get_user_ip())
-            return redirect(next_p or (url_for('admin') if current_user.is_admin else url_for('index')))
-        error = 'Invalid Credentials.'
-        add_log_entry("WARNING", f"Failed login: {request.form.get('username')}", ip=get_user_ip())
-    return render_template('login.html', error=error)
-
-@app.route('/logout')
-@login_required
-def logout():
-    add_log_entry("INFO", f"User {current_user.username} logged out.", ip=get_user_ip())
-    logout_user()
-    return redirect(url_for('login'))
-
-@app.route('/api/fetch-abc-proxies')
-@login_required
-def fetch_abc_proxies():
-    if not current_user.can_fetch: return jsonify({"status": "error", "message": "Permission denied."}), 403
-    settings = get_app_settings()
-    gen_url = settings.get("ABC_GENERATION_URL", "").strip()
-    limit = int(settings.get("MAX_PASTE", 30))
-    state = request.args.get('state', '').lower()
-    if not gen_url: return jsonify({"status": "error", "message": "ABC Generation URL not set."})
-    try:
-        parsed = urlparse(gen_url)
-        params = parse_qs(parsed.query)
-        if state:
-            user_val = params.get('username', [''])[0]
-            new_user = re.sub(r'st-[a-zA-Z0-9]+', f'st-{state}', user_val) if 'st-' in user_val else user_val + f"-st-{state}"
-            params['username'] = [new_user]
-        params['num'] = [str(limit)]
-        final_url = urlunparse(parsed._replace(query=urlencode(params, doseq=True)))
-        resp = requests.get(final_url, timeout=10)
-        if resp.status_code == 200:
-            lines = [l.strip() for l in resp.text.strip().splitlines() if l.strip()][:limit]
-            return jsonify({"status": "success", "proxies": lines})
-        return jsonify({"status": "error", "message": f"HTTP Error: {resp.status_code}"})
-    except Exception as e: return jsonify({"status": "error", "message": f"Server Error: {str(e)}"})
-
-@app.route('/api/fetch-sx-proxies')
-@login_required
-def fetch_sx_proxies():
-    if not current_user.can_fetch: return jsonify({"status": "error", "message": "Permission denied."}), 403
-    gen_url = get_app_settings().get("SX_GENERATION_URL", "").strip()
-    limit = int(get_app_settings().get("MAX_PASTE", 30))
-    if not gen_url: return jsonify({"status": "error", "message": "SX Generation URL not set."})
-    try:
-        resp = requests.get(gen_url, timeout=10)
-        if resp.status_code == 200:
-            lines = [l.strip() for l in resp.text.strip().splitlines() if l.strip()][:limit]
-            return jsonify({"status": "success", "proxies": lines})
-        return jsonify({"status": "error", "message": f"HTTP Error: {resp.status_code}"})
-    except Exception as e: return jsonify({"status": "error", "message": f"Server Error: {str(e)}"})
-
-@app.route('/api/fetch-pool-provider/<provider>')
-@login_required
-def fetch_pool_provider(provider):
-    if not current_user.can_fetch: return jsonify({"status": "error", "message": "Permission denied"}), 403
-    limit = int(get_app_settings().get("MAX_PASTE", 30))
-    proxies = get_random_proxies_from_pool(limit)
-    return jsonify({"status": "success", "proxies": proxies})
-
-@app.route("/", methods=["GET", "POST"])
-@login_required
-def index():
-    settings = get_app_settings()
-    MAX_PASTE = settings["MAX_PASTE"]
-    api_credentials = parse_api_credentials(settings)
-    system_paused = str(settings.get("SYSTEM_PAUSED", "FALSE")).upper() == "TRUE"
-    dynamic_buttons = get_active_fetch_buttons() if current_user.can_fetch else []
-    admin_bypass = current_user.is_admin and system_paused
-
-    if current_user.is_guest and current_user.daily_api_limit > 0:
-        if get_daily_api_usage_for_user(current_user.username) >= current_user.daily_api_limit:
-            return render_template("index.html", results=None, message=f"Daily API limit reached ({current_user.daily_api_limit} calls).", max_paste=MAX_PASTE, settings=settings, dynamic_buttons=dynamic_buttons, announcement=settings.get("ANNOUNCEMENT"), system_paused=False)
-    
-    paste_disabled = (current_user.role == "user" and str(settings.get("FORCE_FETCH_FOR_USERS", "FALSE")).upper() == "TRUE")
-
-    if system_paused and not current_user.is_admin:
-        return render_template("index.html", results=None, message="⚠️ System Under Maintenance.", max_paste=MAX_PASTE, settings=settings, system_paused=True, dynamic_buttons=dynamic_buttons, announcement=settings.get("ANNOUNCEMENT"))
-    
-    if request.method == "POST":
-        if system_paused and not current_user.is_admin: return render_template("index.html", results=None, message="System Paused.", max_paste=MAX_PASTE, settings=settings, dynamic_buttons=dynamic_buttons, system_paused=True)
+        /* State buttons styling */
+        .state-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 10px;
+        }
         
-        origin = request.form.get('proxy_origin', 'paste')
-        if paste_disabled and origin != 'fetch' and 'proxytext' in request.form:
-             return render_template("index.html", results=[], message="Manual pasting disabled.", max_paste=MAX_PASTE, settings=settings, dynamic_buttons=dynamic_buttons, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, paste_disabled_for_user=paste_disabled)
+        .state-buttons .btn {
+            flex: 0 0 auto;
+            font-size: 0.75rem;
+            padding: 4px 8px;
+        }
 
-        proxies_input = request.form.get("proxytext", "").strip().splitlines()[:MAX_PASTE]
-        if not proxies_input: return render_template("index.html", results=[], message="No proxies submitted.", max_paste=MAX_PASTE, settings=settings, dynamic_buttons=dynamic_buttons, announcement=settings.get("ANNOUNCEMENT"), paste_disabled_for_user=paste_disabled)
-        
-        used_ip_set = {str(r['IP']).strip() for r in get_all_used_ips() if r.get('IP')}
-        bad_ip_set = set()
-        for r in get_bad_proxies_list():
-            if r.get('ip'): bad_ip_set.add(str(r['ip']).strip())
-            elif r.get('proxy'):
-                lip = extract_ip_local(r['proxy'])
-                if lip: bad_ip_set.add(lip)
+        /* Make the dropdown look like a button */
+        select.form-select.btn-outline-secondary {
+            background-color: transparent;
+            color: var(--btn-secondary);
+            border-color: var(--btn-secondary);
+            cursor: pointer;
+            padding: 0.375rem 0.75rem;
+            font-size: 0.875rem;
+            line-height: 1.5;
+            border-radius: 0.375rem;
+            height: auto;
+            width: auto;
+        }
 
-        proxies_raw = [p.strip() for p in proxies_input if validate_proxy_format(p.strip())]
-        good_proxy_results = []
-        stats = {"used": 0, "bad": 0, "api": 0, "unstable": 0}
-        
-        with ThreadPoolExecutor(max_workers=settings["MAX_WORKERS"]) as executor:
-            for i in range(0, len(proxies_raw), settings["MAX_WORKERS"]):
-                if len([r for r in good_proxy_results if not r['used'] and not r['cached_bad']]) >= 2: break
-                futures = {executor.submit(single_check_proxy_detailed, p, settings["FRAUD_SCORE_LEVEL"], api_credentials, used_ip_set, bad_ip_set, is_strict_mode=True): p for p in proxies_raw[i : i + settings["MAX_WORKERS"]]}
-                for f in as_completed(futures):
-                    res = f.result()
-                    if res["status"] == "used_cache": stats["used"] += 1
-                    elif res["status"] == "bad_cache": stats["bad"] += 1
-                    elif res["status"] == "unstable_ip": stats["unstable"] += 1
-                    elif res["status"] in ["success", "bad_score"]: stats["api"] += 1
-                    if res.get("proxy"): good_proxy_results.append(res)
+        select.form-select.btn-outline-secondary:hover {
+            background-color: var(--btn-secondary);
+            color: white;
+            border-color: var(--btn-secondary);
+        }
 
-        unique_results = []
-        seen = set()
-        for r in good_proxy_results:
-            if r['ip'] not in seen:
-                seen.add(r['ip'])
-                unique_results.append(r)
-        
-        results = sorted(unique_results, key=lambda x: x.get('used', False))
-        good_final = len(results)
-        
-        if good_final > 0: update_setting("CONSECUTIVE_FAILS", "0")
-        elif proxies_raw:
-            new_fails = settings.get("CONSECUTIVE_FAILS", 0) + len(proxies_raw)
-            update_setting("CONSECUTIVE_FAILS", str(new_fails))
-            if new_fails > 1000: update_setting("SYSTEM_PAUSED", "TRUE")
-        
-        try: add_api_usage_log(current_user.username, get_user_ip(), len(proxies_input), stats["api"], good_final)
-        except: pass
-        
-        message = f"Found {good_final} good proxies."
-        return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings, dynamic_buttons=dynamic_buttons, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, paste_disabled_for_user=paste_disabled)
+        select.form-select.btn-outline-secondary:focus {
+            box-shadow: 0 0 0 0.25rem rgba(108, 117, 125, 0.5);
+        }
 
-    return render_template("index.html", results=None, message="⚠️ MAINTENANCE (Admin)" if admin_bypass else "", max_paste=MAX_PASTE, settings=settings, dynamic_buttons=dynamic_buttons, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, paste_disabled_for_user=paste_disabled)
+        select.form-select.btn-outline-secondary option {
+            color: var(--text-color);
+            background-color: var(--card-bg);
+        }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <div class="header-container">
+            <div class="header-title-container">
+                <a href="{{ url_for('index') }}" class="header-title-link">
+                    <img src="https://i.ibb.co/pjSD084t/proxychecker-logo-clear.png" alt="Proxy Checker Logo" class="header-logo">
+                    <h2 class="mb-0">Proxy Checker</h2>
+                </a>
+            </div>
+            <div class="header-buttons">
+                <button class="theme-toggle" id="themeToggle">
+                    <span class="sun-icon">☀️ Light</span>
+                    <span class="moon-icon">🌙 Dark</span>
+                </button>
+                {% if current_user.is_authenticated and current_user.is_admin %}
+                    <a href="{{ url_for('admin') }}" class="btn btn-outline-primary btn-sm">Admin Panel</a>
+                {% endif %}
+                {% if current_user.is_authenticated %}
+                    <a href="{{ url_for('logout') }}" class="btn btn-outline-secondary btn-sm">Logout ({{ current_user.username }})</a>
+                {% endif %}
+            </div>
+        </div>
 
-@app.route("/track-used", methods=["POST"])
-@login_required
-def track_used():
-    data = request.get_json()
-    proxy, ip = data.get("proxy"), data.get("ip")
-    if not proxy or not ip or not validate_proxy_format(proxy): return jsonify({"status": "error"}), 400
-    if add_used_ip(ip, proxy, username=current_user.username):
-        add_log_entry("INFO", f"Used: {ip}", ip=get_user_ip())
-        return jsonify({"status": "success"})
-    return jsonify({"status": "error"}), 500
+        <div class="content-card">
+            {% if announcement %}
+            <div class="alert alert-primary alert-dismissible fade show" role="alert">
+                <strong>Notice:</strong> {{ announcement }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+            {% endif %}
 
-@app.route("/admin")
-@admin_required
-def admin():
-    settings = get_app_settings(); total_api = 0
-    try:
-        logs = get_all_api_usage_logs()
-        total_api = sum(int(log.get("api_calls_count", 0)) for log in logs if log)
-    except: total_api = "Error"
-    stats = {
-        "max_paste": settings["MAX_PASTE"], "fraud_score_level": settings["FRAUD_SCORE_LEVEL"], "max_workers": settings["MAX_WORKERS"],
-        "scamalytics_username": settings["SCAMALYTICS_USERNAME"], "api_credits_used": settings.get("API_CREDITS_USED", "N/A"),
-        "api_credits_remaining": settings.get("API_CREDITS_REMAINING", "N/A"), "consecutive_fails": settings.get("CONSECUTIVE_FAILS"),
-        "system_paused": settings.get("SYSTEM_PAUSED"), "total_api_calls_logged": total_api, "abc_generation_url": settings.get("ABC_GENERATION_URL"),
-        "sx_generation_url": settings.get("SX_GENERATION_URL"), "force_fetch_for_users": settings.get("FORCE_FETCH_FOR_USERS", "FALSE")
-    }
-    return render_template("admin.html", stats=stats, used_ips=get_all_used_ips(), announcement=settings.get("ANNOUNCEMENT"), settings=settings)
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
 
-@app.route("/admin/add-button", methods=["POST"])
-@admin_required
-def admin_add_button():
-    name = request.form.get("name")
-    b_type = request.form.get("type")
-    target = request.form.get("target")
-    if add_fetch_button(name, b_type, target):
-        flash(f"Button '{name}' created!", "success")
-    return redirect(url_for('admin_settings'))
+            {% if message is defined and message %}
+            <div class="alert alert-info">{{ message }}</div>
+            {% endif %}
 
-@app.route("/admin/delete-button/<int:btn_id>")
-@admin_required
-def admin_del_button(btn_id):
-    if delete_fetch_button(btn_id): flash("Button removed.", "success")
-    return redirect(url_for('admin_settings'))
+            {% if system_paused %}
+            <div class="alert alert-danger text-center p-5">
+                <h3>⚠️ System Halted</h3>
+                <p>Too many consecutive failures detected. Checking is currently paused.</p>
+                <p>Please contact the administrator.</p>
+            </div>
+            {% else %}
+            <div class="accordion" id="proxyAccordion">
+                <div class="accordion-item">
+                    <h2 class="accordion-header" id="formHeading">
+                       <button class="accordion-button {% if results is defined and results %}collapsed{% endif %}" type="button"
+                                data-bs-toggle="collapse" data-bs-target="#proxyForm"
+                                aria-expanded="{{ 'false' if results is defined and results else 'true' }}" aria-controls="proxyForm">
+                            Paste Proxies (Max {{ max_paste }} Lines)
+                        </button>
+                    </h2>
+                    <div id="proxyForm" class="accordion-collapse collapse {% if results is not defined or not results %}show{% endif %}"
+                         aria-labelledby="formHeading" data-bs-parent="#proxyAccordion">
+                        <div class="accordion-body">
+                            
+                            {% if current_user.can_fetch %}
+                            <div class="row g-2 align-items-center mb-3">
+                                <div class="col-md-12">
+                                    <label class="form-label mb-1" style="font-size: 0.75rem; color: var(--text-muted);">Fetch ABC Proxies by State</label>
+                                    <div class="state-buttons">
+                                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="fetchStateProxies('washington', this)">Washington</button>
+                                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="fetchStateProxies('ohio', this)">Ohio</button>
+                                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="fetchStateProxies('florida', this)">Florida</button>
+                                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="fetchStateProxies('alabama', this)">Alabama</button>
+                                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="fetchStateProxies('louisiana', this)">Louisiana</button>
 
-@app.route("/admin/users")
-@admin_required
-def admin_users():
-    stats = get_user_stats_summary()
-    for s in stats:
-        try:
-            diff = datetime.datetime.now(datetime.timezone.utc) - datetime.datetime.fromisoformat(s['last_active'].replace('Z', '+00:00'))
-            s['status'] = 'Inactive' if diff.days > 7 else ('Offline' if diff.total_seconds() > 86400 else 'Active')
-        except: s['status'] = 'Unknown'
-    return render_template("admin_users.html", stats=stats)
+                                        <select class="form-select btn-outline-secondary" onchange="fetchStateProxies(this.value, this)">
+                                            <option value="">All States</option>
+                                            <option value="alabama">Alabama</option>
+                                            <option value="alaska">Alaska</option>
+                                            <option value="arizona">Arizona</option>
+                                            <option value="arkansas">Arkansas</option>
+                                            <option value="california">California</option>
+                                            <option value="colorado">Colorado</option>
+                                            <option value="connecticut">Connecticut</option>
+                                            <option value="delaware">Delaware</option>
+                                            <option value="florida">Florida</option>
+                                            <option value="georgia">Georgia</option>
+                                            <option value="hawaii">Hawaii</option>
+                                            <option value="idaho">Idaho</option>
+                                            <option value="illinois">Illinois</option>
+                                            <option value="indiana">Indiana</option>
+                                            <option value="iowa">Iowa</option>
+                                            <option value="kansas">Kansas</option>
+                                            <option value="kentucky">Kentucky</option>
+                                            <option value="louisiana">Louisiana</option>
+                                            <option value="maine">Maine</option>
+                                            <option value="maryland">Maryland</option>
+                                            <option value="massachusetts">Massachusetts</option>
+                                            <option value="michigan">Michigan</option>
+                                            <option value="minnesota">Minnesota</option>
+                                            <option value="mississippi">Mississippi</option>
+                                            <option value="missouri">Missouri</option>
+                                            <option value="montana">Montana</option>
+                                            <option value="nebraska">Nebraska</option>
+                                            <option value="nevada">Nevada</option>
+                                            <option value="newhampshire">New Hampshire</option>
+                                            <option value="newjersey">New Jersey</option>
+                                            <option value="newmexico">New Mexico</option>
+                                            <option value="newyork">New York</option>
+                                            <option value="northcarolina">North Carolina</option>
+                                            <option value="northdakota">North Dakota</option>
+                                            <option value="ohio">Ohio</option>
+                                            <option value="oklahoma">Oklahoma</option>
+                                            <option value="oregon">Oregon</option>
+                                            <option value="pennsylvania">Pennsylvania</option>
+                                            <option value="rhodeisland">Rhode Island</option>
+                                            <option value="southcarolina">South Carolina</option>
+                                            <option value="southdakota">South Dakota</option>
+                                            <option value="tennessee">Tennessee</option>
+                                            <option value="texas">Texas</option>
+                                            <option value="utah">Utah</option>
+                                            <option value="vermont">Vermont</option>
+                                            <option value="virginia">Virginia</option>
+                                            <option value="washington">Washington</option>
+                                            <option value="westvirginia">West Virginia</option>
+                                            <option value="wisconsin">Wisconsin</option>
+                                            <option value="wyoming">Wyoming</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="col-md-12 d-flex justify-content-end flex-wrap gap-2 mt-2">
+                                    {% for btn in dynamic_buttons %}
+                                    <button type="button" 
+                                            class="btn btn-sm text-white" 
+                                            style="background-color: {% if btn.type == 'pool' %}#0dcaf0{% else %}#ffc107{% endif %}"
+                                            onclick="handleDynamicFetch('{{ btn.type }}', '{{ btn.target }}', '{{ btn.name }}', this)">
+                                        {{ btn.name }}
+                                    </button>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% endif %}
 
-@app.route("/admin/delete-user-activity/<username>")
-@admin_required
-def admin_delete_user_activity(username):
-    if delete_user_activity_logs(username): flash(f"Activity for {username} cleared.", "success")
-    return redirect(url_for('admin_users'))
+                            <form method="POST" id="proxyFormElement">
+                                <input type="hidden" name="proxy_origin" id="proxy_origin" value="paste">
+                                <div class="mb-3">
+                                    <label for="proxytext" class="form-label">Paste Proxies (one per line)</label>
+                                    <div class="textarea-container">
+                                        <textarea name="proxytext" id="proxytext_hidden" style="display: none;"></textarea>
+                                        <textarea id="proxytext" class="form-control textarea-box"
+                                                  placeholder="{% if paste_disabled_for_user %}Manual pasting is disabled. Please use the fetch buttons above.{% else %}Paste proxies here (e.g., host:port:user:pass)...{% endif %}"
+                                                  oninput="{% if not paste_disabled_for_user %}updateProxyCounter(this){% endif %}"
+                                                  {% if paste_disabled_for_user %}readonly{% endif %}></textarea>
+                                        <div class="proxy-counter" id="proxyCounter">0/{{ max_paste }}</div>
+                                    </div>
+                                </div>
+                                <button type="submit" id="submitBtn" class="btn btn-primary w-100">Check Proxies</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
 
-@app.route('/admin/users/manage', methods=['GET'])
-@admin_required
-def admin_users_manage():
-    users_refresh = load_users_from_db()
-    user_list = []
-    for user in users_refresh.values():
-        u_dict = user.to_dict()
-        u_dict['daily_api_usage'] = get_daily_api_usage_for_user(user.username)
-        user_list.append(u_dict)
-    return render_template('admin_users_manage.html', users=user_list)
+            {% if results is defined and results is not none %} 
+            <hr class="my-4">
+            <h5 class="mb-3">✅ Good Proxies Found (Score {{ settings.FRAUD_SCORE_LEVEL }})</h5>
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 28%;">Proxy</th>
+                            <th style="width: 12%;">IP Address</th>
+                            <th style="width: 8%;">Country</th>
+                            <th style="width: 10%;">State</th>
+                            <th style="width: 10%;">City</th>
+                            <th style="width: 8%;">Postcode</th>
+                            <th style="width: 7%;" class="text-center">Score</th>
+                            <th style="width: 17%;" class="text-end">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in results %}
+                        <tr>
+                            <td>
+                                <span class="proxy-masked" id="proxy-{{ loop.index }}" data-full-proxy="{{ item.proxy }}">
+                                    {{ item.proxy.split(':')[0] }}:{{ item.proxy.split(':')[1] }}:********
+                                </span>
+                            </td>
+                            <td>{{ item.ip | default('N/A') }}</td>
+                            <td>{{ item.geo.country_code | default('N/A') }}</td>
+                            <td>{{ item.geo.state | default('N/A') }}</td>
+                            <td>{{ item.geo.city | default('N/A') }}</td>
+                            <td>{{ item.geo.postcode | default('N/A') }}</td>
+                            <td class="text-center">{{ item.score if item.score is not none else 'N/A' }}</td>
+                            <td class="text-end">
+                                 {% if item.used %}
+                                 <span class="badge bg-secondary me-1">USED IP</span>
+                                 {% endif %}
+                                <button class="btn btn-sm btn-outline-secondary copy-btn {% if item.used %}disabled{% endif %}"
+                                        onclick="handleCopyAndTrack('proxy-{{ loop.index }}', this, '{{ item.proxy }}', '{{ item.ip | default('') }}')"
+                                        {% if item.used %}disabled{% endif %}>
+                                    Copy
+                                </button>
+                            </td>
+                        </tr>
+                        {% else %} 
+                        <tr><td colspan="8" class="text-center text-muted">No good proxies found in this batch.</td></tr>
+                        {% endfor %} 
+                    </tbody>
+                </table>
+            </div>
+            <p class="mt-3 text-muted text-end">Results will clear automatically after 5 minutes.</p>
+            {% endif %}
+        </div>
+    </div>
 
-@app.route('/admin/users/add', methods=['POST'])
-@admin_required
-def admin_add_user():
-    global users
-    username, password = request.form.get('username', '').strip(), request.form.get('password', '').strip()
-    role = request.form.get('role', 'user')
-    if create_user(username, password, role, request.form.get('can_fetch') == 'on', int(request.form.get('daily_api_limit', 150)) if role == 'guest' else 0):
-        users = load_users_from_db()
-        flash(f'User {username} created.', 'success')
-    return redirect(url_for('admin_users_manage'))
+    <div id="notepad-widget">
+        <div id="notepad-container" class="hidden"> 
+            <div id="notepad-header"><span>Quick Notes</span><button id="notepad-close-btn">&times;</button></div>
+            <textarea id="notepad-textarea" placeholder="Write notes here..."></textarea>
+        </div>
+        <button id="notepad-toggle-btn">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+        </button>
+    </div>
 
-@app.route('/admin/users/edit/<int:user_id>', methods=['POST'])
-@admin_required
-def admin_edit_user(user_id):
-    global users
-    if user_id not in users or user_id == 1: flash('Invalid action.', 'danger'); return redirect(url_for('admin_users_manage'))
-    role = request.form.get('role'); updates = {'role': role, 'can_fetch': request.form.get('can_fetch') == 'on', 'daily_api_limit': int(request.form.get('daily_api_limit', 0)) if role == 'guest' else 0}
-    if request.form.get('password'): updates['password'] = request.form.get('password')
-    if update_user(user_id, **updates):
-        users = load_users_from_db(); flash('User updated.', 'success')
-    return redirect(url_for('admin_users_manage'))
+    <script>
+        let trackedProxiesThisSession = new Set();
+        const MAX_LINES = {{ max_paste }};
 
-@app.route('/admin/users/delete/<int:user_id>')
-@admin_required
-def admin_delete_user(user_id):
-    global users
-    if user_id not in users or user_id == 1 or user_id == current_user.id: flash('Cannot delete user.', 'danger'); return redirect(url_for('admin_users_manage'))
-    if delete_user(user_id):
-        users = load_users_from_db(); flash('User deleted.', 'success')
-    return redirect(url_for('admin_users_manage'))
+        function initTheme() {
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            document.documentElement.setAttribute('data-theme', savedTheme);
+        }
 
-@app.route("/admin/settings", methods=["GET", "POST"])
-@admin_required
-def admin_settings():
-    if request.method == "POST":
-        f = request.form
-        upd = {"MAX_PASTE": f.get("max_paste"), "FRAUD_SCORE_LEVEL": f.get("fraud_score_level"), "MAX_WORKERS": f.get("max_workers"), "SCAMALYTICS_API_KEY": f.get("scamalytics_api_key", "").strip(), "SCAMALYTICS_API_URL": f.get("scamalytics_api_url", "").strip(), "SCAMALYTICS_USERNAME": f.get("scamalytics_username", "").strip(), "ABC_GENERATION_URL": f.get("abc_generation_url", "").strip(), "SX_GENERATION_URL": f.get("sx_generation_url", "").strip(), "PYPROXY_RESET_URL": f.get("pyproxy_reset_url", "").strip(), "PIAPROXY_RESET_URL": f.get("piaproxy_reset_url", "").strip(), "FORCE_FETCH_FOR_USERS": f.get("force_fetch_for_users", "FALSE")}
-        for k, v in upd.items(): update_setting(k, str(v))
-        flash("Settings updated.", "success")
-    return render_template("admin_settings.html", settings=get_app_settings(), buttons=get_all_fetch_buttons())
+        function toggleTheme() {
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+        }
 
-@app.route("/admin/logs")
-@admin_required
-def admin_logs(): return render_template("admin_logs.html", logs=get_all_system_logs()[::-1])
+        function updateProxyCounter(textarea) {
+            const text = textarea.value;
+            const hiddenTextarea = document.getElementById('proxytext_hidden');
+            const sourceField = document.getElementById('proxy_origin');
+            if (sourceField) sourceField.value = 'paste';
+            let lines; let rawLineCount;
+            if (text === "") { lines = []; rawLineCount = 0; } else { lines = text.split('\n'); rawLineCount = lines.length; }
+            const counter = document.getElementById('proxyCounter');
+            const submitBtn = document.getElementById('submitBtn');
+            const isTextAreaTooLong = rawLineCount > MAX_LINES;
+            counter.textContent = `${rawLineCount}/${MAX_LINES}`;
+            if (isTextAreaTooLong) {
+                counter.className = 'proxy-counter counter-error';
+                textarea.classList.add('is-invalid');
+                hiddenTextarea.value = lines.slice(0, MAX_LINES).join('\n');
+            } else {
+                counter.className = (rawLineCount === MAX_LINES) ? 'proxy-counter counter-warning' : 'proxy-counter counter-ok';
+                textarea.classList.remove('is-invalid');
+                hiddenTextarea.value = text;
+            }
+            submitBtn.disabled = (isTextAreaTooLong || rawLineCount === 0);
+        }
 
-@app.route("/admin/pool", methods=["GET", "POST"])
-@admin_required
-def admin_pool():
-    settings = get_app_settings()
-    if request.method == 'POST':
-        if 'bulk_proxies' in request.form:
-            text = request.form.get('bulk_proxies', '')
-            lines = [l.strip() for l in text.splitlines() if validate_proxy_format(l)]
-            if lines: flash(f"Added {add_bulk_proxies(lines, request.form.get('provider', 'manual'))} proxies.", "success")
-        elif 'clear_pool' in request.form:
-            if clear_proxy_pool(request.form.get('clear_target', 'all')): flash("Pool cleared.", "success")
-        return redirect(url_for('admin_pool'))
-    return render_template('admin_pool.html', counts=get_pool_stats(), settings=settings, preview_py=get_pool_preview('pyproxy'), preview_pia=get_pool_preview('piaproxy'))
+        // NEW INTEGRATED FETCH HANDLER
+        async function handleDynamicFetch(type, target, name, btn) {
+            const textarea = document.getElementById('proxytext');
+            const sourceField = document.getElementById('proxy_origin');
+            const originalText = btn.textContent;
+            btn.disabled = true; btn.textContent = "Loading...";
+            
+            const endpoint = (type === 'pool') ? `/api/fetch-pool-provider/${target}` : target;
+            
+            try {
+                const response = await fetch(endpoint);
+                const data = await response.json();
+                if (data.status === 'success') {
+                    textarea.value = data.proxies.join('\n');
+                    updateProxyCounter(textarea);
+                    if (sourceField) sourceField.value = 'fetch';
+                } else { alert("Error: " + data.message); }
+            } catch (err) { alert("Failed to fetch: " + err); } 
+            finally { btn.disabled = false; btn.textContent = originalText; }
+        }
 
-@app.route("/admin/reset-system", methods=["POST"])
-@admin_required
-def admin_reset_system():
-    update_setting("CONSECUTIVE_FAILS", "0"); update_setting("SYSTEM_PAUSED", "FALSE")
-    get_app_settings(force_refresh=True); flash("System reset.", "success")
-    return redirect(url_for("admin"))
+        async function fetchStateProxies(state, triggerEl = null) {
+            const textarea = document.getElementById('proxytext');
+            const sourceField = document.getElementById('proxy_origin');
+            let btn = triggerEl;
+            if (!btn) btn = document.querySelector(`button[onclick*="fetchStateProxies('${state}')"]`);
+            const originalText = btn ? btn.textContent : null;
+            if (btn && btn.tagName !== 'SELECT') { btn.disabled = true; btn.textContent = "Loading..."; }
+            try {
+                const response = await fetch(`/api/fetch-abc-proxies?state=${state}`);
+                const data = await response.json();
+                if (data.status === 'success') {
+                    textarea.value = data.proxies.join('\n');
+                    updateProxyCounter(textarea);
+                    if (sourceField) sourceField.value = 'fetch';
+                } else { alert("Error: " + data.message); }
+            } catch (err) { alert("Failed: " + err); } 
+            finally { if (btn && btn.tagName !== 'SELECT') { btn.disabled = false; btn.textContent = originalText; } }
+        }
 
-@app.route("/admin/toggle-maintenance", methods=["POST"])
-@admin_required
-def admin_toggle_maintenance():
-    is_paused = str(get_app_settings().get("SYSTEM_PAUSED", "FALSE")).upper() == "TRUE"
-    new_state = "FALSE" if is_paused else "TRUE"
-    if update_setting("SYSTEM_PAUSED", new_state):
-        get_app_settings(force_refresh=True); flash(f"Maintenance {'Activated' if new_state=='TRUE' else 'Deactivated'}.", "success")
-    return redirect(url_for("admin"))
+        let saveQueue = [];
+        let isQueueWorkerRunning = false;
+        async function processSaveQueue() {
+            if (isQueueWorkerRunning || saveQueue.length === 0) { setTimeout(processSaveQueue, 10000); return; }
+            isQueueWorkerRunning = true;
+            const item = saveQueue[0];
+            try {
+                const response = await fetch('/track-used', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ proxy: item.proxy, ip: item.ip }) });
+                const data = await response.json();
+                if (data && data.status === 'success') { trackedProxiesThisSession.add(item.proxy); saveQueue.shift(); }
+            } catch (error) { console.warn(`Save retry:`, error.message); }
+            isQueueWorkerRunning = false;
+            setTimeout(processSaveQueue, 10000);
+        }
 
-@app.route("/admin/toggle-force-fetch", methods=["POST"])
-@admin_required
-def admin_toggle_force_fetch():
-    is_forced = str(get_app_settings().get("FORCE_FETCH_FOR_USERS", "FALSE")).upper() == "TRUE"
-    new_state = "FALSE" if is_forced else "TRUE"
-    if update_setting("FORCE_FETCH_FOR_USERS", new_state):
-        get_app_settings(force_refresh=True); flash(f"Force fetch {'Activated' if new_state=='TRUE' else 'Deactivated'}.", "success")
-    return redirect(url_for("admin"))
+        function handleCopyAndTrack(elementId, clickedButton, proxy, ip) {
+            const element = document.getElementById(elementId);
+            const fullProxy = element.getAttribute('data-full-proxy');
+            copyTextToClipboard(fullProxy, clickedButton);
+            if (!ip || ip === 'N/A' || ip === 'ERR') { clickedButton.textContent = 'Bad IP!'; setTimeout(() => { clickedButton.textContent = 'Copy'; }, 2000); return; }
+            if (trackedProxiesThisSession.has(proxy) || saveQueue.some(item => item.proxy === proxy)) { clickedButton.textContent = 'Saved!'; clickedButton.disabled = true; return; }
+            const parent = clickedButton.parentNode;
+            if (!parent.querySelector('.badge.bg-secondary')) { 
+                const badge = document.createElement('span'); badge.className = 'badge bg-secondary me-1'; badge.textContent = 'USED IP'; parent.insertBefore(badge, clickedButton); 
+            }
+            clickedButton.textContent = 'Saved!'; clickedButton.classList.replace('btn-outline-secondary', 'btn-success'); clickedButton.disabled = true;
+            saveQueue.push({ proxy: proxy, ip: ip });
+        }
 
-@app.route("/admin/announcement", methods=["POST"])
-@admin_required
-def admin_announcement():
-    val = request.form.get("announcement_text", "").strip() if "save_announcement" in request.form else ""
-    update_setting("ANNOUNCEMENT", val); get_app_settings(force_refresh=True)
-    return redirect(url_for("admin"))
+        function copyTextToClipboard(textToCopy, clickedButton) {
+            navigator.clipboard.writeText(textToCopy).then(() => {
+                const originalText = clickedButton.textContent;
+                if (originalText === 'Copy') { clickedButton.textContent = 'Copied!'; setTimeout(() => { clickedButton.textContent = 'Copy'; }, 1500); }
+            });
+        }
 
-@app.route("/delete-used-ip/<ip>")
-@admin_required
-def delete_used_ip_route(ip):
-    delete_used_ip(ip); return redirect(url_for("admin"))
-
-@app.errorhandler(404)
-def page_not_found(e): return render_template('error.html', error='Page not found.'), 404
-@app.errorhandler(500)
-def internal_server_error(e): return render_template('error.html', error='Server Error.'), 500
-
-if __name__ == "__main__":
-    init_default_users(); app.run(host="0.0.0.0", port=5000)
-else:
-    init_default_users()
+        document.addEventListener('DOMContentLoaded', () => {
+            initTheme();
+            document.getElementById('themeToggle').addEventListener('click', toggleTheme);
+            const textArea = document.getElementById('proxytext');
+            if(textArea) updateProxyCounter(textArea);
+            const toggleBtn = document.getElementById('notepad-toggle-btn');
+            const notepad = document.getElementById('notepad-container');
+            const closeBtn = document.getElementById('notepad-close-btn');
+            const textarea = document.getElementById('notepad-textarea');
+            if (textarea) { textarea.value = localStorage.getItem('userNotepadContent') || ''; }
+            if (textarea) { textarea.addEventListener('input', () => { localStorage.setItem('userNotepadContent', textarea.value); }); }
+            if (toggleBtn && notepad) { toggleBtn.addEventListener('click', () => { notepad.classList.toggle('hidden'); }); }
+            if (closeBtn && notepad) { closeBtn.addEventListener('click', () => { notepad.classList.add('hidden'); }); }
+            processSaveQueue();
+        });
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
