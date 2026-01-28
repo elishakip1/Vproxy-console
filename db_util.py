@@ -62,7 +62,7 @@ def add_used_ip(ip, proxy, username="Unknown"):
 def delete_used_ip(ip):
     if not supabase: return False
     try:
-        supabase.table('used_proxies').delete().eq('ip', ip).execute()
+        supabase.table('used_proxies').delete().eq("ip", ip).execute()
         return True
     except Exception: return False
 
@@ -183,36 +183,28 @@ def get_active_fetch_buttons():
     try:
         response = supabase.table('fetch_buttons').select('*').eq('is_active', True).order('display_order').execute()
         return response.data
-    except Exception as e:
-        logger.error(f"Error fetching active buttons: {e}")
-        return []
+    except: return []
 
 def get_all_fetch_buttons():
     if not supabase: return []
     try:
         response = supabase.table('fetch_buttons').select('*').order('display_order').execute()
         return response.data
-    except Exception as e:
-        logger.error(f"Error fetching all buttons: {e}")
-        return []
+    except: return []
 
 def add_fetch_button(name, b_type, target):
     if not supabase: return False
     try:
         supabase.table('fetch_buttons').insert({'name': name, 'type': b_type, 'target': target}).execute()
         return True
-    except Exception as e:
-        logger.error(f"Error adding button: {e}")
-        return False
+    except: return False
 
 def delete_fetch_button(btn_id):
     if not supabase: return False
     try:
         supabase.table('fetch_buttons').delete().eq('id', btn_id).execute()
         return True
-    except Exception as e:
-        logger.error(f"Error deleting button: {e}")
-        return False
+    except: return False
 
 # --- API CREDITS MANAGEMENT ---
 def update_api_credits(used, remaining):
