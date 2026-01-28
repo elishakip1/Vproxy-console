@@ -1,8 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8"><title>Strict Test - Admin</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8"><title>Strict Tester - Admin</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body { background-color: #f0f2f5; font-family: sans-serif; }
@@ -10,10 +9,8 @@
         .sidebar-header { padding: 20px; text-align: center; border-bottom: 1px solid #495057; }
         .logo-link { display: inline-block; text-decoration: none; margin-bottom: 15px; background-color: white; border-radius: 50%; padding: 5px; }
         .logo-link img { height: 70px; width: 70px; border-radius: 50%; object-fit: cover; display: block; }
-        .sidebar-nav { list-style: none; padding: 0; margin-top: 20px; }
-        .nav-link { display: block; padding: 15px 20px; color: rgba(255,255,255,.75); text-decoration: none; border-left: 4px solid transparent; }
-        .nav-link:hover, .nav-link.active { color: #fff; background: rgba(255,255,255,.1); border-left-color: #0d6efd; }
         .content-wrapper { margin-left: 250px; padding: 30px; }
+        .proxy-masked { font-family: monospace; }
     </style>
 </head>
 <body>
@@ -24,22 +21,28 @@
     </div>
     <ul class="sidebar-nav">
         <li><a href="{{ url_for('admin') }}" class="nav-link">📊 Dashboard</a></li>
-        <li><a href="{{ url_for('admin_pool') }}" class="nav-link">🏭 Proxy Pool</a></li>
-        <li><a href="{{ url_for('admin_users') }}" class="nav-link">👥 User Activity</a></li>
-        <li><a href="{{ url_for('admin_users_manage') }}" class="nav-link">⚙️ Manage Users</a></li>
-        <li><a href="{{ url_for('admin_logs') }}" class="nav-link">📋 System Logs</a></li>
-        <li><a href="{{ url_for('admin_settings') }}" class="nav-link">⚙️ Settings</a></li>
-        <li class="mt-5"><a href="/" class="nav-link text-warning">← Back to Checker</a></li>
     </ul>
 </nav>
 <div class="content-wrapper">
-    <h2>🛡️ Admin Strict Tester</h2>
+    <h2>🛡️ Strict Tester</h2>
     <div class="card p-4 border-0 shadow-sm mt-4">
         <form method="POST">
-            <textarea name="proxytext" class="form-control mb-3" rows="8" placeholder="Paste proxies here..."></textarea>
-            <button type="submit" class="btn btn-primary w-100">Run Strict Test</button>
+            <textarea name="proxytext" class="form-control mb-3" rows="6" placeholder="Paste..."></textarea>
+            <button type="submit" class="btn btn-primary w-100">Test</button>
         </form>
     </div>
+    {% if results %}
+    <div class="table-responsive mt-4">
+        <table class="table table-sm table-bordered">
+            <thead class="table-light"><tr><th>Proxy</th><th>IP</th><th>Score</th></tr></thead>
+            <tbody>
+                {% for item in results %}
+                <tr><td><span class="proxy-masked">{{ item.proxy.split(':')[0] }}:{{ item.proxy.split(':')[1] }}:********</span></td><td>{{ item.ip }}</td><td>{{ item.score }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
 </div>
 </body>
 </html>
