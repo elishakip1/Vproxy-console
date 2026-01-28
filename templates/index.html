@@ -456,10 +456,6 @@
                 {% endif %}
             {% endwith %}
 
-            {% if message is defined and message and not results %}
-            <div class="alert alert-info">{{ message }}</div>
-            {% endif %}
-
             {% if system_paused %}
             <div class="alert alert-danger text-center p-5">
                 <h3>⚠️ System Halted</h3>
@@ -583,13 +579,17 @@
             {% if results is defined and results is not none %} 
             <hr class="my-4">
             
-            <!-- ADDED: Display the detailed stats message -->
+            <!-- Display the detailed stats message -->
             {% if message is defined and message %}
             <div class="alert alert-info mb-3">
-                <strong>Results:</strong> {{ message }}
-                <span class="float-end">
-                    <strong>Found:</strong> {{ results|length }} good proxy/ies
-                </span>
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>Results:</strong> {{ message }}
+                    </div>
+                    <div class="text-end">
+                        <strong>Good Proxies:</strong> {{ results|length }}
+                    </div>
+                </div>
             </div>
             {% endif %}
 
