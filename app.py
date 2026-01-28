@@ -58,22 +58,51 @@ class User(UserMixin):
         self.daily_api_limit = daily_api_limit
     
     @property
-    def is_admin(self): return self.role == "admin"
+    def is_admin(self):
+        return self.role == "admin"
+    
     @property 
-    def is_guest(self): return self.role == "guest"
+    def is_guest(self):
+        return self.role == "guest"
+    
     def to_dict(self):
-        return {'id': self.id, 'username': self.username, 'password': self.password, 'role': self.role, 'can_fetch': self.can_fetch, 'daily_api_limit': self.daily_api_limit}
+        return {
+            'id': self.id,
+            'username': self.username,
+            'password': self.password,
+            'role': self.role,
+            'can_fetch': self.can_fetch,
+            'daily_api_limit': self.daily_api_limit
+        }
 
 def load_users_from_db():
     try:
         users_data = get_all_users()
         users_map = {}
         for user_data in users_data:
-            user = User(id=user_data['id'], username=user_data['username'], password=user_data['password'], role=user_data.get('role', 'user'), can_fetch=user_data.get('can_fetch', False), daily_api_limit=user_data.get('daily_api_limit', 0))
+            user = User(
+                id=user_data['id'],
+                username=user_data['username'],
+                password=user_data['password'],
+                role=user_data.get('role', 'user'),
+                can_fetch=user_data.get('can_fetch', False),
+                daily_api_limit=user_data.get('daily_api_limit', 0)
+            )
             users_map[user.id] = user
+        
         if not users_map:
             init_default_users()
-            return load_users_from_db()
+            users_data = get_all_users()
+            for user_data in users_data:
+                user = User(
+                    id=user_data['id'],
+                    username=user_data['username'],
+                    password=user_data['password'],
+                    role=user_data.get('role', 'user'),
+                    can_fetch=user_data.get('can_fetch', False),
+                    daily_api_limit=user_data.get('daily_api_limit', 0)
+                )
+                users_map[user.id] = user
         return users_map
     except Exception as e:
         logger.error(f"Error loading users from DB: {e}")
@@ -83,8 +112,10 @@ users = load_users_from_db()
 
 @login_manager.user_loader
 def load_user(user_id):
-    try: return users.get(int(user_id))
-    except: return None
+    try:
+        return users.get(int(user_id))
+    except:
+        return None
 
 def admin_required(f):
     @wraps(f)
@@ -96,48 +127,85 @@ def admin_required(f):
 
 def get_user_ip():
     ip = request.headers.get('X-Forwarded-For')
-    return ip.split(',')[0].strip() if ip else (request.remote_addr or "Unknown")
+    if ip:
+        return ip.split(',')[0].strip()
+    return request.remote_addr or "Unknown"
 
 DEFAULT_SETTINGS = {
-    "MAX_PASTE": 30, "FRAUD_SCORE_LEVEL": 0, "MAX_WORKERS": 5, "SCAMALYTICS_API_KEY": "",
-    "SCAMALYTICS_API_URL": "https://api11.scamalytics.com/v3/", "SCAMALYTICS_USERNAME": "",
-    "ANNOUNCEMENT": "", "API_CREDITS_USED": "N/A", "API_CREDITS_REMAINING": "N/A",
-    "CONSECUTIVE_FAILS": 0, "SYSTEM_PAUSED": "FALSE", "ABC_GENERATION_URL": "",
+    "MAX_PASTE": 30,
+    "FRAUD_SCORE_LEVEL": 0,
+    "MAX_WORKERS": 5,
+    "SCAMALYTICS_API_KEY": "",
+    "SCAMALYTICS_API_URL": "https://api11.scamalytics.com/v3/",
+    "SCAMALYTICS_USERNAME": "",
+    "ANNOUNCEMENT": "",
+    "API_CREDITS_USED": "N/A",
+    "API_CREDITS_REMAINING": "N/A",
+    "CONSECUTIVE_FAILS": 0,
+    "SYSTEM_PAUSED": "FALSE",
+    "ABC_GENERATION_URL": "",
     "SX_GENERATION_URL": "https://api.sx.org/port/list/rkocd4za052HM0HkruFuQvE6x37cMNsG.txt?proxy_template_id=3729&all=true&except_id[]=[]",
-    "PYPROXY_RESET_URL": "", "PIAPROXY_RESET_URL": "", "PASTE_INPUT_DISABLED": "FALSE", "FORCE_FETCH_FOR_USERS": "FALSE"
+    "PYPROXY_RESET_URL": "",
+    "PIAPROXY_RESET_URL": "",
+    "PASTE_INPUT_DISABLED": "FALSE",
+    "FORCE_FETCH_FOR_USERS": "FALSE"
 }
 
-_SETTINGS_CACHE = None; _SETTINGS_CACHE_TIME = 0; CACHE_DURATION = 300
+_SETTINGS_CACHE = None
+_SETTINGS_CACHE_TIME = 0
+CACHE_DURATION = 300
 
 def get_app_settings(force_refresh=False):
     global _SETTINGS_CACHE, _SETTINGS_CACHE_TIME
     if not force_refresh and _SETTINGS_CACHE and (time.time() - _SETTINGS_CACHE_TIME < CACHE_DURATION):
         return _SETTINGS_CACHE
-    try: db_settings = get_settings()
-    except: db_settings = {}
-    final_settings = DEFAULT_SETTINGS.copy(); final_settings.update(db_settings)
+    try:
+        db_settings = get_settings()
+    except:
+        db_settings = {}
+    final_settings = DEFAULT_SETTINGS.copy()
+    final_settings.update(db_settings)
     try:
         final_settings["MAX_PASTE"] = int(final_settings["MAX_PASTE"])
         final_settings["FRAUD_SCORE_LEVEL"] = int(final_settings["FRAUD_SCORE_LEVEL"])
         final_settings["MAX_WORKERS"] = int(final_settings["MAX_WORKERS"])
         final_settings["CONSECUTIVE_FAILS"] = int(final_settings.get("CONSECUTIVE_FAILS", 0))
-    except: pass
-    _SETTINGS_CACHE = final_settings; _SETTINGS_CACHE_TIME = time.time(); return final_settings
+    except:
+        pass
+    _SETTINGS_CACHE = final_settings
+    _SETTINGS_CACHE_TIME = time.time()
+    return final_settings
 
-USER_AGENTS = ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15"]
-REQUEST_TIMEOUT = 5; MIN_DELAY = 0.5; MAX_DELAY = 1.5
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15"
+]
+
+REQUEST_TIMEOUT = 5
+MIN_DELAY = 0.5
+MAX_DELAY = 1.5
 
 def parse_api_credentials(settings):
-    raw_keys = settings.get("SCAMALYTICS_API_KEY", ""); raw_users = settings.get("SCAMALYTICS_USERNAME", ""); raw_urls = settings.get("SCAMALYTICS_API_URL", "")
-    keys = [k.strip() for k in raw_keys.split(',') if k.strip()]; users_list = [u.strip() for u in raw_users.split(',') if u.strip()]; urls = [u.strip() for u in raw_urls.split(',') if u.strip()]
+    raw_keys = settings.get("SCAMALYTICS_API_KEY", "")
+    raw_users = settings.get("SCAMALYTICS_USERNAME", "")
+    raw_urls = settings.get("SCAMALYTICS_API_URL", "")
+    keys = [k.strip() for k in raw_keys.split(',') if k.strip()]
+    user_list = [u.strip() for u in raw_users.split(',') if u.strip()]
+    urls = [u.strip() for u in raw_urls.split(',') if u.strip()]
     if not keys: return []
-    if len(users_list) == 1 and len(keys) > 1: users_list = users_list * len(keys)
+    if len(user_list) == 1 and len(keys) > 1: user_list = user_list * len(keys)
     if len(urls) == 1 and len(keys) > 1: urls = urls * len(keys)
-    return [{"key": k, "user": u, "url": url} for k, u, url in zip(keys, users_list, urls)]
+    credentials = []
+    for k, u, url in zip(keys, user_list, urls):
+        credentials.append({"key": k, "user": u, "url": url})
+    return credentials
 
 def validate_proxy_format(proxy_line):
-    try: parts = proxy_line.strip().split(":"); return len(parts) == 4 and all(part for part in parts)
-    except: return False
+    try:
+        parts = proxy_line.strip().split(":")
+        return len(parts) == 4 and all(part for part in parts)
+    except:
+        return False
 
 def extract_ip_local(proxy_line):
     try: return proxy_line.split(':')[0].strip()
@@ -150,9 +218,12 @@ def get_ip_from_proxy(proxy_line):
         proxy_dict = {"http": f"http://{user}:{pw}@{host}:{port}", "https": f"http://{user}:{pw}@{host}:{port}"}
         session_req = requests.Session()
         retries = Retry(total=1, backoff_factor=0.2, status_forcelist=[500, 502, 503, 504])
-        session_req.mount('http://', HTTPAdapter(max_retries=retries)); session_req.mount('https://', HTTPAdapter(max_retries=retries))
-        response = session_req.get("https://ipv4.icanhazip.com", proxies=proxy_dict, timeout=REQUEST_TIMEOUT-1, headers={"User-Agent": random.choice(USER_AGENTS)})
-        response.raise_for_status(); ip = response.text.strip()
+        session_req.mount('http://', HTTPAdapter(max_retries=retries))
+        session_req.mount('https://', HTTPAdapter(max_retries=retries))
+        response = session_req.get("https://ipv4.icanhazip.com", proxies=proxy_dict, 
+                             timeout=REQUEST_TIMEOUT-1, headers={"User-Agent": random.choice(USER_AGENTS)})
+        response.raise_for_status()
+        ip = response.text.strip()
         return ip if (ip and '.' in ip) else None
     except: return None
 
@@ -161,7 +232,9 @@ def verify_ip_stability(proxy_line, required_stable_checks=3, max_attempts=5):
     seen_ips = set()
     for attempt in range(max_attempts):
         ip = get_ip_from_proxy(proxy_line)
-        if not ip: time.sleep(random.uniform(0.1, 0.3)); continue
+        if not ip:
+            time.sleep(random.uniform(0.1, 0.3))
+            continue
         seen_ips.add(ip)
         if len(seen_ips) == 1 and (attempt + 1) >= required_stable_checks: return ip
         if len(seen_ips) > 1: return None
@@ -176,12 +249,15 @@ def get_fraud_score_detailed(ip, proxy_line, credentials_list):
             proxy_url = f"http://{user}:{pw}@{host}:{port}"
             proxies = {"http": proxy_url, "https": proxy_url}
             url = f"{cred['url'].rstrip('/')}/{cred['user']}/?key={cred['key']}&ip={ip}"
-            resp = requests.get(url, headers={"User-Agent": random.choice(USER_AGENTS)}, proxies=proxies, timeout=REQUEST_TIMEOUT)
+            resp = requests.get(url, headers={"User-Agent": random.choice(USER_AGENTS)}, 
+                              proxies=proxies, timeout=REQUEST_TIMEOUT)
             if resp.status_code == 200:
-                data = resp.json(); scam = data.get("scamalytics", {})
+                data = resp.json()
+                scam = data.get("scamalytics", {})
                 if scam.get("status") == "error" and scam.get("error") == "out of credits":
                     add_log_entry("WARNING", f"Out of credits: {cred['user']}", ip="System")
-                    update_setting("API_CREDITS_REMAINING", "0"); continue
+                    update_setting("API_CREDITS_REMAINING", "0")
+                    continue
                 if scam.get("status") == "ok" and scam.get("credits"):
                     update_setting("API_CREDITS_USED", str(scam.get("credits", {}).get("used", 0)))
                     update_setting("API_CREDITS_REMAINING", str(scam.get("credits", {}).get("remaining", 0)))
@@ -190,13 +266,23 @@ def get_fraud_score_detailed(ip, proxy_line, credentials_list):
     return None
 
 def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list, used_ip_set, bad_ip_set, is_strict_mode=False):
-    res = {"proxy": None, "ip": None, "credits": {}, "geo": {}, "score": None, "status": "error", "used": False, "cached_bad": False, "unstable": False}
+    res = {"proxy": None, "ip": None, "credits": {}, "geo": {}, "score": None, 
+           "status": "error", "used": False, "cached_bad": False, "unstable": False}
     if not validate_proxy_format(proxy_line): return res
     ip = verify_ip_stability(proxy_line, required_stable_checks=3, max_attempts=5)
-    if not ip: res["status"] = "unstable_ip"; res["unstable"] = True; return res
+    if not ip:
+        res["status"] = "unstable_ip"
+        res["unstable"] = True
+        return res
     res["ip"] = ip
-    if str(ip).strip() in used_ip_set: res["used"] = True; res["status"] = "used_cache"; return res
-    if str(ip).strip() in bad_ip_set: res["cached_bad"] = True; res["status"] = "bad_cache"; return res
+    if str(ip).strip() in used_ip_set:
+        res["used"] = True
+        res["status"] = "used_cache"
+        return res
+    if str(ip).strip() in bad_ip_set:
+        res["cached_bad"] = True
+        res["status"] = "bad_cache"
+        return res
     time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
     data = get_fraud_score_detailed(ip, proxy_line, credentials_list)
     if data and data.get("scamalytics", {}).get("credits"): res["credits"] = data.get("scamalytics", {}).get("credits", {})
@@ -213,10 +299,14 @@ def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list,
         res["geo"] = geo if geo else {"country_code": "N/A", "state": "N/A", "city": "N/A", "postcode": "N/A"}
     except: res["geo"] = {"country_code": "ERR", "state": "ERR", "city": "ERR", "postcode": "ERR"}
     if data and data.get("scamalytics"):
-        scam = data.get("scamalytics", {}); score = scam.get("scamalytics_score"); res["score"] = score
+        scam = data.get("scamalytics", {})
+        score = scam.get("scamalytics_score")
+        res["score"] = score
         if scam.get("status") != "ok": return res
         try:
-            score_int = int(score); res["score"] = score_int; passed = True
+            score_int = int(score)
+            res["score"] = score_int
+            passed = True
             if score_int > fraud_score_level: passed = False
             if passed and is_strict_mode:
                 if scam.get("scamalytics_risk") != "low": passed = False
@@ -224,7 +314,9 @@ def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list,
                 pf = scam.get("scamalytics_proxy", {})
                 for f in ["is_datacenter", "is_vpn", "is_apple_icloud_private_relay", "is_amazon_aws", "is_google"]:
                     if pf.get(f) is True: passed = False
-            if passed: res["proxy"] = proxy_line; res["status"] = "success"
+            if passed:
+                res["proxy"] = proxy_line
+                res["status"] = "success"
             elif score_int > fraud_score_level:
                 try: log_bad_proxy(proxy_line, ip, score_int)
                 except: pass
@@ -239,7 +331,8 @@ def before_request_func():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    if current_user.is_authenticated: return redirect(url_for('admin') if current_user.is_admin else url_for('index'))
+    if current_user.is_authenticated:
+        return redirect(url_for('admin') if current_user.is_admin else url_for('index'))
     error = None
     if request.method == 'POST':
         user = next((u for u in users.values() if u.username == request.form.get('username')), None)
@@ -265,15 +358,20 @@ def logout():
 @login_required
 def fetch_abc_proxies():
     if not current_user.can_fetch: return jsonify({"status": "error", "message": "Permission denied."}), 403
-    settings = get_app_settings(); gen_url = settings.get("ABC_GENERATION_URL", "").strip(); limit = int(settings.get("MAX_PASTE", 30)); state = request.args.get('state', '').lower()
+    settings = get_app_settings()
+    gen_url = settings.get("ABC_GENERATION_URL", "").strip()
+    limit = int(settings.get("MAX_PASTE", 30))
+    state = request.args.get('state', '').lower()
     if not gen_url: return jsonify({"status": "error", "message": "ABC Generation URL not set."})
     try:
-        parsed = urlparse(gen_url); params = parse_qs(parsed.query)
+        parsed = urlparse(gen_url)
+        params = parse_qs(parsed.query)
         if state:
             user_val = params.get('username', [''])[0]
             new_user = re.sub(r'st-[a-zA-Z0-9]+', f'st-{state}', user_val) if 'st-' in user_val else user_val + f"-st-{state}"
             params['username'] = [new_user]
-        params['num'] = [str(limit)]; final_url = urlunparse(parsed._replace(query=urlencode(params, doseq=True)))
+        params['num'] = [str(limit)]
+        final_url = urlunparse(parsed._replace(query=urlencode(params, doseq=True)))
         resp = requests.get(final_url, timeout=10)
         if resp.status_code == 200:
             lines = [l.strip() for l in resp.text.strip().splitlines() if l.strip()][:limit]
@@ -285,7 +383,8 @@ def fetch_abc_proxies():
 @login_required
 def fetch_sx_proxies():
     if not current_user.can_fetch: return jsonify({"status": "error", "message": "Permission denied."}), 403
-    gen_url = get_app_settings().get("SX_GENERATION_URL", "").strip(); limit = int(get_app_settings().get("MAX_PASTE", 30))
+    gen_url = get_app_settings().get("SX_GENERATION_URL", "").strip()
+    limit = int(get_app_settings().get("MAX_PASTE", 30))
     if not gen_url: return jsonify({"status": "error", "message": "SX Generation URL not set."})
     try:
         resp = requests.get(gen_url, timeout=10)
@@ -306,29 +405,31 @@ def fetch_pool_provider(provider):
 @app.route("/", methods=["GET", "POST"])
 @login_required
 def index():
-    settings = get_app_settings(); MAX_PASTE = settings["MAX_PASTE"]; FRAUD_LEVEL = settings["FRAUD_SCORE_LEVEL"]; api_credentials = parse_api_credentials(settings)
+    settings = get_app_settings()
+    MAX_PASTE = settings["MAX_PASTE"]
+    api_credentials = parse_api_credentials(settings)
     system_paused = str(settings.get("SYSTEM_PAUSED", "FALSE")).upper() == "TRUE"
     dynamic_buttons = get_active_fetch_buttons() if current_user.can_fetch else []
     admin_bypass = current_user.is_admin and system_paused
 
     if current_user.is_guest and current_user.daily_api_limit > 0:
         if get_daily_api_usage_for_user(current_user.username) >= current_user.daily_api_limit:
-            return render_template("index.html", results=None, message=f"Daily API limit reached ({current_user.daily_api_limit} calls).", max_paste=MAX_PASTE, settings=settings, dynamic_buttons=dynamic_buttons)
+            return render_template("index.html", results=None, message=f"Daily API limit reached ({current_user.daily_api_limit} calls).", max_paste=MAX_PASTE, settings=settings, dynamic_buttons=dynamic_buttons, announcement=settings.get("ANNOUNCEMENT"), system_paused=False)
     
     paste_disabled = (current_user.role == "user" and str(settings.get("FORCE_FETCH_FOR_USERS", "FALSE")).upper() == "TRUE")
 
     if system_paused and not current_user.is_admin:
-        return render_template("index.html", results=None, message="⚠️ System Under Maintenance.", max_paste=MAX_PASTE, settings=settings, system_paused=True, dynamic_buttons=dynamic_buttons)
+        return render_template("index.html", results=None, message="⚠️ System Under Maintenance.", max_paste=MAX_PASTE, settings=settings, system_paused=True, dynamic_buttons=dynamic_buttons, announcement=settings.get("ANNOUNCEMENT"))
     
     if request.method == "POST":
-        if system_paused and not current_user.is_admin: return render_template("index.html", results=None, message="System Paused.", max_paste=MAX_PASTE, settings=settings, dynamic_buttons=dynamic_buttons)
+        if system_paused and not current_user.is_admin: return render_template("index.html", results=None, message="System Paused.", max_paste=MAX_PASTE, settings=settings, dynamic_buttons=dynamic_buttons, system_paused=True)
         
         origin = request.form.get('proxy_origin', 'paste')
         if paste_disabled and origin != 'fetch' and 'proxytext' in request.form:
-             return render_template("index.html", results=[], message="Manual pasting disabled.", max_paste=MAX_PASTE, settings=settings, dynamic_buttons=dynamic_buttons, paste_disabled_for_user=paste_disabled)
+             return render_template("index.html", results=[], message="Manual pasting disabled.", max_paste=MAX_PASTE, settings=settings, dynamic_buttons=dynamic_buttons, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, paste_disabled_for_user=paste_disabled)
 
         proxies_input = request.form.get("proxytext", "").strip().splitlines()[:MAX_PASTE]
-        if not proxies_input: return render_template("index.html", results=[], message="No proxies submitted.", max_paste=MAX_PASTE, settings=settings, dynamic_buttons=dynamic_buttons)
+        if not proxies_input: return render_template("index.html", results=[], message="No proxies submitted.", max_paste=MAX_PASTE, settings=settings, dynamic_buttons=dynamic_buttons, announcement=settings.get("ANNOUNCEMENT"), paste_disabled_for_user=paste_disabled)
         
         used_ip_set = {str(r['IP']).strip() for r in get_all_used_ips() if r.get('IP')}
         bad_ip_set = set()
@@ -339,13 +440,13 @@ def index():
                 if lip: bad_ip_set.add(lip)
 
         proxies_raw = [p.strip() for p in proxies_input if validate_proxy_format(p.strip())]
-        good_proxy_results = []; stats = {"used": 0, "bad": 0, "api": 0, "unstable": 0}
+        good_proxy_results = []
+        stats = {"used": 0, "bad": 0, "api": 0, "unstable": 0}
         
         with ThreadPoolExecutor(max_workers=settings["MAX_WORKERS"]) as executor:
             for i in range(0, len(proxies_raw), settings["MAX_WORKERS"]):
                 if len([r for r in good_proxy_results if not r['used'] and not r['cached_bad']]) >= 2: break
-                batch = proxies_raw[i : i + settings["MAX_WORKERS"]]
-                futures = {executor.submit(single_check_proxy_detailed, p, FRAUD_LEVEL, api_credentials, used_ip_set, bad_ip_set, is_strict_mode=True): p for p in batch}
+                futures = {executor.submit(single_check_proxy_detailed, p, settings["FRAUD_SCORE_LEVEL"], api_credentials, used_ip_set, bad_ip_set, is_strict_mode=True): p for p in proxies_raw[i : i + settings["MAX_WORKERS"]]}
                 for f in as_completed(futures):
                     res = f.result()
                     if res["status"] == "used_cache": stats["used"] += 1
@@ -354,9 +455,13 @@ def index():
                     elif res["status"] in ["success", "bad_score"]: stats["api"] += 1
                     if res.get("proxy"): good_proxy_results.append(res)
 
-        unique_results = []; seen = set()
+        unique_results = []
+        seen = set()
         for r in good_proxy_results:
-            if r['ip'] not in seen: seen.add(r['ip']); unique_results.append(r)
+            if r['ip'] not in seen:
+                seen.add(r['ip'])
+                unique_results.append(r)
+        
         results = sorted(unique_results, key=lambda x: x.get('used', False))
         good_final = len(results)
         
@@ -366,11 +471,13 @@ def index():
             update_setting("CONSECUTIVE_FAILS", str(new_fails))
             if new_fails > 1000: update_setting("SYSTEM_PAUSED", "TRUE")
         
-        add_api_usage_log(current_user.username, get_user_ip(), len(proxies_input), stats["api"], good_final)
+        try: add_api_usage_log(current_user.username, get_user_ip(), len(proxies_input), stats["api"], good_final)
+        except: pass
+        
         message = f"Found {good_final} good proxies."
-        return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings, dynamic_buttons=dynamic_buttons, paste_disabled_for_user=paste_disabled)
+        return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings, dynamic_buttons=dynamic_buttons, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, paste_disabled_for_user=paste_disabled)
 
-    return render_template("index.html", results=None, message="⚠️ MAINTENANCE (Admin)" if admin_bypass else "", max_paste=MAX_PASTE, settings=settings, dynamic_buttons=dynamic_buttons, paste_disabled_for_user=paste_disabled)
+    return render_template("index.html", results=None, message="⚠️ MAINTENANCE (Admin)" if admin_bypass else "", max_paste=MAX_PASTE, settings=settings, dynamic_buttons=dynamic_buttons, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, paste_disabled_for_user=paste_disabled)
 
 @app.route("/track-used", methods=["POST"])
 @login_required
@@ -403,8 +510,11 @@ def admin():
 @app.route("/admin/add-button", methods=["POST"])
 @admin_required
 def admin_add_button():
-    if add_fetch_button(request.form.get("name"), request.form.get("type"), request.form.get("target")):
-        flash(f"Button created!", "success")
+    name = request.form.get("name")
+    b_type = request.form.get("type")
+    target = request.form.get("target")
+    if add_fetch_button(name, b_type, target):
+        flash(f"Button '{name}' created!", "success")
     return redirect(url_for('admin_settings'))
 
 @app.route("/admin/delete-button/<int:btn_id>")
@@ -420,7 +530,7 @@ def admin_users():
     for s in stats:
         try:
             diff = datetime.datetime.now(datetime.timezone.utc) - datetime.datetime.fromisoformat(s['last_active'].replace('Z', '+00:00'))
-            s['status'] = 'Active' if diff.total_seconds() < 86400 else 'Offline'
+            s['status'] = 'Inactive' if diff.days > 7 else ('Offline' if diff.total_seconds() > 86400 else 'Active')
         except: s['status'] = 'Unknown'
     return render_template("admin_users.html", stats=stats)
 
@@ -433,18 +543,23 @@ def admin_delete_user_activity(username):
 @app.route('/admin/users/manage', methods=['GET'])
 @admin_required
 def admin_users_manage():
-    users_refresh = load_users_from_db(); user_list = []
+    users_refresh = load_users_from_db()
+    user_list = []
     for user in users_refresh.values():
-        u_dict = user.to_dict(); u_dict['daily_api_usage'] = get_daily_api_usage_for_user(user.username); user_list.append(u_dict)
+        u_dict = user.to_dict()
+        u_dict['daily_api_usage'] = get_daily_api_usage_for_user(user.username)
+        user_list.append(u_dict)
     return render_template('admin_users_manage.html', users=user_list)
 
 @app.route('/admin/users/add', methods=['POST'])
 @admin_required
 def admin_add_user():
     global users
-    u, p = request.form.get('username', '').strip(), request.form.get('password', '').strip()
-    if create_user(u, p, request.form.get('role', 'user'), request.form.get('can_fetch') == 'on'):
-        users = load_users_from_db(); flash(f"User {u} created.", "success")
+    username, password = request.form.get('username', '').strip(), request.form.get('password', '').strip()
+    role = request.form.get('role', 'user')
+    if create_user(username, password, role, request.form.get('can_fetch') == 'on', int(request.form.get('daily_api_limit', 150)) if role == 'guest' else 0):
+        users = load_users_from_db()
+        flash(f'User {username} created.', 'success')
     return redirect(url_for('admin_users_manage'))
 
 @app.route('/admin/users/edit/<int:user_id>', methods=['POST'])
