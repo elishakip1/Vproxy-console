@@ -456,7 +456,7 @@
                 {% endif %}
             {% endwith %}
 
-            {% if message is defined and message %}
+            {% if message is defined and message and not results %}
             <div class="alert alert-info">{{ message }}</div>
             {% endif %}
 
@@ -582,6 +582,17 @@
 
             {% if results is defined and results is not none %} 
             <hr class="my-4">
+            
+            <!-- ADDED: Display the detailed stats message -->
+            {% if message is defined and message %}
+            <div class="alert alert-info mb-3">
+                <strong>Results:</strong> {{ message }}
+                <span class="float-end">
+                    <strong>Found:</strong> {{ results|length }} good proxy/ies
+                </span>
+            </div>
+            {% endif %}
+
             <h5 class="mb-3">✅ Good Proxies Found (Score {{ settings.FRAUD_SCORE_LEVEL }})</h5>
             <div class="table-responsive">
                 <table class="table table-sm table-bordered table-hover">
