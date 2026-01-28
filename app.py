@@ -50,59 +50,25 @@ BLOCKED_IPS = {"192.168.1.50", "10.0.0.5"}
 
 class User(UserMixin):
     def __init__(self, id, username, password, role="user", can_fetch=False, daily_api_limit=0):
-        self.id = id
-        self.username = username
-        self.password = password
-        self.role = role
-        self.can_fetch = can_fetch
-        self.daily_api_limit = daily_api_limit
-    
+        self.id = id; self.username = username; self.password = password; 
+        self.role = role; self.can_fetch = can_fetch; self.daily_api_limit = daily_api_limit
     @property
-    def is_admin(self):
-        return self.role == "admin"
-    
+    def is_admin(self): return self.role == "admin"
     @property 
-    def is_guest(self):
-        return self.role == "guest"
-    
+    def is_guest(self): return self.role == "guest"
     def to_dict(self):
-        return {
-            'id': self.id,
-            'username': self.username,
-            'password': self.password,
-            'role': self.role,
-            'can_fetch': self.can_fetch,
-            'daily_api_limit': self.daily_api_limit
-        }
+        return {'id': self.id, 'username': self.username, 'password': self.password, 'role': self.role, 'can_fetch': self.can_fetch, 'daily_api_limit': self.daily_api_limit}
 
 def load_users_from_db():
     try:
         users_data = get_all_users()
         users_map = {}
         for user_data in users_data:
-            user = User(
-                id=user_data['id'],
-                username=user_data['username'],
-                password=user_data['password'],
-                role=user_data.get('role', 'user'),
-                can_fetch=user_data.get('can_fetch', False),
-                daily_api_limit=user_data.get('daily_api_limit', 0)
-            )
+            user = User(id=user_data['id'], username=user_data['username'], password=user_data['password'], role=user_data.get('role', 'user'), can_fetch=user_data.get('can_fetch', False), daily_api_limit=user_data.get('daily_api_limit', 0))
             users_map[user.id] = user
-        
         if not users_map:
             init_default_users()
-            users_data = get_all_users()
-            for user_data in users_data:
-                user = User(
-                    id=user_data['id'],
-                    username=user_data['username'],
-                    password=user_data['password'],
-                    role=user_data.get('role', 'user'),
-                    can_fetch=user_data.get('can_fetch', False),
-                    daily_api_limit=user_data.get('daily_api_limit', 0)
-                )
-                users_map[user.id] = user
+            return load_users_from_db()
         return users_map
     except Exception as e:
         logger.error(f"Error loading users from DB: {e}")
@@ -125,32 +91,18 @@ def admin_required(f):
 
 def get_user_ip():
     ip = request.headers.get('X-Forwarded-For')
-    if ip: return ip.split(',')[0].strip()
-    return request.remote_addr or "Unknown"
+    return ip.split(',')[0].strip() if ip else (request.remote_addr or "Unknown")
 
 DEFAULT_SETTINGS = {
-    "MAX_PASTE": 30,
-    "FRAUD_SCORE_LEVEL": 0,
-    "MAX_WORKERS": 5,
-    "SCAMALYTICS_API_KEY": "",
-    "SCAMALYTICS_API_URL": "https://api11.scamalytics.com/v3/",
-    "SCAMALYTICS_USERNAME": "",
-    "ANNOUNCEMENT": "",
-    "API_CREDITS_USED": "N/A",
-    "API_CREDITS_REMAINING": "N/A",
-    "CONSECUTIVE_FAILS": 0,
-    "SYSTEM_PAUSED": "FALSE",
-    "ABC_GENERATION_URL": "",
+    "MAX_PASTE": 30, "FRAUD_SCORE_LEVEL": 0, "MAX_WORKERS": 5, "SCAMALYTICS_API_KEY": "",
+    "SCAMALYTICS_API_URL": "https://api11.scamalytics.com/v3/", "SCAMALYTICS_USERNAME": "",
+    "ANNOUNCEMENT": "", "API_CREDITS_USED": "N/A", "API_CREDITS_REMAINING": "N/A",
+    "CONSECUTIVE_FAILS": 0, "SYSTEM_PAUSED": "FALSE", "ABC_GENERATION_URL": "",
     "SX_GENERATION_URL": "https://api.sx.org/port/list/rkocd4za052HM0HkruFuQvE6x37cMNsG.txt?proxy_template_id=3729&all=true&except_id[]=[]",
-    "PYPROXY_RESET_URL": "",
-    "PIAPROXY_RESET_URL": "",
-    "PASTE_INPUT_DISABLED": "FALSE",
-    "FORCE_FETCH_FOR_USERS": "FALSE"
+    "PYPROXY_RESET_URL": "", "PIAPROXY_RESET_URL": "", "PASTE_INPUT_DISABLED": "FALSE", "FORCE_FETCH_FOR_USERS": "FALSE"
 }
 
-_SETTINGS_CACHE = None
-_SETTINGS_CACHE_TIME = 0
-CACHE_DURATION = 300
+_SETTINGS_CACHE = None; _SETTINGS_CACHE_TIME = 0; CACHE_DURATION = 300
 
 def get_app_settings(force_refresh=False):
     global _SETTINGS_CACHE, _SETTINGS_CACHE_TIME
@@ -158,40 +110,28 @@ def get_app_settings(force_refresh=False):
         return _SETTINGS_CACHE
     try: db_settings = get_settings()
     except: db_settings = {}
-    final_settings = DEFAULT_SETTINGS.copy()
-    final_settings.update(db_settings)
+    final_settings = DEFAULT_SETTINGS.copy(); final_settings.update(db_settings)
     try:
         final_settings["MAX_PASTE"] = int(final_settings["MAX_PASTE"])
         final_settings["FRAUD_SCORE_LEVEL"] = int(final_settings["FRAUD_SCORE_LEVEL"])
         final_settings["MAX_WORKERS"] = int(final_settings["MAX_WORKERS"])
         final_settings["CONSECUTIVE_FAILS"] = int(final_settings.get("CONSECUTIVE_FAILS", 0))
     except: pass
-    _SETTINGS_CACHE = final_settings
-    _SETTINGS_CACHE_TIME = time.time()
-    return final_settings
+    _SETTINGS_CACHE = final_settings; _SETTINGS_CACHE_TIME = time.time(); return final_settings
 
 USER_AGENTS = ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15"]
 REQUEST_TIMEOUT = 5; MIN_DELAY = 0.5; MAX_DELAY = 1.5
 
 def parse_api_credentials(settings):
-    raw_keys = settings.get("SCAMALYTICS_API_KEY", "")
-    raw_users = settings.get("SCAMALYTICS_USERNAME", "")
-    raw_urls = settings.get("SCAMALYTICS_API_URL", "")
-    keys = [k.strip() for k in raw_keys.split(',') if k.strip()]
-    user_list = [u.strip() for u in raw_users.split(',') if u.strip()]
-    urls = [u.strip() for u in raw_urls.split(',') if u.strip()]
+    raw_keys = settings.get("SCAMALYTICS_API_KEY", ""); raw_users = settings.get("SCAMALYTICS_USERNAME", ""); raw_urls = settings.get("SCAMALYTICS_API_URL", "")
+    keys = [k.strip() for k in raw_keys.split(',') if k.strip()]; users_list = [u.strip() for u in raw_users.split(',') if u.strip()]; urls = [u.strip() for u in raw_urls.split(',') if u.strip()]
     if not keys: return []
-    if len(user_list) == 1 and len(keys) > 1: user_list = user_list * len(keys)
+    if len(users_list) == 1 and len(keys) > 1: users_list = users_list * len(keys)
     if len(urls) == 1 and len(keys) > 1: urls = urls * len(keys)
-    credentials = []
-    for k, u, url in zip(keys, user_list, urls):
-        credentials.append({"key": k, "user": u, "url": url})
-    return credentials
+    return [{"key": k, "user": u, "url": url} for k, u, url in zip(keys, users_list, urls)]
 
 def validate_proxy_format(proxy_line):
-    try:
-        parts = proxy_line.strip().split(":")
-        return len(parts) == 4 and all(part for part in parts)
+    try: parts = proxy_line.strip().split(":"); return len(parts) == 4 and all(part for part in parts)
     except: return False
 
 def extract_ip_local(proxy_line):
@@ -205,8 +145,7 @@ def get_ip_from_proxy(proxy_line):
         proxy_dict = {"http": f"http://{user}:{pw}@{host}:{port}", "https": f"http://{user}:{pw}@{host}:{port}"}
         session_req = requests.Session()
         retries = Retry(total=1, backoff_factor=0.2, status_forcelist=[500, 502, 503, 504])
-        session_req.mount('http://', HTTPAdapter(max_retries=retries))
-        session_req.mount('https://', HTTPAdapter(max_retries=retries))
+        session_req.mount('http://', HTTPAdapter(max_retries=retries)); session_req.mount('https://', HTTPAdapter(max_retries=retries))
         response = session_req.get("https://ipv4.icanhazip.com", proxies=proxy_dict, timeout=REQUEST_TIMEOUT-1, headers={"User-Agent": random.choice(USER_AGENTS)})
         response.raise_for_status(); ip = response.text.strip()
         return ip if (ip and '.' in ip) else None
@@ -460,7 +399,7 @@ def admin():
 @admin_required
 def admin_add_button():
     if add_fetch_button(request.form.get("name"), request.form.get("type"), request.form.get("target")):
-        flash(f"Button created!", "success")
+        flash(f"Button '{request.form.get('name')}' created!", "success")
     return redirect(url_for('admin_settings'))
 
 @app.route("/admin/delete-button/<int:btn_id>")
@@ -502,15 +441,37 @@ def admin_add_user():
         global users; users = load_users_from_db(); flash(f"User {u} created.", "success")
     return redirect(url_for('admin_users_manage'))
 
+@app.route('/admin/users/edit/<int:user_id>', methods=['POST'])
+@admin_required
+def admin_edit_user(user_id):
+    if user_id not in users or user_id == 1: flash('Invalid action.', 'danger'); return redirect(url_for('admin_users_manage'))
+    role = request.form.get('role'); updates = {'role': role, 'can_fetch': request.form.get('can_fetch') == 'on', 'daily_api_limit': int(request.form.get('daily_api_limit', 0)) if role == 'guest' else 0}
+    if request.form.get('password'): updates['password'] = request.form.get('password')
+    if update_user(user_id, **updates):
+        global users; users = load_users_from_db(); flash('User updated.', 'success')
+    return redirect(url_for('admin_users_manage'))
+
+@app.route('/admin/users/delete/<int:user_id>')
+@admin_required
+def admin_delete_user(user_id):
+    if user_id not in users or user_id == 1 or user_id == current_user.id: flash('Cannot delete user.', 'danger'); return redirect(url_for('admin_users_manage'))
+    if delete_user(user_id):
+        global users; users = load_users_from_db(); flash('User deleted.', 'success')
+    return redirect(url_for('admin_users_manage'))
+
 @app.route("/admin/settings", methods=["GET", "POST"])
 @admin_required
 def admin_settings():
     if request.method == "POST":
         f = request.form
-        upd = {"MAX_PASTE": f.get("max_paste"), "FRAUD_SCORE_LEVEL": f.get("fraud_score_level"), "MAX_WORKERS": f.get("max_workers"), "SCAMALYTICS_API_KEY": f.get("scamalytics_api_key", "").strip(), "SCAMALYTICS_USERNAME": f.get("scamalytics_username", "").strip(), "FORCE_FETCH_FOR_USERS": f.get("force_fetch_for_users", "FALSE")}
+        upd = {"MAX_PASTE": f.get("max_paste"), "FRAUD_SCORE_LEVEL": f.get("fraud_score_level"), "MAX_WORKERS": f.get("max_workers"), "SCAMALYTICS_API_KEY": f.get("scamalytics_api_key", "").strip(), "SCAMALYTICS_API_URL": f.get("scamalytics_api_url", "").strip(), "SCAMALYTICS_USERNAME": f.get("scamalytics_username", "").strip(), "ABC_GENERATION_URL": f.get("abc_generation_url", "").strip(), "SX_GENERATION_URL": f.get("sx_generation_url", "").strip(), "PYPROXY_RESET_URL": f.get("pyproxy_reset_url", "").strip(), "PIAPROXY_RESET_URL": f.get("piaproxy_reset_url", "").strip(), "FORCE_FETCH_FOR_USERS": f.get("force_fetch_for_users", "FALSE")}
         for k, v in upd.items(): update_setting(k, str(v))
         flash("Settings updated.", "success")
     return render_template("admin_settings.html", settings=get_app_settings(), buttons=get_all_fetch_buttons())
+
+@app.route("/admin/logs")
+@admin_required
+def admin_logs(): return render_template("admin_logs.html", logs=get_all_system_logs()[::-1])
 
 @app.route("/admin/pool", methods=["GET", "POST"])
 @admin_required
@@ -526,17 +487,47 @@ def admin_pool():
         return redirect(url_for('admin_pool'))
     return render_template('admin_pool.html', counts=get_pool_stats(), settings=settings, preview_py=get_pool_preview('pyproxy'), preview_pia=get_pool_preview('piaproxy'))
 
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        user = next((u for u in users.values() if u.username == request.form.get('username')), None)
-        if user and user.password == request.form.get('password'):
-            login_user(user); return redirect(url_for('index'))
-    return render_template('login.html')
+@app.route("/admin/reset-system", methods=["POST"])
+@admin_required
+def admin_reset_system():
+    update_setting("CONSECUTIVE_FAILS", "0"); update_setting("SYSTEM_PAUSED", "FALSE")
+    get_app_settings(force_refresh=True); flash("System reset.", "success")
+    return redirect(url_for("admin"))
 
-@app.route('/logout')
-@login_required
-def logout(): logout_user(); return redirect(url_for('login'))
+@app.route("/admin/toggle-maintenance", methods=["POST"])
+@admin_required
+def admin_toggle_maintenance():
+    is_paused = str(get_app_settings().get("SYSTEM_PAUSED", "FALSE")).upper() == "TRUE"
+    new_state = "FALSE" if is_paused else "TRUE"
+    if update_setting("SYSTEM_PAUSED", new_state):
+        get_app_settings(force_refresh=True); flash(f"Maintenance {'Activated' if new_state=='TRUE' else 'Deactivated'}.", "success")
+    return redirect(url_for("admin"))
+
+@app.route("/admin/toggle-force-fetch", methods=["POST"])
+@admin_required
+def admin_toggle_force_fetch():
+    is_forced = str(get_app_settings().get("FORCE_FETCH_FOR_USERS", "FALSE")).upper() == "TRUE"
+    new_state = "FALSE" if is_forced else "TRUE"
+    if update_setting("FORCE_FETCH_FOR_USERS", new_state):
+        get_app_settings(force_refresh=True); flash(f"Force fetch {'Activated' if new_state=='TRUE' else 'Deactivated'}.", "success")
+    return redirect(url_for("admin"))
+
+@app.route("/admin/announcement", methods=["POST"])
+@admin_required
+def admin_announcement():
+    val = request.form.get("announcement_text", "").strip() if "save_announcement" in request.form else ""
+    update_setting("ANNOUNCEMENT", val); get_app_settings(force_refresh=True)
+    return redirect(url_for("admin"))
+
+@app.route("/delete-used-ip/<ip>")
+@admin_required
+def delete_used_ip_route(ip):
+    delete_used_ip(ip); return redirect(url_for("admin"))
+
+@app.errorhandler(404)
+def page_not_found(e): return render_template('error.html', error='Page not found.'), 404
+@app.errorhandler(500)
+def internal_server_error(e): return render_template('error.html', error='Server Error.'), 500
 
 if __name__ == "__main__":
     init_default_users(); app.run(host="0.0.0.0", port=5000)
