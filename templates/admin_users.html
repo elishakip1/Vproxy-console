@@ -1,126 +1,85 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>User Activity</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-  
-  <link rel="icon" href="{{ url_for('static', filename='img/favicon.ico') }}" type="image/x-icon">
-  <link rel="shortcut icon" href="{{ url_for('static', filename='img/favicon.ico') }}" type="image/x-icon">
-
-  <style>
-    body { background-color: #f0f2f5; font-family: sans-serif; }
-    /* Sidebar Styles */
-    .sidebar { min-height: 100vh; width: 250px; background: #212529; color: #fff; position: fixed; top: 0; left: 0; z-index: 1000; padding-top: 20px; transition: all 0.3s; }
-    .sidebar-header { padding: 20px; text-align: center; border-bottom: 1px solid #495057; }
-    
-    .logo-link {
-      display: inline-block;
-      text-decoration: none;
-      margin-bottom: 15px;
-      background-color: white;
-      border-radius: 50%;
-      padding: 5px;
-    }
-    
-    .logo-link img {
-      height: 70px;
-      width: 70px;
-      border-radius: 50%;
-      object-fit: cover;
-      transition: opacity 0.2s ease;
-      display: block;
-    }
-    
-    .logo-link:hover img {
-      opacity: 0.9;
-    }
-    
-    .sidebar-nav { list-style: none; padding: 0; margin-top: 20px; }
-    .sidebar-nav li { width: 100%; }
-    .nav-link { display: block; padding: 15px 20px; color: rgba(255,255,255,.75); text-decoration: none; border-left: 4px solid transparent; }
-    .nav-link:hover, .nav-link.active-nav { color: #fff; background: rgba(255,255,255,.1); border-left-color: #0d6efd; }
-    .content-wrapper { margin-left: 250px; padding: 30px; }
-    @media (max-width: 768px) { .sidebar { margin-left: -250px; } .sidebar.active { margin-left: 0; } .content-wrapper { margin-left: 0; } }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <title>User Monitor - Proxy Checker</title>
+    <style>
+        :root { --bg-color: #f8f9fa; --sidebar-bg: #212529; --card-bg: #ffffff; }
+        body { background-color: var(--bg-color); margin: 0; }
+        .sidebar { width: 250px; position: fixed; height: 100vh; background-color: var(--sidebar-bg); color: white; padding: 20px; z-index: 100; }
+        .main-content { margin-left: 250px; padding: 40px; }
+        .nav-link { color: #adb5bd; margin-bottom: 10px; border-radius: 5px; }
+        .nav-link.active { background-color: #0d6efd; color: white; font-weight: bold; }
+        .monitor-card { background: white; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); overflow: hidden; border: none; }
+        .status-badge { font-size: 0.7rem; padding: 4px 8px; border-radius: 10px; }
+    </style>
 </head>
 <body>
-
-<nav class="sidebar" id="sidebar">
-    <div class="sidebar-header">
-        <!-- CLICKABLE LOGO WITH WHITE BACKGROUND -->
-        <a href="{{ url_for('index') }}" class="logo-link">
-            <img src="https://i.ibb.co/pjSD084t/proxychecker-logo-clear.png" alt="Proxy Checker Logo">
-        </a>
-        <h5 class="text-white mt-2">Admin Panel</h5>
+    <div class="sidebar">
+        <h4 class="mb-4">Admin Panel</h4>
+        <nav class="nav flex-column">
+            <a href="{{ url_for('admin') }}" class="nav-link">📊 Dashboard</a>
+            <a href="{{ url_for('admin_pool') }}" class="nav-link">🏭 Proxy Pool</a>
+            <a href="{{ url_for('admin_users') }}" class="nav-link active">👥 User Activity</a>
+            <a href="{{ url_for('admin_users_manage') }}" class="nav-link">⚙️ Manage Users</a>
+            <a href="{{ url_for('admin_logs') }}" class="nav-link">📝 System Logs</a>
+            <a href="{{ url_for('admin_settings') }}" class="nav-link">🔧 Settings</a>
+            <a href="{{ url_for('index') }}" class="nav-link text-warning mt-5">← Back to Checker</a>
+        </nav>
     </div>
-    <ul class="sidebar-nav">
-        <li><a href="{{ url_for('admin') }}" class="nav-link">📊 Dashboard</a></li>
-        <li><a href="{{ url_for('admin_pool') }}" class="nav-link">🏭 Proxy Pool</a></li>
-        <li><a href="{{ url_for('admin_users') }}" class="nav-link active-nav">👥 User Activity</a></li>
-        <li><a href="{{ url_for('admin_logs') }}" class="nav-link">📋 System Logs</a></li>
-        <li><a href="{{ url_for('admin_settings') }}" class="nav-link">⚙️ Settings</a></li>
-        <li class="mt-5"><a href="/" class="nav-link text-warning">← Back to Checker</a></li>
-    </ul>
-</nav>
 
-<div class="content-wrapper">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <button class="btn btn-dark d-md-none" id="sidebarToggle">☰ Menu</button>
+    <div class="main-content">
         <h2>👥 User Activity Monitor</h2>
-    </div>
+        <p class="text-muted">Real-time overview of user usage and status.</p>
 
-    <div class="card">
-        <div class="card-header bg-secondary text-white">User Statistics</div>
-        <div class="card-body p-0">
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}{% for message in messages %}<div class="alert alert-success">{{ message }}</div>{% endfor %}{% endif %}
+        {% endwith %}
+
+        <div class="monitor-card mt-4">
             <div class="table-responsive">
-                <table class="table table-hover mb-0">
+                <table class="table table-hover align-middle mb-0">
                     <thead class="table-light">
                         <tr>
                             <th>Username</th>
                             <th>Status</th>
-                            <th>Last Active</th>
-                            <th>Total Sessions</th>
-                            <th>API Checks</th>
+                            <th>Last Active (EAT)</th>
+                            <th>Checks Done</th>
                             <th>Good Proxies</th>
-                            <th>Last Known IP</th>
+                            <th class="text-end">Action</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {% for user in stats %}
+                        {% for s in stats %}
                         <tr>
-                            <td class="fw-bold">{{ user.username }}</td>
+                            <td><strong>{{ s.username }}</strong></td>
                             <td>
-                                {% if user.status == 'Active' %}
-                                    <span class="badge bg-success">Active</span>
-                                {% elif user.status == 'Offline' %}
-                                    <span class="badge bg-warning text-dark">Offline (>24h)</span>
+                                {% if s.status == 'Active' %}
+                                    <span class="badge bg-success status-badge">ONLINE</span>
                                 {% else %}
-                                    <span class="badge bg-secondary">Inactive (>7d)</span>
+                                    <span class="badge bg-secondary status-badge">OFFLINE</span>
                                 {% endif %}
                             </td>
-                            <td>{{ user.last_active | replace('T', ' ') | truncate(19, True, '') }}</td>
-                            <td>{{ user.total_sessions }}</td>
-                            <td>{{ user.total_api_calls }}</td>
-                            <td class="text-success fw-bold">{{ user.total_good_proxies }}</td>
-                            <td class="small text-muted">{{ user.last_ip }}</td>
+                            <td>{{ s.last_active | replace('T', ' ') | truncate(19, True, '') }}</td>
+                            <td>{{ s.total_api_calls }}</td>
+                            <td class="text-success fw-bold">{{ s.total_good_proxies }}</td>
+                            <td class="text-end">
+                                <a href="{{ url_for('admin_delete_user_activity', username=s.username) }}" 
+                                   class="btn btn-sm btn-outline-danger"
+                                   onclick="return confirm('Really wipe all logs and reset stats for {{ s.username }}?')">
+                                    Delete Activity
+                                </a>
+                            </td>
                         </tr>
                         {% else %}
-                        <tr><td colspan="7" class="text-center">No activity logs found yet.</td></tr>
+                        <tr><td colspan="6" class="text-center p-5 text-muted">No activity data recorded yet.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
         </div>
     </div>
-</div>
-
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-<script>
-    document.getElementById('sidebarToggle').addEventListener('click', function() {
-        document.getElementById('sidebar').classList.toggle('active');
-    });
-</script>
 </body>
 </html>
