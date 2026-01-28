@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8"><title>System Logs - Admin</title>
+    <meta charset="UTF-8"><title>Logs - Admin</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
@@ -12,7 +12,7 @@
         .logo-link img { height: 70px; width: 70px; border-radius: 50%; object-fit: cover; display: block; }
         .sidebar-nav { list-style: none; padding: 0; margin-top: 20px; }
         .nav-link { display: block; padding: 15px 20px; color: rgba(255,255,255,.75); text-decoration: none; border-left: 4px solid transparent; }
-        .nav-link:hover, .nav-link.active { color: #fff; background: rgba(255,255,255,.1); border-left-color: #0d6efd; }
+        .nav-link.active { color: #fff; background: rgba(255,255,255,.1); border-left-color: #0d6efd; }
         .content-wrapper { margin-left: 250px; padding: 30px; }
         .log-INFO{color:#0d6efd}.log-WARNING{color:#ffc107}.log-ERROR{color:#dc3545}
     </style>
@@ -25,16 +25,14 @@
     </div>
     <ul class="sidebar-nav">
         <li><a href="{{ url_for('admin') }}" class="nav-link">📊 Dashboard</a></li>
-        <li><a href="{{ url_for('admin_pool') }}" class="nav-link">🏭 Proxy Pool</a></li>
-        <li><a href="{{ url_for('admin_users') }}" class="nav-link">👥 User Activity</a></li>
-        <li><a href="{{ url_for('admin_users_manage') }}" class="nav-link">⚙️ Manage Users</a></li>
         <li><a href="{{ url_for('admin_logs') }}" class="nav-link active">📋 System Logs</a></li>
-        <li><a href="{{ url_for('admin_settings') }}" class="nav-link">⚙️ Settings</a></li>
-        <li class="mt-5"><a href="/" class="nav-link text-warning">← Back to Checker</a></li>
     </ul>
 </nav>
 <div class="content-wrapper">
-    <h2>📋 System Logs</h2>
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>📋 System Logs</h2>
+        <form action="{{ url_for('admin_logs') }}" method="POST"><button class="btn btn-outline-danger btn-sm">Clear All Logs</button></form>
+    </div>
     <div class="card shadow-sm border-0 mt-4">
         <div class="table-responsive">
             <table class="table table-sm mb-0">
