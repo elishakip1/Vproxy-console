@@ -247,3 +247,113 @@ def clear_proxy_pool(provider=None):
         query.execute()
         return True
     except Exception as e: logger.error(f"Error clearing pool: {e}"); return False
+
+# --- USER MANAGEMENT FUNCTIONS ---
+
+def get_all_users():
+    """Get all users from database"""
+    if not supabase: return []
+    try:
+        response = supabase.table('users').select("*").order('id').execute()
+        return response.data
+    except Exception as e:
+        logger.error(f"Error fetching users: {e}")
+        return []
+
+def get_user_by_id(user_id):
+    """Get a user by ID"""
+    if not supabase: return None
+    try:
+        response = supabase.table('users').select("*").eq('id', user_id).execute()
+        if response.data:
+            return response.data[0]
+        return None
+    except Exception as e:
+        logger.error(f"Error fetching user {user_id}: {e}")
+        return None
+
+def get_user_by_username(username):
+    """Get a user by username"""
+    if not supabase: return None
+    try:
+        response = supabase.table('users').select("*").eq('username', username).execute()
+        if response.data:
+            return response.data[0]
+        return None
+    except Exception as e:
+        logger.error(f"Error fetching user {username}: {e}")
+        return None
+
+def create_user(username, password, role="user", can_fetch=False, daily_api_limit=0):
+    """Create a new user"""
+    if not supabase: return False
+    try:
+        # Check if username already exists
+        existing = get_user_by_username(username)
+        if existing:
+            return False
+        
+        # Generate new ID
+        all_users = get_all_users()
+        new_id = max([u['id'] for u in all_users]) + 1 if all_users else 1
+        
+        user_data = {
+            "id": new_id,
+            "username": username,
+            "password": password,
+            "role": role,
+            "can_fetch": can_fetch,
+            "daily_api_limit": daily_api_limit if role == 'guest' else 0
+        }
+        
+        supabase.table('users').insert(user_data).execute()
+        return True
+    except Exception as e:
+        logger.error(f"Error creating user {username}: {e}")
+        return False
+
+def update_user(user_id, **updates):
+    """Update a user's information"""
+    if not supabase: return False
+    try:
+        # Don't allow updating user ID 1 (owner) role
+        if user_id == 1 and 'role' in updates and updates['role'] != 'admin':
+            return False
+        
+        # Clean up updates - remove None values
+        clean_updates = {k: v for k, v in updates.items() if v is not None}
+        
+        if clean_updates:
+            supabase.table('users').update(clean_updates).eq('id', user_id).execute()
+        return True
+    except Exception as e:
+        logger.error(f"Error updating user {user_id}: {e}")
+        return False
+
+def delete_user(user_id):
+    """Delete a user"""
+    if not supabase: return False
+    try:
+        # Don't allow deleting user ID 1 (owner)
+        if user_id == 1:
+            return False
+        
+        supabase.table('users').delete().eq('id', user_id).execute()
+        return True
+    except Exception as e:
+        logger.error(f"Error deleting user {user_id}: {e}")
+        return False
+
+def init_default_users():
+    """Initialize default users if table is empty"""
+    if not supabase: return False
+    try:
+        users = get_all_users()
+        if not users:
+            # Create default admin user
+            create_user("EL", "ADMIN123", "admin", True, 0)
+            return True
+        return False
+    except Exception as e:
+        logger.error(f"Error initializing default users: {e}")
+        return False
