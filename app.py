@@ -19,6 +19,7 @@ from requests.packages.urllib3.util.retry import Retry
 import logging
 import sys
 import re
+import json
 
 # Import from db_util
 from db_util import (
@@ -47,12 +48,13 @@ login_manager.login_message_category = "warning"
 BLOCKED_IPS = {"192.168.1.50", "10.0.0.5"}
 
 class User(UserMixin):
-    def __init__(self, id, username, password, role="user", can_fetch=False):
+    def __init__(self, id, username, password, role="user", can_fetch=False, daily_api_limit=0):
         self.id = id
         self.username = username
         self.password = password
         self.role = role
         self.can_fetch = can_fetch
+        self.daily_api_limit = daily_api_limit
     
     @property
     def is_admin(self):
@@ -61,13 +63,44 @@ class User(UserMixin):
     @property 
     def is_guest(self):
         return self.role == "guest"
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'username': self.username,
+            'password': self.password,
+            'role': self.role,
+            'can_fetch': self.can_fetch,
+            'daily_api_limit': self.daily_api_limit
+        }
 
-# Updated users as requested
-users = {
-    1: User(id=1, username="EL", password="ADMIN123", role="admin", can_fetch=True),
-    2: User(id=2, username="Work2", password="password", role="user", can_fetch=True),
-    #4: User(id=3, username="STONES", password="123STONES", role="guest", can_fetch=False),
-}
+# Load users from JSON file or use defaults
+def load_users_from_file():
+    try:
+        with open('users.json', 'r') as f:
+            users_data = json.load(f)
+            users = {}
+            for user_data in users_data:
+                user = User(**user_data)
+                users[user.id] = user
+            return users
+    except FileNotFoundError:
+        # Default users if file doesn't exist
+        default_users = {
+            1: User(id=1, username="EL", password="ADMIN123", role="admin", can_fetch=True, daily_api_limit=0),
+            2: User(id=2, username="Work2", password="password", role="user", can_fetch=True, daily_api_limit=0),
+        }
+        # Save defaults to file
+        save_users_to_file(default_users)
+        return default_users
+
+def save_users_to_file(users_dict):
+    users_list = [user.to_dict() for user in users_dict.values()]
+    with open('users.json', 'w') as f:
+        json.dump(users_list, f, indent=2)
+
+# Initialize users
+users = load_users_from_file()
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -516,10 +549,11 @@ def index():
     system_paused = str(settings.get("SYSTEM_PAUSED", "FALSE")).upper() == "TRUE"
     admin_bypass = False
     
-    if current_user.is_guest:
+    # Check daily API limit for guest users
+    if current_user.is_guest and current_user.daily_api_limit > 0:
         daily_usage = get_daily_api_usage_for_user(current_user.username)
-        if daily_usage >= 150:
-            return render_template("index.html", results=None, message="No good proxies found in this batch.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False)
+        if daily_usage >= current_user.daily_api_limit:
+            return render_template("index.html", results=None, message=f"Daily API limit reached ({current_user.daily_api_limit} calls).", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False)
     
     force_fetch_for_users = str(settings.get("FORCE_FETCH_FOR_USERS", "FALSE")).upper() == "TRUE"
     paste_disabled_for_user = (current_user.role == "user" and force_fetch_for_users)
@@ -532,10 +566,12 @@ def index():
         if system_paused and not admin_bypass:
             return render_template("index.html", results=None, message="System Paused.", max_paste=MAX_PASTE, settings=settings, system_paused=True)
         
-        if current_user.is_guest:
+        # Check daily API limit for guest users
+        if current_user.is_guest and current_user.daily_api_limit > 0:
             daily_usage = get_daily_api_usage_for_user(current_user.username)
-            if daily_usage >= 150:
-                return render_template("index.html", results=[], message="No good proxies found in this batch.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False)
+            remaining_calls = max(0, current_user.daily_api_limit - daily_usage)
+            if remaining_calls <= 0:
+                return render_template("index.html", results=[], message=f"Daily API limit reached ({current_user.daily_api_limit} calls).", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False)
         
         origin = request.form.get('proxy_origin', 'paste')
         if paste_disabled_for_user and origin != 'fetch' and 'proxytext' in request.form:
@@ -544,6 +580,13 @@ def index():
         proxies_input = request.form.get("proxytext", "").strip().splitlines()[:MAX_PASTE] if 'proxytext' in request.form else []
         if not proxies_input:
             return render_template("index.html", results=[], message="No proxies submitted.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), paste_disabled_for_user=paste_disabled_for_user)
+        
+        # Check and limit proxies for guest users
+        if current_user.is_guest and current_user.daily_api_limit > 0:
+            daily_usage = get_daily_api_usage_for_user(current_user.username)
+            remaining_calls = max(0, current_user.daily_api_limit - daily_usage)
+            if remaining_calls < len(proxies_input):
+                proxies_input = proxies_input[:remaining_calls]
         
         used_rows = get_all_used_ips()
         used_ip_set = {str(r['IP']).strip() for r in used_rows if r.get('IP')}
@@ -560,11 +603,6 @@ def index():
         good_proxy_results = []
         stats = {"used": 0, "bad": 0, "api": 0, "unstable": 0}
         target_good = 2
-        
-        if current_user.is_guest:
-            daily_usage = get_daily_api_usage_for_user(current_user.username)
-            remaining_calls = max(0, 150 - daily_usage)
-            if remaining_calls < len(proxies_raw): proxies_raw = proxies_raw[:remaining_calls]
         
         batch_size = settings["MAX_WORKERS"]
         with ThreadPoolExecutor(max_workers=batch_size) as executor:
@@ -604,8 +642,10 @@ def index():
                 update_setting("SYSTEM_PAUSED", "TRUE")
                 add_log_entry("CRITICAL", "Auto-paused.", ip="System")
         
-        try: add_api_usage_log(current_user.username, get_user_ip(), len(proxies_input), stats["api"], good_final)
-        except: pass
+        try: 
+            add_api_usage_log(current_user.username, get_user_ip(), len(proxies_input), stats["api"], good_final)
+        except: 
+            pass
         
         msg_prefix = "⚠️ MAINTENANCE (Admin) - " if admin_bypass else ""
         if current_user.is_guest and good_final == 0: 
@@ -634,11 +674,24 @@ def track_used():
 @admin_required
 def admin():
     settings = get_app_settings()
+    
+    # Fix total API calls calculation
     total_api = 0
     try:
-        for log in get_all_api_usage_logs(): total_api += int(log.get("api_calls_count", 0))
-    except: pass
-    stones_daily_usage = get_daily_api_usage_for_user("STONES")
+        api_logs = get_all_api_usage_logs()
+        if api_logs:
+            for log in api_logs:
+                try:
+                    total_api += int(log.get("api_calls_count", 0))
+                except (ValueError, TypeError):
+                    # Skip invalid entries
+                    continue
+    except Exception as e:
+        logger.error(f"Error calculating total API calls: {e}")
+        total_api = "Error"
+    
+    stones_daily_usage = get_daily_api_usage_for_user("STONES") if any(u.username == "STONES" for u in users.values()) else 0
+    
     stats = {
         "max_paste": settings["MAX_PASTE"],
         "fraud_score_level": settings["FRAUD_SCORE_LEVEL"],
@@ -653,7 +706,13 @@ def admin():
         "sx_generation_url": settings.get("SX_GENERATION_URL"),
         "force_fetch_for_users": settings.get("FORCE_FETCH_FOR_USERS", "FALSE")
     }
-    return render_template("admin.html", stats=stats, used_ips=get_all_used_ips(), announcement=settings.get("ANNOUNCEMENT"), settings=settings, stones_daily_usage=stones_daily_usage)
+    
+    return render_template("admin.html", 
+                         stats=stats, 
+                         used_ips=get_all_used_ips(), 
+                         announcement=settings.get("ANNOUNCEMENT"), 
+                         settings=settings, 
+                         stones_daily_usage=stones_daily_usage)
 
 @app.route("/admin/reset-system", methods=["POST"])
 @admin_required
@@ -701,6 +760,126 @@ def admin_users():
             else: s['status'] = 'Active'
         except: s['status'] = 'Unknown'
     return render_template("admin_users.html", stats=stats)
+
+# User Management Routes
+@app.route('/admin/users/manage', methods=['GET'])
+@admin_required
+def admin_users_manage():
+    # Get daily API usage for each user
+    user_list = []
+    for user in users.values():
+        user_dict = user.to_dict()
+        # Get today's API usage for this user
+        daily_usage = get_daily_api_usage_for_user(user.username)
+        user_dict['daily_api_usage'] = daily_usage
+        user_list.append(user_dict)
+    
+    return render_template('admin_users_manage.html', users=user_list)
+
+@app.route('/admin/users/add', methods=['POST'])
+@admin_required
+def admin_add_user():
+    username = request.form.get('username', '').strip()
+    password = request.form.get('password', '').strip()
+    role = request.form.get('role', 'user')
+    daily_api_limit = int(request.form.get('daily_api_limit', 150))
+    can_fetch = request.form.get('can_fetch') == 'on'
+    
+    # Validate inputs
+    if not username or not password:
+        flash('Username and password are required.', 'danger')
+        return redirect(url_for('admin_users_manage'))
+    
+    # Check if username already exists
+    if any(user.username == username for user in users.values()):
+        flash(f'Username "{username}" already exists.', 'danger')
+        return redirect(url_for('admin_users_manage'))
+    
+    # Generate new user ID
+    new_id = max(users.keys()) + 1 if users else 1
+    
+    # Create new user
+    new_user = User(
+        id=new_id,
+        username=username,
+        password=password,
+        role=role,
+        can_fetch=can_fetch,
+        daily_api_limit=daily_api_limit if role == 'guest' else 0
+    )
+    
+    users[new_id] = new_user
+    save_users_to_file(users)
+    
+    add_log_entry("INFO", f"User {username} created by {current_user.username}.", ip=get_user_ip())
+    flash(f'User {username} created successfully.', 'success')
+    return redirect(url_for('admin_users_manage'))
+
+@app.route('/admin/users/edit/<int:user_id>', methods=['POST'])
+@admin_required
+def admin_edit_user(user_id):
+    if user_id not in users:
+        flash('User not found.', 'danger')
+        return redirect(url_for('admin_users_manage'))
+    
+    user = users[user_id]
+    
+    # Don't allow editing user ID 1 (owner)
+    if user_id == 1:
+        flash('Cannot edit the owner account.', 'danger')
+        return redirect(url_for('admin_users_manage'))
+    
+    # Get form data
+    new_password = request.form.get('password', '').strip()
+    role = request.form.get('role', user.role)
+    daily_api_limit = int(request.form.get('daily_api_limit', user.daily_api_limit))
+    can_fetch = request.form.get('can_fetch') == 'on'
+    
+    # Update password if provided
+    if new_password:
+        user.password = new_password
+    
+    # Update other fields
+    user.role = role
+    user.can_fetch = can_fetch
+    
+    # Only set daily API limit for guests
+    if role == 'guest':
+        user.daily_api_limit = daily_api_limit
+    else:
+        user.daily_api_limit = 0
+    
+    save_users_to_file(users)
+    
+    add_log_entry("INFO", f"User {user.username} updated by {current_user.username}.", ip=get_user_ip())
+    flash(f'User {user.username} updated successfully.', 'success')
+    return redirect(url_for('admin_users_manage'))
+
+@app.route('/admin/users/delete/<int:user_id>')
+@admin_required
+def admin_delete_user(user_id):
+    if user_id not in users:
+        flash('User not found.', 'danger')
+        return redirect(url_for('admin_users_manage'))
+    
+    user = users[user_id]
+    
+    # Don't allow deleting user ID 1 (owner) or current user
+    if user_id == 1:
+        flash('Cannot delete the owner account.', 'danger')
+        return redirect(url_for('admin_users_manage'))
+    
+    if user_id == current_user.id:
+        flash('Cannot delete your own account.', 'danger')
+        return redirect(url_for('admin_users_manage'))
+    
+    # Delete user
+    del users[user_id]
+    save_users_to_file(users)
+    
+    add_log_entry("INFO", f"User {user.username} deleted by {current_user.username}.", ip=get_user_ip())
+    flash(f'User {user.username} deleted successfully.', 'success')
+    return redirect(url_for('admin_users_manage'))
 
 @app.route("/admin/logs")
 @admin_required
