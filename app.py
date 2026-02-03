@@ -39,7 +39,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", "vproxy-console-secure-key-2026")
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "change-this-super-secret-key-in-production")
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -54,7 +54,7 @@ class User(UserMixin):
         self.username = username
         self.password = password
         self.role = role
-        self.can_fetch = bool(can_fetch)
+        self.can_fetch = can_fetch
     
     @property
     def is_admin(self):
@@ -66,7 +66,7 @@ class User(UserMixin):
 
 @login_manager.user_loader
 def load_user(user_id):
-    """Load user from database instead of hardcoded dictionary."""
+    """Load user from Supabase database."""
     db_users = get_all_users()
     user_data = next((u for u in db_users if str(u['id']) == str(user_id)), None)
     if user_data:
@@ -428,22 +428,19 @@ def rand_session(n=10):
 @app.route('/api/fetch-911-proxies')
 @login_required
 def fetch_911_proxies():
-    """Generates 911Proxy strings based on your configuration."""
     if not current_user.can_fetch: return jsonify({"status": "error", "message": "Permission denied."}), 403
     settings = get_app_settings()
-    limit = int(settings.get("MAX_PASTE", 30))
+    TOTAL_PROXIES = int(settings.get("MAX_PASTE", 30))
     state = request.args.get('state', 'washington').lower()
     
     proxies = []
-    for _ in range(limit):
-        proxy_user = (
-            f"{settings['911_USER_PREFIX']}_area-US_state-{state}_"
-            f"session-{rand_session()}_life-120"
-        )
-        proxies.append(f"{settings['911_HOST']}:{settings['911_PORT']}:{proxy_user}:{settings['911_PASS']}")
+    for _ in range(TOTAL_PROXIES):
+        proxyUser = f"{settings['911_USER_PREFIX']}_area-US_state-{state}_session-{rand_session()}_life-120"
+        proxies.append(f"{settings['911_HOST']}:{settings['911_PORT']}:{proxyUser}:{settings['911_PASS']}")
     
     return jsonify({"status": "success", "proxies": proxies})
 
+# Standalone SX.ORG fetcher
 @app.route('/api/fetch-sx-proxies')
 @login_required
 def fetch_sx_proxies():
@@ -696,7 +693,7 @@ def admin_toggle_force_fetch():
 
 @app.route("/admin/users", methods=["GET", "POST"])
 @admin_required
-def admin_users_manage():
+def admin_users():
     """Handles user addition, deletion, and fetch permissions."""
     if request.method == "POST":
         action = request.form.get("action")
@@ -715,7 +712,7 @@ def admin_users_manage():
         elif action == "toggle_fetch":
             update_user_fetch_permission(username, request.form.get("can_fetch") == "true")
             return jsonify({"status": "success"})
-        return redirect(url_for("admin_users_manage"))
+        return redirect(url_for("admin_users"))
     
     stats = get_user_stats_summary()
     for s in stats:
@@ -788,6 +785,14 @@ def admin_announcement():
 def delete_used_ip_route(ip):
     delete_used_ip(ip)
     return redirect(url_for("admin"))
+
+# --- INITIAL SETUP ROUTE (VISIT ONCE THEN DELETE) ---
+@app.route('/setup-initial-admin-9988')
+def setup_admin():
+    from db_util import add_user
+    success = add_user("Boss", "ADMIN123", role="admin", can_fetch=True)
+    if success: return "Admin created! DELETE THIS ROUTE."
+    return "Failed to create admin."
 
 @app.errorhandler(404)
 def page_not_found(e): return render_template('error.html', error='Page not found.'), 404
