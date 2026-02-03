@@ -788,6 +788,15 @@ def page_not_found(e): return render_template('error.html', error='Page not foun
 @app.errorhandler(500)
 def internal_server_error(e): return render_template('error.html', error='Server Error.'), 500
 
+@app.route('/setup-initial-admin-9988') # Use a secret name for security
+def setup_admin():
+    from db_util import add_user
+    # Replace with your actual credentials
+    success = add_user("YourAdminName", "YourSecurePassword", role="admin", can_fetch=True)
+    if success:
+        return "Admin created successfully! DELETE THIS ROUTE NOW."
+    return "Failed to create admin. Check Supabase logs."
+
 if __name__ == "__main__":
     add_log_entry("INFO", "Server starting up.")
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False)
