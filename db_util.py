@@ -23,7 +23,7 @@ def get_eat_time():
     eat_timezone = pytz.timezone('Africa/Nairobi')
     return utc_now.replace(tzinfo=pytz.utc).astimezone(eat_timezone).strftime("%Y-%m-%d %H:%M:%S")
 
-# --- USER MANAGEMENT ---
+# --- USER MANAGEMENT FUNCTIONS ---
 def get_all_users():
     """Fetch all users from the database."""
     if not supabase: return []
@@ -225,7 +225,6 @@ def update_api_credits(used, remaining):
         return False
 
 # --- PROXY POOL FUNCTIONS ---
-
 def add_bulk_proxies(proxy_list, provider="manual"):
     if not supabase or not proxy_list: return 0
     data = [{"proxy": p.strip(), "provider": provider} for p in proxy_list if p.strip()]
@@ -249,10 +248,8 @@ def get_random_proxies_from_pool(limit=100):
         return []
 
 def get_pool_stats():
-    """Fetches counts robustly using limit(1) to ensure count is returned."""
     if not supabase: return {"total": 0, "pyproxy": 0, "piaproxy": 0}
     stats = {"total": 0, "pyproxy": 0, "piaproxy": 0}
-    
     def safe_count(query):
         try:
             res = query.limit(1).execute()
@@ -262,18 +259,15 @@ def get_pool_stats():
         except Exception as e:
             logger.error(f"Count error: {e}")
             return 0
-
     try:
         stats["total"] = safe_count(supabase.table('proxy_pool').select("id", count="exact"))
         stats["pyproxy"] = safe_count(supabase.table('proxy_pool').select("id", count="exact").eq('provider', 'pyproxy'))
         stats["piaproxy"] = safe_count(supabase.table('proxy_pool').select("id", count="exact").eq('provider', 'piaproxy'))
     except Exception as e:
         logger.error(f"Pool stats error: {e}")
-    
     return stats
 
 def get_pool_preview(provider, limit=50):
-    """Fetches a preview list of proxies for a provider"""
     if not supabase: return []
     try:
         res = supabase.table('proxy_pool').select("proxy, created_at").eq('provider', provider).order('created_at', desc=True).limit(limit).execute()
