@@ -39,7 +39,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", "change-this-super-secret-key-in-production")
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "vproxy-console-secure-key-2026")
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -54,7 +54,7 @@ class User(UserMixin):
         self.username = username
         self.password = password
         self.role = role
-        self.can_fetch = can_fetch
+        self.can_fetch = bool(can_fetch)
     
     @property
     def is_admin(self):
@@ -66,6 +66,7 @@ class User(UserMixin):
 
 @login_manager.user_loader
 def load_user(user_id):
+    """Load user from database instead of hardcoded dictionary."""
     db_users = get_all_users()
     user_data = next((u for u in db_users if str(u['id']) == str(user_id)), None)
     if user_data:
@@ -420,26 +421,29 @@ def logout():
     logout_user()
     return redirect(url_for('login'))
 
-# --- 911 PROXY LOGIC ---
+# --- 911 PROXY FETCH LOGIC ---
 def rand_session(n=10):
     return ''.join(random.choices(string.ascii_letters + string.digits, k=n))
 
 @app.route('/api/fetch-911-proxies')
 @login_required
 def fetch_911_proxies():
+    """Generates 911Proxy strings based on your configuration."""
     if not current_user.can_fetch: return jsonify({"status": "error", "message": "Permission denied."}), 403
     settings = get_app_settings()
-    TOTAL_PROXIES = int(settings.get("MAX_PASTE", 30))
+    limit = int(settings.get("MAX_PASTE", 30))
     state = request.args.get('state', 'washington').lower()
     
     proxies = []
-    for _ in range(TOTAL_PROXIES):
-        proxyUser = f"{settings['911_USER_PREFIX']}_area-US_state-{state}_session-{rand_session()}_life-120"
-        proxies.append(f"{settings['911_HOST']}:{settings['911_PORT']}:{proxyUser}:{settings['911_PASS']}")
+    for _ in range(limit):
+        proxy_user = (
+            f"{settings['911_USER_PREFIX']}_area-US_state-{state}_"
+            f"session-{rand_session()}_life-120"
+        )
+        proxies.append(f"{settings['911_HOST']}:{settings['911_PORT']}:{proxy_user}:{settings['911_PASS']}")
     
     return jsonify({"status": "success", "proxies": proxies})
 
-# Standalone SX.ORG fetcher
 @app.route('/api/fetch-sx-proxies')
 @login_required
 def fetch_sx_proxies():
@@ -693,6 +697,7 @@ def admin_toggle_force_fetch():
 @app.route("/admin/users", methods=["GET", "POST"])
 @admin_required
 def admin_users_manage():
+    """Handles user addition, deletion, and fetch permissions."""
     if request.method == "POST":
         action = request.form.get("action")
         username = request.form.get("username")
@@ -748,6 +753,7 @@ def admin_settings():
             "SCAMALYTICS_API_KEY": f.get("scamalytics_api_key", "").strip(),
             "SCAMALYTICS_API_URL": f.get("scamalytics_api_url", "").strip(),
             "SCAMALYTICS_USERNAME": f.get("scamalytics_username", "").strip(),
+            "ABC_GENERATION_URL": f.get("abc_generation_url", "").strip(),
             "SX_GENERATION_URL": f.get("sx_generation_url", "").strip(),
             "PYPROXY_RESET_URL": f.get("pyproxy_reset_url", "").strip(),
             "PIAPROXY_RESET_URL": f.get("piaproxy_reset_url", "").strip(),
@@ -761,7 +767,7 @@ def admin_settings():
             update_setting(k, str(v))
             time.sleep(0.1)
         
-        # Handle toggles for buttons
+        # Handle button toggles
         for toggle in ["SHOW_911_BTN", "SHOW_SX_BTN", "SHOW_IPROYAL_BTN"]:
             update_setting(toggle, "TRUE" if toggle in f else "FALSE")
             
@@ -787,15 +793,6 @@ def delete_used_ip_route(ip):
 def page_not_found(e): return render_template('error.html', error='Page not found.'), 404
 @app.errorhandler(500)
 def internal_server_error(e): return render_template('error.html', error='Server Error.'), 500
-
-@app.route('/setup-initial-admin-9988') # Use a secret name for security
-def setup_admin():
-    from db_util import add_user
-    # Replace with your actual credentials
-    success = add_user("YourAdminName", "YourSecurePassword", role="admin", can_fetch=True)
-    if success:
-        return "Admin created successfully! DELETE THIS ROUTE NOW."
-    return "Failed to create admin. Check Supabase logs."
 
 if __name__ == "__main__":
     add_log_entry("INFO", "Server starting up.")
