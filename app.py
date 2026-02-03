@@ -14,6 +14,7 @@ from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import datetime
 import random
+import string
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 import logging
@@ -30,7 +31,8 @@ from db_util import (
     add_api_usage_log, get_all_api_usage_logs,
     get_user_stats_summary,
     add_bulk_proxies, get_random_proxies_from_pool, get_pool_stats, clear_proxy_pool,
-    get_daily_api_usage_for_user, update_api_credits, get_pool_preview
+    get_daily_api_usage_for_user, update_api_credits, get_pool_preview,
+    get_all_users, add_user, delete_user, update_user_fetch_permission
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', stream=sys.stdout)
@@ -62,17 +64,19 @@ class User(UserMixin):
     def is_guest(self):
         return self.role == "guest"
 
-# Updated users as requested
-users = {
-    1: User(id=1, username="Boss", password="ADMIN123", role="admin", can_fetch=True),
-    2: User(id=2, username="Work", password="password", role="user", can_fetch=True),
-    3: User(id=2, username="lipana", password="12345678", role="user", can_fetch=True),
-    4: User(id=3, username="STONES", password="123STONES", role="guest", can_fetch=False),
-}
-
 @login_manager.user_loader
 def load_user(user_id):
-    return users.get(int(user_id))
+    db_users = get_all_users()
+    user_data = next((u for u in db_users if str(u['id']) == str(user_id)), None)
+    if user_data:
+        return User(
+            id=user_data['id'], 
+            username=user_data['username'], 
+            password=user_data['password'], 
+            role=user_data['role'], 
+            can_fetch=user_data['can_fetch']
+        )
+    return None
 
 def admin_required(f):
     @wraps(f)
@@ -105,7 +109,14 @@ DEFAULT_SETTINGS = {
     "PYPROXY_RESET_URL": "",
     "PIAPROXY_RESET_URL": "",
     "PASTE_INPUT_DISABLED": "FALSE",
-    "FORCE_FETCH_FOR_USERS": "FALSE"
+    "FORCE_FETCH_FOR_USERS": "FALSE",
+    "SHOW_911_BTN": "TRUE",
+    "SHOW_SX_BTN": "FALSE",
+    "SHOW_IPROYAL_BTN": "FALSE",
+    "911_HOST": "eu.911proxy.net",
+    "911_PORT": "2600",
+    "911_PASS": "Yys4mlDvA4zw3pLj",
+    "911_USER_PREFIX": "big6qogckbui"
 }
 
 _SETTINGS_CACHE = None
@@ -382,13 +393,21 @@ def login():
         return redirect(url_for('admin') if current_user.is_admin else url_for('index'))
     error = None
     if request.method == 'POST':
-        user = next((u for u in users.values() if u.username == request.form.get('username')), None)
-        if user and user.password == request.form.get('password'):
-            login_user(user, remember=(request.form.get('remember') == 'on'))
+        db_users = get_all_users()
+        user_data = next((u for u in db_users if u['username'] == request.form.get('username')), None)
+        if user_data and user_data['password'] == request.form.get('password'):
+            u_obj = User(
+                id=user_data['id'], 
+                username=user_data['username'], 
+                password=user_data['password'], 
+                role=user_data['role'], 
+                can_fetch=user_data['can_fetch']
+            )
+            login_user(u_obj, remember=(request.form.get('remember') == 'on'))
             next_p = request.args.get('next')
             if next_p and not current_user.is_admin and '/admin' in next_p: next_p = url_for('index')
             if current_user.is_admin and next_p == url_for('index'): next_p = url_for('admin')
-            add_log_entry("INFO", f"User {user.username} logged in.", ip=get_user_ip())
+            add_log_entry("INFO", f"User {u_obj.username} logged in.", ip=get_user_ip())
             return redirect(next_p or (url_for('admin') if current_user.is_admin else url_for('index')))
         error = 'Invalid Credentials.'
         add_log_entry("WARNING", f"Failed login: {request.form.get('username')}", ip=get_user_ip())
@@ -401,42 +420,24 @@ def logout():
     logout_user()
     return redirect(url_for('login'))
 
-@app.route('/api/fetch-abc-proxies')
+# --- 911 PROXY LOGIC ---
+def rand_session(n=10):
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=n))
+
+@app.route('/api/fetch-911-proxies')
 @login_required
-def fetch_abc_proxies():
+def fetch_911_proxies():
     if not current_user.can_fetch: return jsonify({"status": "error", "message": "Permission denied."}), 403
     settings = get_app_settings()
-    generation_url = settings.get("ABC_GENERATION_URL", "").strip()
-    max_paste_limit = int(settings.get("MAX_PASTE", 30))
-    selected_state = request.args.get('state', '').lower()
-
-    if not generation_url: return jsonify({"status": "error", "message": "ABC Generation URL not set."})
-    try:
-        parsed_url = urlparse(generation_url)
-        query_params = parse_qs(parsed_url.query)
-        
-        # Logic to dynamically replace the state in the username parameter
-        if selected_state:
-            username_val = query_params.get('username', [''])[0]
-            if 'st-' in username_val:
-                new_username = re.sub(r'st-[a-zA-Z0-9]+', f'st-{selected_state}', username_val)
-            else:
-                new_username = username_val + f"-st-{selected_state}"
-            query_params['username'] = [new_username]
-
-        query_params['num'] = [str(max_paste_limit)]
-        new_query_string = urlencode(query_params, doseq=True)
-        final_url = urlunparse(parsed_url._replace(query=new_query_string))
-        
-        logger.info(f"Fetching proxies for {current_user.username}: {final_url}")
-        response = requests.get(final_url, timeout=10)
-        if response.status_code == 200:
-            content = response.text.strip()
-            lines = [l.strip() for l in content.splitlines() if l.strip()]
-            if len(lines) > max_paste_limit: lines = lines[:max_paste_limit]
-            return jsonify({"status": "success", "proxies": lines})
-        return jsonify({"status": "error", "message": f"HTTP Error: {response.status_code}"})
-    except Exception as e: return jsonify({"status": "error", "message": f"Server Error: {str(e)}"})
+    TOTAL_PROXIES = int(settings.get("MAX_PASTE", 30))
+    state = request.args.get('state', 'washington').lower()
+    
+    proxies = []
+    for _ in range(TOTAL_PROXIES):
+        proxyUser = f"{settings['911_USER_PREFIX']}_area-US_state-{state}_session-{rand_session()}_life-120"
+        proxies.append(f"{settings['911_HOST']}:{settings['911_PORT']}:{proxyUser}:{settings['911_PASS']}")
+    
+    return jsonify({"status": "success", "proxies": proxies})
 
 # Standalone SX.ORG fetcher
 @app.route('/api/fetch-sx-proxies')
@@ -689,9 +690,28 @@ def admin_toggle_force_fetch():
     else: flash("Failed to toggle.", "danger")
     return redirect(url_for("admin"))
 
-@app.route("/admin/users")
+@app.route("/admin/users", methods=["GET", "POST"])
 @admin_required
-def admin_users():
+def admin_users_manage():
+    if request.method == "POST":
+        action = request.form.get("action")
+        username = request.form.get("username")
+        if action == "add":
+            add_user(
+                username, 
+                request.form.get("password"), 
+                request.form.get("role"), 
+                "can_fetch" in request.form
+            )
+            flash(f"User {username} added.", "success")
+        elif action == "delete":
+            delete_user(username)
+            flash(f"User {username} removed.", "danger")
+        elif action == "toggle_fetch":
+            update_user_fetch_permission(username, request.form.get("can_fetch") == "true")
+            return jsonify({"status": "success"})
+        return redirect(url_for("admin_users_manage"))
+    
     stats = get_user_stats_summary()
     for s in stats:
         try:
@@ -701,7 +721,8 @@ def admin_users():
             elif diff.total_seconds() > 86400: s['status'] = 'Offline'
             else: s['status'] = 'Active'
         except: s['status'] = 'Unknown'
-    return render_template("admin_users.html", stats=stats)
+        
+    return render_template("admin_users.html", stats=stats, users=get_all_users())
 
 @app.route("/admin/logs")
 @admin_required
@@ -727,15 +748,23 @@ def admin_settings():
             "SCAMALYTICS_API_KEY": f.get("scamalytics_api_key", "").strip(),
             "SCAMALYTICS_API_URL": f.get("scamalytics_api_url", "").strip(),
             "SCAMALYTICS_USERNAME": f.get("scamalytics_username", "").strip(),
-            "ABC_GENERATION_URL": f.get("abc_generation_url", "").strip(),
             "SX_GENERATION_URL": f.get("sx_generation_url", "").strip(),
             "PYPROXY_RESET_URL": f.get("pyproxy_reset_url", "").strip(),
             "PIAPROXY_RESET_URL": f.get("piaproxy_reset_url", "").strip(),
-            "FORCE_FETCH_FOR_USERS": f.get("force_fetch_for_users", "FALSE")
+            "FORCE_FETCH_FOR_USERS": f.get("force_fetch_for_users", "FALSE"),
+            "911_HOST": f.get("911_host", "eu.911proxy.net"),
+            "911_PORT": f.get("911_port", "2600"),
+            "911_PASS": f.get("911_pass", "Yys4mlDvA4zw3pLj"),
+            "911_USER_PREFIX": f.get("911_user_prefix", "big6qogckbui")
         }
         for k, v in upd.items():
             update_setting(k, str(v))
             time.sleep(0.1)
+        
+        # Handle toggles for buttons
+        for toggle in ["SHOW_911_BTN", "SHOW_SX_BTN", "SHOW_IPROYAL_BTN"]:
+            update_setting(toggle, "TRUE" if toggle in f else "FALSE")
+            
         flash("Settings updated.", "success")
         curr = get_app_settings(force_refresh=True)
     return render_template("admin_settings.html", settings=curr)
