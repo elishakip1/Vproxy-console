@@ -23,7 +23,8 @@ def get_eat_time():
     eat_timezone = pytz.timezone('Africa/Nairobi')
     return utc_now.replace(tzinfo=pytz.utc).astimezone(eat_timezone).strftime("%Y-%m-%d %H:%M:%S")
 
-# --- USER MANAGEMENT FUNCTIONS ---
+# --- USER MANAGEMENT ---
+
 def get_all_users():
     """Fetch all users from the database."""
     if not supabase: return []
@@ -35,7 +36,7 @@ def get_all_users():
         return []
 
 def add_user(username, password, role="user", can_fetch=False):
-    """Add a new user with specified role and permissions."""
+    """Add a new user (admin, user, or guest) to the system."""
     if not supabase: return False
     try:
         supabase.table('users').insert({
@@ -46,30 +47,31 @@ def add_user(username, password, role="user", can_fetch=False):
         }).execute()
         return True
     except Exception as e:
-        logger.error(f"Error adding user {username}: {e}")
+        logger.error(f"Error adding user: {e}")
         return False
 
 def delete_user(username):
-    """Delete a user from the system."""
+    """Remove a user from the system."""
     if not supabase: return False
     try:
         supabase.table('users').delete().eq("username", username).execute()
         return True
     except Exception as e:
-        logger.error(f"Error deleting user {username}: {e}")
+        logger.error(f"Error deleting user: {e}")
         return False
 
 def update_user_fetch_permission(username, can_fetch):
-    """Toggle the can_fetch permission for a user."""
+    """Toggle a user's ability to use fetch buttons."""
     if not supabase: return False
     try:
         supabase.table('users').update({"can_fetch": can_fetch}).eq("username", username).execute()
         return True
     except Exception as e:
-        logger.error(f"Error updating permission for {username}: {e}")
+        logger.error(f"Error updating fetch permission: {e}")
         return False
 
 # --- SETTINGS ---
+
 def get_settings():
     if not supabase: return {}
     try:
@@ -89,6 +91,7 @@ def update_setting(key, value):
         return False
 
 # --- USED PROXIES ---
+
 def add_used_ip(ip, proxy, username="Unknown"):
     if not supabase: return False
     try:
@@ -124,7 +127,8 @@ def get_all_used_ips():
         } for r in response.data]
     except Exception: return []
 
-# --- BAD PROXIES (FIXED) ---
+# --- BAD PROXIES ---
+
 def log_bad_proxy(proxy, ip, score):
     if not supabase: return False
     try:
@@ -143,6 +147,7 @@ def get_bad_proxies_list():
     except Exception: return []
 
 # --- LOGS ---
+
 def add_log_entry(level, message, ip="N/A"):
     if not supabase: return False
     try:
@@ -165,6 +170,7 @@ def clear_all_system_logs():
     except Exception: return False
 
 # --- API USAGE & STATS ---
+
 def add_api_usage_log(username, ip, submitted_count, api_calls_count, good_proxies_count):
     if not supabase: return False
     try:
@@ -197,6 +203,7 @@ def get_user_stats_summary():
         return []
 
 # --- DAILY API USAGE TRACKING ---
+
 def get_daily_api_usage_for_user(username):
     """Get total API calls for a user today"""
     if not supabase: return 0
@@ -214,6 +221,7 @@ def get_daily_api_usage_for_user(username):
         return 0
 
 # --- API CREDITS MANAGEMENT ---
+
 def update_api_credits(used, remaining):
     if not supabase: return False
     try:
@@ -225,6 +233,7 @@ def update_api_credits(used, remaining):
         return False
 
 # --- PROXY POOL FUNCTIONS ---
+
 def add_bulk_proxies(proxy_list, provider="manual"):
     if not supabase or not proxy_list: return 0
     data = [{"proxy": p.strip(), "provider": provider} for p in proxy_list if p.strip()]
@@ -256,15 +265,12 @@ def get_pool_stats():
             if hasattr(res, 'count') and res.count is not None:
                 return res.count
             return 0
-        except Exception as e:
-            logger.error(f"Count error: {e}")
-            return 0
+        except: return 0
     try:
         stats["total"] = safe_count(supabase.table('proxy_pool').select("id", count="exact"))
         stats["pyproxy"] = safe_count(supabase.table('proxy_pool').select("id", count="exact").eq('provider', 'pyproxy'))
         stats["piaproxy"] = safe_count(supabase.table('proxy_pool').select("id", count="exact").eq('provider', 'piaproxy'))
-    except Exception as e:
-        logger.error(f"Pool stats error: {e}")
+    except: pass
     return stats
 
 def get_pool_preview(provider, limit=50):
@@ -272,18 +278,14 @@ def get_pool_preview(provider, limit=50):
     try:
         res = supabase.table('proxy_pool').select("proxy, created_at").eq('provider', provider).order('created_at', desc=True).limit(limit).execute()
         return res.data
-    except Exception as e:
-        logger.error(f"Preview fetch error: {e}")
-        return []
+    except: return []
 
 def clear_proxy_pool(provider=None):
     if not supabase: return False
     try:
         query = supabase.table('proxy_pool').delete()
-        if provider and provider != 'all': 
-            query = query.eq('provider', provider)
-        else: 
-            query = query.neq('id', 0) 
+        if provider and provider != 'all': query = query.eq('provider', provider)
+        else: query = query.neq('id', 0) 
         query.execute()
         return True
-    except Exception as e: logger.error(f"Error clearing pool: {e}"); return False
+    except: return False
