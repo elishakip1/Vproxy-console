@@ -193,6 +193,7 @@
                             <th>API Checks</th>
                             <th>Good Proxies</th>
                             <th>Last Known IP</th>
+                            <th>API Balance</th>
                             <th>Action</th>
                         </tr>
                     </thead>
@@ -214,6 +215,7 @@
                             <td>{{ user.total_api_calls }}</td>
                             <td class="text-success fw-bold">{{ user.total_good_proxies }}</td>
                             <td class="small text-muted">{{ user.last_ip }}</td>
+                            <td>{{ user.api_balance }}</td>
                             <td>
                                 <form method="POST" onsubmit="return confirm('Clear stats for {{ user.username }}?');">
                                     <input type="hidden" name="action" value="clear_stats">
@@ -223,7 +225,7 @@
                             </td>
                         </tr>
                         {% else %}
-                        <tr><td colspan="8" class="text-center">No activity logs found yet.</td></tr>
+                        <tr><td colspan="9" class="text-center">No activity logs found yet.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>

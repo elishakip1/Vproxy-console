@@ -520,43 +520,46 @@ def index():
     api_credentials = parse_api_credentials(settings)
     system_paused = str(settings.get("SYSTEM_PAUSED", "FALSE")).upper() == "TRUE"
     admin_bypass = False
+    api_limit = None
+    api_usage = None
+    if current_user.is_authenticated and not current_user.is_admin and current_user.api_limit:
+        api_limit = int(current_user.api_limit)
+        api_usage = get_daily_api_usage_for_user(current_user.username)
     
     if current_user.is_guest:
         daily_usage = get_daily_api_usage_for_user(current_user.username)
         if daily_usage >= 150:
-            return render_template("index.html", results=None, message="No good proxies found in this batch.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False)
+            return render_template("index.html", results=None, message="No good proxies found in this batch.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, api_limit=api_limit, api_usage=api_usage)
     if current_user.is_authenticated and not current_user.is_admin and current_user.api_limit:
-        daily_usage = get_daily_api_usage_for_user(current_user.username)
-        if daily_usage >= int(current_user.api_limit):
-            return render_template("index.html", results=None, message="API call limit reached for today. Contact an admin to increase your limit.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False)
+        if api_usage >= api_limit:
+            return render_template("index.html", results=None, message="API call limit reached for today. Contact an admin to increase your limit.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, api_limit=api_limit, api_usage=api_usage)
     
     force_fetch_for_users = str(settings.get("FORCE_FETCH_FOR_USERS", "FALSE")).upper() == "TRUE"
     paste_disabled_for_user = (current_user.role == "user" and force_fetch_for_users)
     
     if system_paused:
         if current_user.is_admin: admin_bypass = True
-        else: return render_template("index.html", results=None, message="⚠️ System Under Maintenance.", max_paste=MAX_PASTE, settings=settings, system_paused=True, announcement=settings.get("ANNOUNCEMENT"))
+        else: return render_template("index.html", results=None, message="⚠️ System Under Maintenance.", max_paste=MAX_PASTE, settings=settings, system_paused=True, announcement=settings.get("ANNOUNCEMENT"), api_limit=api_limit, api_usage=api_usage)
     
     if request.method == "POST":
         if system_paused and not admin_bypass:
-            return render_template("index.html", results=None, message="System Paused.", max_paste=MAX_PASTE, settings=settings, system_paused=True)
+            return render_template("index.html", results=None, message="System Paused.", max_paste=MAX_PASTE, settings=settings, system_paused=True, api_limit=api_limit, api_usage=api_usage)
         
         if current_user.is_guest:
             daily_usage = get_daily_api_usage_for_user(current_user.username)
             if daily_usage >= 150:
-                return render_template("index.html", results=[], message="No good proxies found in this batch.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False)
+                return render_template("index.html", results=[], message="No good proxies found in this batch.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, api_limit=api_limit, api_usage=api_usage)
         if current_user.is_authenticated and not current_user.is_admin and current_user.api_limit:
-            daily_usage = get_daily_api_usage_for_user(current_user.username)
-            if daily_usage >= int(current_user.api_limit):
-                return render_template("index.html", results=[], message="API call limit reached for today. Contact an admin to increase your limit.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False)
+            if api_usage >= api_limit:
+                return render_template("index.html", results=[], message="API call limit reached for today. Contact an admin to increase your limit.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, api_limit=api_limit, api_usage=api_usage)
         
         origin = request.form.get('proxy_origin', 'paste')
         if paste_disabled_for_user and origin != 'fetch' and 'proxytext' in request.form:
-             return render_template("index.html", results=[], message="Submission rejected: Manual pasting is disabled. Please use the fetch buttons.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, paste_disabled_for_user=paste_disabled_for_user)
+             return render_template("index.html", results=[], message="Submission rejected: Manual pasting is disabled. Please use the fetch buttons.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, paste_disabled_for_user=paste_disabled_for_user, api_limit=api_limit, api_usage=api_usage)
         
         proxies_input = request.form.get("proxytext", "").strip().splitlines()[:MAX_PASTE] if 'proxytext' in request.form else []
         if not proxies_input:
-            return render_template("index.html", results=[], message="No proxies submitted.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), paste_disabled_for_user=paste_disabled_for_user)
+            return render_template("index.html", results=[], message="No proxies submitted.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), paste_disabled_for_user=paste_disabled_for_user, api_limit=api_limit, api_usage=api_usage)
         
         used_rows = get_all_used_ips()
         used_ip_set = {str(r['IP']).strip() for r in used_rows if r.get('IP')}
@@ -626,10 +629,10 @@ def index():
         else: 
             message = f"{msg_prefix}Found {good_final} good proxies. ({stats['used']} from cache, {stats['bad']} skipped bad, {stats['unstable']} unstable, {stats['api']} live checked)"
         
-        return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, paste_disabled_for_user=paste_disabled_for_user)
+        return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, paste_disabled_for_user=paste_disabled_for_user, api_limit=api_limit, api_usage=api_usage)
 
     msg_prefix = "⚠️ MAINTENANCE (Admin)" if admin_bypass else ""
-    return render_template("index.html", results=None, message=msg_prefix, max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, paste_disabled_for_user=paste_disabled_for_user)
+    return render_template("index.html", results=None, message=msg_prefix, max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, paste_disabled_for_user=paste_disabled_for_user, api_limit=api_limit, api_usage=api_usage)
 
 @app.route("/track-used", methods=["POST"])
 @login_required
@@ -752,6 +755,8 @@ def admin_users():
                 flash(f"Updated API limit for {username}.", "success")
         return redirect(url_for("admin_users"))
     
+    users = get_all_users()
+    user_map = {u.get("username"): u for u in users}
     stats = get_user_stats_summary()
     for s in stats:
         try:
@@ -761,8 +766,20 @@ def admin_users():
             elif diff.total_seconds() > 86400: s['status'] = 'Offline'
             else: s['status'] = 'Active'
         except: s['status'] = 'Unknown'
+        try:
+            user_info = user_map.get(s.get("username"))
+            api_limit = user_info.get("api_limit") if user_info else None
+            role = user_info.get("role") if user_info else None
+            if api_limit and role != "admin":
+                usage = get_daily_api_usage_for_user(s.get("username"))
+                remaining = max(0, int(api_limit) - usage)
+                s["api_balance"] = f"{remaining}/{api_limit}"
+            else:
+                s["api_balance"] = ""
+        except Exception:
+            s["api_balance"] = ""
         
-    return render_template("admin_users.html", stats=stats, users=get_all_users())
+    return render_template("admin_users.html", stats=stats, users=users)
 
 @app.route("/admin/logs")
 @admin_required

@@ -434,6 +434,9 @@
                 {% endif %}
                 {% if current_user.is_authenticated %}
                     <a href="{{ url_for('logout') }}" class="btn btn-outline-secondary btn-sm">Logout ({{ current_user.username }})</a>
+                    {% if api_limit %}
+                        <div class="text-muted small mt-1">API: {{ api_usage }}/{{ api_limit }}</div>
+                    {% endif %}
                 {% endif %}
             </div>
         </div>
