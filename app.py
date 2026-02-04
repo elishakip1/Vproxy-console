@@ -32,7 +32,7 @@ from db_util import (
     get_user_stats_summary,
     add_bulk_proxies, get_random_proxies_from_pool, get_pool_stats, clear_proxy_pool,
     get_daily_api_usage_for_user, update_api_credits, get_pool_preview,
-    get_all_users, add_user, delete_user, update_user_fetch_permission
+    get_all_users, add_user, delete_user, update_user_fetch_permission, update_user_role
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', stream=sys.stdout)
@@ -699,19 +699,35 @@ def admin_users():
         action = request.form.get("action")
         username = request.form.get("username")
         if action == "add":
+            role = request.form.get("role") or "user"
+            if role not in {"admin", "user", "guest"}:
+                flash("Invalid role selected.", "danger")
+                return redirect(url_for("admin_users"))
             add_user(
                 username, 
                 request.form.get("password"), 
-                request.form.get("role"), 
+                role, 
                 "can_fetch" in request.form
             )
             flash(f"User {username} added.", "success")
         elif action == "delete":
-            delete_user(username)
-            flash(f"User {username} removed.", "danger")
+            if username == current_user.username:
+                flash("You cannot remove your own account.", "danger")
+            else:
+                delete_user(username)
+                flash(f"User {username} removed.", "danger")
         elif action == "toggle_fetch":
             update_user_fetch_permission(username, request.form.get("can_fetch") == "true")
             return jsonify({"status": "success"})
+        elif action == "update_role":
+            new_role = request.form.get("role")
+            if new_role not in {"admin", "user", "guest"}:
+                flash("Invalid role selected.", "danger")
+            elif username == current_user.username and new_role != "admin":
+                flash("You cannot change your own role away from admin.", "danger")
+            else:
+                update_user_role(username, new_role)
+                flash(f"Updated role for {username}.", "success")
         return redirect(url_for("admin_users"))
     
     stats = get_user_stats_summary()

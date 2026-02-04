@@ -70,6 +70,16 @@ def update_user_fetch_permission(username, can_fetch):
         logger.error(f"Error updating fetch permission: {e}")
         return False
 
+def update_user_role(username, role):
+    """Update a user's role (admin, user, or guest)."""
+    if not supabase: return False
+    try:
+        supabase.table('users').update({"role": role}).eq("username", username).execute()
+        return True
+    except Exception as e:
+        logger.error(f"Error updating role: {e}")
+        return False
+
 # --- SETTINGS ---
 
 def get_settings():
