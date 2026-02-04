@@ -32,7 +32,7 @@ from db_util import (
     get_user_stats_summary,
     add_bulk_proxies, get_random_proxies_from_pool, get_pool_stats, clear_proxy_pool,
     get_daily_api_usage_for_user, update_api_credits, get_pool_preview,
-    get_all_users, add_user, delete_user, update_user_fetch_permission, update_user_role
+    get_all_users, add_user, delete_user, update_user_fetch_permission, update_user_role, update_user_api_limit
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', stream=sys.stdout)
@@ -49,12 +49,13 @@ login_manager.login_message_category = "warning"
 BLOCKED_IPS = {"192.168.1.50", "10.0.0.5"}
 
 class User(UserMixin):
-    def __init__(self, id, username, password, role="user", can_fetch=False):
+    def __init__(self, id, username, password, role="user", can_fetch=False, api_limit=None):
         self.id = id
         self.username = username
         self.password = password
         self.role = role
         self.can_fetch = can_fetch
+        self.api_limit = api_limit
     
     @property
     def is_admin(self):
@@ -75,7 +76,8 @@ def load_user(user_id):
             username=user_data['username'], 
             password=user_data['password'], 
             role=user_data['role'], 
-            can_fetch=user_data['can_fetch']
+            can_fetch=user_data['can_fetch'],
+            api_limit=user_data.get('api_limit')
         )
     return None
 
@@ -523,6 +525,10 @@ def index():
         daily_usage = get_daily_api_usage_for_user(current_user.username)
         if daily_usage >= 150:
             return render_template("index.html", results=None, message="No good proxies found in this batch.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False)
+    if current_user.is_authenticated and not current_user.is_admin and current_user.api_limit:
+        daily_usage = get_daily_api_usage_for_user(current_user.username)
+        if daily_usage >= int(current_user.api_limit):
+            return render_template("index.html", results=None, message="API call limit reached for today. Contact an admin to increase your limit.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False)
     
     force_fetch_for_users = str(settings.get("FORCE_FETCH_FOR_USERS", "FALSE")).upper() == "TRUE"
     paste_disabled_for_user = (current_user.role == "user" and force_fetch_for_users)
@@ -539,6 +545,10 @@ def index():
             daily_usage = get_daily_api_usage_for_user(current_user.username)
             if daily_usage >= 150:
                 return render_template("index.html", results=[], message="No good proxies found in this batch.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False)
+        if current_user.is_authenticated and not current_user.is_admin and current_user.api_limit:
+            daily_usage = get_daily_api_usage_for_user(current_user.username)
+            if daily_usage >= int(current_user.api_limit):
+                return render_template("index.html", results=[], message="API call limit reached for today. Contact an admin to increase your limit.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False)
         
         origin = request.form.get('proxy_origin', 'paste')
         if paste_disabled_for_user and origin != 'fetch' and 'proxytext' in request.form:
@@ -705,9 +715,10 @@ def admin_users():
                 return redirect(url_for("admin_users"))
             add_user(
                 username, 
-                request.form.get("password"), 
+                request.form.get("password"),
                 role, 
-                "can_fetch" in request.form
+                "can_fetch" in request.form,
+                request.form.get("api_limit") or None
             )
             flash(f"User {username} added.", "success")
         elif action == "delete":
@@ -728,6 +739,14 @@ def admin_users():
             else:
                 update_user_role(username, new_role)
                 flash(f"Updated role for {username}.", "success")
+        elif action == "update_limit":
+            raw_limit = request.form.get("api_limit")
+            new_limit = int(raw_limit) if raw_limit else None
+            if new_limit is not None and new_limit < 0:
+                flash("API limit must be a positive number.", "danger")
+            else:
+                update_user_api_limit(username, new_limit)
+                flash(f"Updated API limit for {username}.", "success")
         return redirect(url_for("admin_users"))
     
     stats = get_user_stats_summary()

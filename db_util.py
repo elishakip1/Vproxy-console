@@ -35,7 +35,7 @@ def get_all_users():
         logger.error(f"Error fetching users: {e}")
         return []
 
-def add_user(username, password, role="user", can_fetch=False):
+def add_user(username, password, role="user", can_fetch=False, api_limit=None):
     """Add a new user (admin, user, or guest) to the system."""
     if not supabase: return False
     try:
@@ -43,7 +43,8 @@ def add_user(username, password, role="user", can_fetch=False):
             "username": username,
             "password": password,
             "role": role,
-            "can_fetch": can_fetch
+            "can_fetch": can_fetch,
+            "api_limit": api_limit
         }).execute()
         return True
     except Exception as e:
@@ -78,6 +79,16 @@ def update_user_role(username, role):
         return True
     except Exception as e:
         logger.error(f"Error updating role: {e}")
+        return False
+
+def update_user_api_limit(username, api_limit):
+    """Update a user's daily API limit."""
+    if not supabase: return False
+    try:
+        supabase.table('users').update({"api_limit": api_limit}).eq("username", username).execute()
+        return True
+    except Exception as e:
+        logger.error(f"Error updating API limit: {e}")
         return False
 
 # --- SETTINGS ---

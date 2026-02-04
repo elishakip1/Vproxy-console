@@ -94,13 +94,17 @@
                     <label class="form-label">Password</label>
                     <input type="text" name="password" class="form-control" required>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-2">
                     <label class="form-label">Role</label>
                     <select name="role" class="form-select">
                         <option value="user" selected>User</option>
                         <option value="guest">Guest</option>
                         <option value="admin">Admin</option>
                     </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">API Limit</label>
+                    <input type="number" name="api_limit" class="form-control" min="0" placeholder="Unlimited">
                 </div>
                 <div class="col-md-1 d-flex align-items-end">
                     <div class="form-check">
@@ -125,6 +129,7 @@
                             <th>Username</th>
                             <th>Role</th>
                             <th>Can Fetch</th>
+                            <th>API Limit</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -150,6 +155,14 @@
                                 </div>
                             </td>
                             <td>
+                                <form method="POST" class="d-flex gap-2 align-items-center">
+                                    <input type="hidden" name="action" value="update_limit">
+                                    <input type="hidden" name="username" value="{{ user.username }}">
+                                    <input type="number" name="api_limit" class="form-control form-control-sm" min="0" placeholder="Unlimited" value="{{ user.api_limit or '' }}">
+                                    <button class="btn btn-sm btn-outline-primary">Update</button>
+                                </form>
+                            </td>
+                            <td>
                                 <form method="POST" onsubmit="return confirm('Remove user {{ user.username }}?');">
                                     <input type="hidden" name="action" value="delete">
                                     <input type="hidden" name="username" value="{{ user.username }}">
@@ -158,7 +171,7 @@
                             </td>
                         </tr>
                         {% else %}
-                        <tr><td colspan="4" class="text-center">No users found.</td></tr>
+                        <tr><td colspan="5" class="text-center">No users found.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -180,6 +193,7 @@
                             <th>API Checks</th>
                             <th>Good Proxies</th>
                             <th>Last Known IP</th>
+                            <th>Action</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -200,9 +214,16 @@
                             <td>{{ user.total_api_calls }}</td>
                             <td class="text-success fw-bold">{{ user.total_good_proxies }}</td>
                             <td class="small text-muted">{{ user.last_ip }}</td>
+                            <td>
+                                <form method="POST" onsubmit="return confirm('Remove user {{ user.username }}?');">
+                                    <input type="hidden" name="action" value="delete">
+                                    <input type="hidden" name="username" value="{{ user.username }}">
+                                    <button class="btn btn-sm btn-outline-danger" {% if current_user.username == user.username %}disabled{% endif %}>Remove</button>
+                                </form>
+                            </td>
                         </tr>
                         {% else %}
-                        <tr><td colspan="7" class="text-center">No activity logs found yet.</td></tr>
+                        <tr><td colspan="8" class="text-center">No activity logs found yet.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
