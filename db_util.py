@@ -199,8 +199,17 @@ def add_api_usage_log(username, ip, submitted_count, api_calls_count, good_proxi
 def get_all_api_usage_logs():
     if not supabase: return []
     try:
-        response = supabase.table('api_usage').select("*").execute()
-        return response.data
+        all_rows = []
+        page_size = 1000
+        start = 0
+        while True:
+            response = supabase.table('api_usage').select("*").range(start, start + page_size - 1).execute()
+            data = response.data or []
+            all_rows.extend(data)
+            if len(data) < page_size:
+                break
+            start += page_size
+        return all_rows
     except Exception: return []
 
 def get_user_stats_summary():
