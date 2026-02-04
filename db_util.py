@@ -190,6 +190,16 @@ def clear_all_system_logs():
         return True
     except Exception: return False
 
+def clear_user_stats(username):
+    """Remove API usage stats for a user without deleting the user."""
+    if not supabase: return False
+    try:
+        supabase.table('api_usage').delete().eq("username", username).execute()
+        return True
+    except Exception as e:
+        logger.error(f"Error clearing stats for {username}: {e}")
+        return False
+
 # --- API USAGE & STATS ---
 
 def add_api_usage_log(username, ip, submitted_count, api_calls_count, good_proxies_count):

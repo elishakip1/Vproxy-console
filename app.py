@@ -27,7 +27,7 @@ from db_util import (
     get_all_used_ips,
     log_bad_proxy, get_bad_proxies_list,
     get_all_system_logs, add_log_entry,
-    clear_all_system_logs,
+    clear_all_system_logs, clear_user_stats,
     add_api_usage_log, get_all_api_usage_logs,
     get_user_stats_summary,
     add_bulk_proxies, get_random_proxies_from_pool, get_pool_stats, clear_proxy_pool,
@@ -739,6 +739,9 @@ def admin_users():
             else:
                 update_user_role(username, new_role)
                 flash(f"Updated role for {username}.", "success")
+        elif action == "clear_stats":
+            clear_user_stats(username)
+            flash(f"Cleared stats for {username}.", "success")
         elif action == "update_limit":
             raw_limit = request.form.get("api_limit")
             new_limit = int(raw_limit) if raw_limit else None
