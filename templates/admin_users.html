@@ -163,10 +163,10 @@
                                 </form>
                             </td>
                             <td>
-                                <form method="POST" onsubmit="return confirm('Clear stats for {{ user.username }}?');">
-                                    <input type="hidden" name="action" value="clear_stats">
+                                <form method="POST" onsubmit="return confirm('Delete user {{ user.username }}?');">
+                                    <input type="hidden" name="action" value="delete">
                                     <input type="hidden" name="username" value="{{ user.username }}">
-                                    <button class="btn btn-sm btn-outline-danger">Clear Stats</button>
+                                    <button class="btn btn-sm btn-outline-danger" {% if current_user.username == user.username %}disabled{% endif %}>Delete User</button>
                                 </form>
                             </td>
                         </tr>
