@@ -8,6 +8,8 @@ from flask_login import (
 )
 from functools import wraps
 import os
+import json
+import uuid
 import time
 import requests
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
@@ -27,12 +29,14 @@ from db_util import (
     get_all_used_ips,
     log_bad_proxy, get_bad_proxies_list,
     get_all_system_logs, add_log_entry,
-    clear_all_system_logs, clear_user_stats,
+    clear_all_system_logs, clear_user_stats, clear_all_api_usage,
     add_api_usage_log, get_all_api_usage_logs,
     get_user_stats_summary,
     add_bulk_proxies, get_random_proxies_from_pool, get_pool_stats, clear_proxy_pool,
     get_daily_api_usage_for_user, update_api_credits, get_pool_preview,
-    get_all_users, add_user, delete_user, update_user_fetch_permission, update_user_role, update_user_api_limit
+    get_all_users, add_user, delete_user, update_user_fetch_permission, update_user_role, update_user_api_limit,
+    add_recent_checks, get_pending_checks, mark_recent_check_copied,
+    update_username, update_password
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', stream=sys.stdout)
@@ -119,7 +123,15 @@ DEFAULT_SETTINGS = {
     "911_HOST": "eu.911proxy.net",
     "911_PORT": "2600",
     "911_PASS": "Yys4mlDvA4zw3pLj",
-    "911_USER_PREFIX": "big6qogckbui"
+    "911_USER_PREFIX": "big6qogckbui",
+    "REQUEST_TIMEOUT": 4,
+    "MIN_DELAY": 0.1,
+    "MAX_DELAY": 0.3,
+    "IP_STABLE_CHECKS": 1,
+    "IP_STABLE_ATTEMPTS": 2,
+    "IP_STABLE_DELAY_MIN": 0.0,
+    "IP_STABLE_DELAY_MAX": 0.1,
+    "EVENTS_JSON": "[]"
 }
 
 _SETTINGS_CACHE = None
@@ -159,6 +171,10 @@ USER_AGENTS = [
 REQUEST_TIMEOUT = 5
 MIN_DELAY = 0.5
 MAX_DELAY = 1.5
+IP_STABLE_CHECKS = 3
+IP_STABLE_ATTEMPTS = 5
+IP_STABLE_DELAY_MIN = 0.1
+IP_STABLE_DELAY_MAX = 0.3
 
 def parse_api_credentials(settings):
     raw_keys = settings.get("SCAMALYTICS_API_KEY", "")
@@ -183,6 +199,28 @@ def parse_api_credentials(settings):
         credentials.append({"key": k, "user": u, "url": url})
     
     return credentials
+
+def apply_performance_settings(settings):
+    global REQUEST_TIMEOUT, MIN_DELAY, MAX_DELAY, IP_STABLE_CHECKS, IP_STABLE_ATTEMPTS, IP_STABLE_DELAY_MIN, IP_STABLE_DELAY_MAX
+    REQUEST_TIMEOUT = float(settings.get("REQUEST_TIMEOUT", REQUEST_TIMEOUT))
+    MIN_DELAY = float(settings.get("MIN_DELAY", MIN_DELAY))
+    MAX_DELAY = float(settings.get("MAX_DELAY", MAX_DELAY))
+    IP_STABLE_CHECKS = int(settings.get("IP_STABLE_CHECKS", IP_STABLE_CHECKS))
+    IP_STABLE_ATTEMPTS = int(settings.get("IP_STABLE_ATTEMPTS", IP_STABLE_ATTEMPTS))
+    IP_STABLE_DELAY_MIN = float(settings.get("IP_STABLE_DELAY_MIN", IP_STABLE_DELAY_MIN))
+    IP_STABLE_DELAY_MAX = float(settings.get("IP_STABLE_DELAY_MAX", IP_STABLE_DELAY_MAX))
+
+def get_events(settings):
+    raw_events = settings.get("EVENTS_JSON", "[]")
+    try:
+        events = json.loads(raw_events)
+        return events if isinstance(events, list) else []
+    except Exception:
+        return []
+
+def save_events(settings, events):
+    update_setting("EVENTS_JSON", json.dumps(events))
+    get_app_settings(force_refresh=True)
 
 def validate_proxy_format(proxy_line):
     try:
@@ -214,7 +252,7 @@ def get_ip_from_proxy(proxy_line):
         session.mount('https://', HTTPAdapter(max_retries=retries))
         
         response = session.get("https://ipv4.icanhazip.com", proxies=proxy_dict, 
-                             timeout=REQUEST_TIMEOUT-1, headers={"User-Agent": random.choice(USER_AGENTS)})
+                             timeout=max(1, REQUEST_TIMEOUT - 1), headers={"User-Agent": random.choice(USER_AGENTS)})
         response.raise_for_status()
         ip = response.text.strip()
         
@@ -224,7 +262,7 @@ def get_ip_from_proxy(proxy_line):
     except:
         return None
 
-def verify_ip_stability(proxy_line, required_stable_checks=3, max_attempts=5):
+def verify_ip_stability(proxy_line, required_stable_checks=None, max_attempts=None):
     """
     Verify that a proxy returns the same IP address multiple times.
     Returns the stable IP if consistent, None if unstable.
@@ -235,18 +273,21 @@ def verify_ip_stability(proxy_line, required_stable_checks=3, max_attempts=5):
     seen_ips = set()
     stable_ip = None
     
-    for attempt in range(max_attempts):
+    required_checks = IP_STABLE_CHECKS if required_stable_checks is None else required_stable_checks
+    attempts = IP_STABLE_ATTEMPTS if max_attempts is None else max_attempts
+
+    for attempt in range(attempts):
         ip = get_ip_from_proxy(proxy_line)
         
         if not ip:
             # If we can't get an IP at all, wait and retry
-            time.sleep(random.uniform(0.1, 0.3))
+            time.sleep(random.uniform(IP_STABLE_DELAY_MIN, IP_STABLE_DELAY_MAX))
             continue
         
         seen_ips.add(ip)
         
         # If we have enough checks and all IPs are the same
-        if len(seen_ips) == 1 and (attempt + 1) >= required_stable_checks:
+        if len(seen_ips) == 1 and (attempt + 1) >= required_checks:
             stable_ip = ip
             break
         
@@ -256,8 +297,8 @@ def verify_ip_stability(proxy_line, required_stable_checks=3, max_attempts=5):
             return None
         
         # Small delay between checks
-        if attempt < max_attempts - 1:
-            time.sleep(random.uniform(0.1, 0.3))
+        if attempt < attempts - 1:
+            time.sleep(random.uniform(IP_STABLE_DELAY_MIN, IP_STABLE_DELAY_MAX))
     
     return stable_ip
 
@@ -404,7 +445,8 @@ def login():
                 username=user_data['username'], 
                 password=user_data['password'], 
                 role=user_data['role'], 
-                can_fetch=user_data['can_fetch']
+                can_fetch=user_data['can_fetch'],
+                api_limit=user_data.get('api_limit')
             )
             login_user(u_obj, remember=(request.form.get('remember') == 'on'))
             next_p = request.args.get('next')
@@ -515,6 +557,7 @@ def fetch_pool_proxies():
 @login_required
 def index():
     settings = get_app_settings()
+    apply_performance_settings(settings)
     MAX_PASTE = settings["MAX_PASTE"]
     FRAUD_SCORE_LEVEL = settings["FRAUD_SCORE_LEVEL"]
     api_credentials = parse_api_credentials(settings)
@@ -522,6 +565,11 @@ def index():
     admin_bypass = False
     api_limit = None
     api_usage = None
+    events = get_events(settings)
+    today_str = datetime.date.today().isoformat()
+    events_today = []
+    if not current_user.is_guest:
+        events_today = [e for e in events if e.get("date") == today_str]
     if current_user.is_authenticated and not current_user.is_admin and current_user.api_limit:
         api_limit = int(current_user.api_limit)
         api_usage = get_daily_api_usage_for_user(current_user.username)
@@ -529,37 +577,37 @@ def index():
     if current_user.is_guest:
         daily_usage = get_daily_api_usage_for_user(current_user.username)
         if daily_usage >= 150:
-            return render_template("index.html", results=None, message="No good proxies found in this batch.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, api_limit=api_limit, api_usage=api_usage)
+            return render_template("index.html", results=None, message="No good proxies found in this batch.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, api_limit=api_limit, api_usage=api_usage, events_today=events_today)
     if current_user.is_authenticated and not current_user.is_admin and current_user.api_limit:
         if api_usage >= api_limit:
-            return render_template("index.html", results=None, message="API call limit reached for today. Contact an admin to increase your limit.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, api_limit=api_limit, api_usage=api_usage)
+            return render_template("index.html", results=None, message="API call limit reached for today. Contact an admin to increase your limit.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, api_limit=api_limit, api_usage=api_usage, events_today=events_today)
     
     force_fetch_for_users = str(settings.get("FORCE_FETCH_FOR_USERS", "FALSE")).upper() == "TRUE"
     paste_disabled_for_user = (current_user.role == "user" and force_fetch_for_users)
     
     if system_paused:
         if current_user.is_admin: admin_bypass = True
-        else: return render_template("index.html", results=None, message="⚠️ System Under Maintenance.", max_paste=MAX_PASTE, settings=settings, system_paused=True, announcement=settings.get("ANNOUNCEMENT"), api_limit=api_limit, api_usage=api_usage)
+        else: return render_template("index.html", results=None, message="⚠️ System Under Maintenance.", max_paste=MAX_PASTE, settings=settings, system_paused=True, announcement=settings.get("ANNOUNCEMENT"), api_limit=api_limit, api_usage=api_usage, events_today=events_today)
     
     if request.method == "POST":
         if system_paused and not admin_bypass:
-            return render_template("index.html", results=None, message="System Paused.", max_paste=MAX_PASTE, settings=settings, system_paused=True, api_limit=api_limit, api_usage=api_usage)
+            return render_template("index.html", results=None, message="System Paused.", max_paste=MAX_PASTE, settings=settings, system_paused=True, api_limit=api_limit, api_usage=api_usage, events_today=events_today)
         
         if current_user.is_guest:
             daily_usage = get_daily_api_usage_for_user(current_user.username)
             if daily_usage >= 150:
-                return render_template("index.html", results=[], message="No good proxies found in this batch.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, api_limit=api_limit, api_usage=api_usage)
+                return render_template("index.html", results=[], message="No good proxies found in this batch.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, api_limit=api_limit, api_usage=api_usage, events_today=events_today)
         if current_user.is_authenticated and not current_user.is_admin and current_user.api_limit:
             if api_usage >= api_limit:
-                return render_template("index.html", results=[], message="API call limit reached for today. Contact an admin to increase your limit.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, api_limit=api_limit, api_usage=api_usage)
+                return render_template("index.html", results=[], message="API call limit reached for today. Contact an admin to increase your limit.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, api_limit=api_limit, api_usage=api_usage, events_today=events_today)
         
         origin = request.form.get('proxy_origin', 'paste')
         if paste_disabled_for_user and origin != 'fetch' and 'proxytext' in request.form:
-             return render_template("index.html", results=[], message="Submission rejected: Manual pasting is disabled. Please use the fetch buttons.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, paste_disabled_for_user=paste_disabled_for_user, api_limit=api_limit, api_usage=api_usage)
+             return render_template("index.html", results=[], message="Submission rejected: Manual pasting is disabled. Please use the fetch buttons.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, paste_disabled_for_user=paste_disabled_for_user, api_limit=api_limit, api_usage=api_usage, events_today=events_today)
         
         proxies_input = request.form.get("proxytext", "").strip().splitlines()[:MAX_PASTE] if 'proxytext' in request.form else []
         if not proxies_input:
-            return render_template("index.html", results=[], message="No proxies submitted.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), paste_disabled_for_user=paste_disabled_for_user, api_limit=api_limit, api_usage=api_usage)
+            return render_template("index.html", results=[], message="No proxies submitted.", max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), paste_disabled_for_user=paste_disabled_for_user, api_limit=api_limit, api_usage=api_usage, events_today=events_today)
         
         used_rows = get_all_used_ips()
         used_ip_set = {str(r['IP']).strip() for r in used_rows if r.get('IP')}
@@ -580,6 +628,9 @@ def index():
         if current_user.is_guest:
             daily_usage = get_daily_api_usage_for_user(current_user.username)
             remaining_calls = max(0, 150 - daily_usage)
+            if remaining_calls < len(proxies_raw): proxies_raw = proxies_raw[:remaining_calls]
+        if current_user.is_authenticated and not current_user.is_admin and api_limit:
+            remaining_calls = max(0, api_limit - api_usage)
             if remaining_calls < len(proxies_raw): proxies_raw = proxies_raw[:remaining_calls]
         
         batch_size = settings["MAX_WORKERS"]
@@ -619,6 +670,11 @@ def index():
             if new_fails > 1000:
                 update_setting("SYSTEM_PAUSED", "TRUE")
                 add_log_entry("CRITICAL", "Auto-paused.", ip="System")
+
+        try:
+            add_recent_checks(current_user.username, results)
+        except:
+            pass
         
         try: add_api_usage_log(current_user.username, get_user_ip(), len(proxies_input), stats["api"], good_final)
         except: pass
@@ -629,10 +685,10 @@ def index():
         else: 
             message = f"{msg_prefix}Found {good_final} good proxies. ({stats['used']} from cache, {stats['bad']} skipped bad, {stats['unstable']} unstable, {stats['api']} live checked)"
         
-        return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, paste_disabled_for_user=paste_disabled_for_user, api_limit=api_limit, api_usage=api_usage)
+        return render_template("index.html", results=results, message=message, max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, paste_disabled_for_user=paste_disabled_for_user, api_limit=api_limit, api_usage=api_usage, events_today=events_today)
 
     msg_prefix = "⚠️ MAINTENANCE (Admin)" if admin_bypass else ""
-    return render_template("index.html", results=None, message=msg_prefix, max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, paste_disabled_for_user=paste_disabled_for_user, api_limit=api_limit, api_usage=api_usage)
+    return render_template("index.html", results=None, message=msg_prefix, max_paste=MAX_PASTE, settings=settings, announcement=settings.get("ANNOUNCEMENT"), system_paused=False, paste_disabled_for_user=paste_disabled_for_user, api_limit=api_limit, api_usage=api_usage, events_today=events_today)
 
 @app.route("/track-used", methods=["POST"])
 @login_required
@@ -642,9 +698,89 @@ def track_used():
     ip = data.get("ip")
     if not proxy or not ip or not validate_proxy_format(proxy): return jsonify({"status": "error"}), 400
     if add_used_ip(ip, proxy, username=current_user.username):
+        mark_recent_check_copied(current_user.username, proxy, ip)
         add_log_entry("INFO", f"Used: {ip}", ip=get_user_ip())
         return jsonify({"status": "success"})
     return jsonify({"status": "error"}), 500
+
+@app.route("/api/pending-checks")
+@login_required
+def pending_checks():
+    checks = get_pending_checks(current_user.username, limit=200)
+    return jsonify({"status": "success", "checks": checks})
+
+@app.route("/api/mark-check-copied", methods=["POST"])
+@login_required
+def mark_check_copied():
+    data = request.get_json() or {}
+    proxy = data.get("proxy")
+    ip = data.get("ip")
+    if not proxy or not ip:
+        return jsonify({"status": "error", "message": "Missing proxy or ip"}), 400
+    if mark_recent_check_copied(current_user.username, proxy, ip):
+        return jsonify({"status": "success"})
+    return jsonify({"status": "error"}), 500
+
+@app.route("/done-checks")
+@login_required
+def done_checks():
+    checks = get_pending_checks(current_user.username, limit=200)
+    return render_template("done_checks.html", checks=checks)
+
+@app.route("/myaccount", methods=["GET", "POST"])
+@login_required
+def my_account():
+    settings = get_app_settings()
+    api_limit = None
+    api_usage = None
+    api_balance = None
+    if not current_user.is_admin and current_user.api_limit:
+        api_limit = int(current_user.api_limit)
+        api_usage = get_daily_api_usage_for_user(current_user.username)
+        api_balance = max(0, api_limit - api_usage)
+
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "update_account":
+            current_password = request.form.get("current_password")
+            new_username = request.form.get("new_username", "").strip()
+            new_password = request.form.get("new_password", "").strip()
+            if current_password != current_user.password:
+                flash("Current password is incorrect.", "danger")
+            else:
+                if new_username and new_username != current_user.username:
+                    if update_username(current_user.username, new_username):
+                        current_user.username = new_username
+                        flash("Username updated.", "success")
+                    else:
+                        flash("Failed to update username.", "danger")
+                if new_password:
+                    if update_password(current_user.username, new_password):
+                        current_user.password = new_password
+                        flash("Password updated.", "success")
+                    else:
+                        flash("Failed to update password.", "danger")
+        elif action == "feedback":
+            feedback = request.form.get("feedback", "").strip()
+            if feedback:
+                add_log_entry("INFO", f"Feedback from {current_user.username}: {feedback}", ip=get_user_ip())
+                flash("Feedback sent. Thank you!", "success")
+            else:
+                flash("Feedback cannot be empty.", "danger")
+        return redirect(url_for("my_account"))
+
+    used_proxies = [row for row in get_all_used_ips() if row.get("User") == current_user.username][:200]
+    pending_checks = get_pending_checks(current_user.username, limit=200)
+    events = [] if current_user.is_guest else get_events(settings)
+    return render_template(
+        "myaccount.html",
+        api_limit=api_limit,
+        api_usage=api_usage,
+        api_balance=api_balance,
+        used_proxies=used_proxies,
+        pending_checks=pending_checks,
+        events=events
+    )
 
 @app.route("/admin")
 @admin_required
@@ -798,10 +934,48 @@ def admin_settings():
     curr = get_app_settings()
     if request.method == "POST":
         f = request.form
+        action = f.get("action")
+        if action == "reset_api_usage":
+            if clear_all_api_usage():
+                flash("API usage has been reset.", "success")
+            else:
+                flash("Failed to reset API usage.", "danger")
+            return redirect(url_for("admin_settings"))
+        if action == "add_event":
+            events = get_events(curr)
+            title = f.get("event_title", "").strip()
+            date = f.get("event_date", "").strip()
+            message = f.get("event_message", "").strip()
+            if not title or not date:
+                flash("Event title and date are required.", "danger")
+                return redirect(url_for("admin_settings"))
+            events.append({
+                "id": str(uuid.uuid4()),
+                "title": title,
+                "date": date,
+                "message": message
+            })
+            save_events(curr, events)
+            flash("Event added.", "success")
+            return redirect(url_for("admin_settings"))
+        if action == "delete_event":
+            events = get_events(curr)
+            event_id = f.get("event_id")
+            events = [event for event in events if event.get("id") != event_id]
+            save_events(curr, events)
+            flash("Event removed.", "success")
+            return redirect(url_for("admin_settings"))
         upd = {
             "MAX_PASTE": f.get("max_paste"),
             "FRAUD_SCORE_LEVEL": f.get("fraud_score_level"),
             "MAX_WORKERS": f.get("max_workers"),
+            "REQUEST_TIMEOUT": f.get("request_timeout"),
+            "MIN_DELAY": f.get("min_delay"),
+            "MAX_DELAY": f.get("max_delay"),
+            "IP_STABLE_CHECKS": f.get("ip_stable_checks"),
+            "IP_STABLE_ATTEMPTS": f.get("ip_stable_attempts"),
+            "IP_STABLE_DELAY_MIN": f.get("ip_stable_delay_min"),
+            "IP_STABLE_DELAY_MAX": f.get("ip_stable_delay_max"),
             "SCAMALYTICS_API_KEY": f.get("scamalytics_api_key", "").strip(),
             "SCAMALYTICS_API_URL": f.get("scamalytics_api_url", "").strip(),
             "SCAMALYTICS_USERNAME": f.get("scamalytics_username", "").strip(),
@@ -825,7 +999,8 @@ def admin_settings():
             
         flash("Settings updated.", "success")
         curr = get_app_settings(force_refresh=True)
-    return render_template("admin_settings.html", settings=curr)
+    events = get_events(curr)
+    return render_template("admin_settings.html", settings=curr, events=events)
 
 @app.route("/admin/announcement", methods=["POST"])
 @admin_required
@@ -834,6 +1009,7 @@ def admin_announcement():
     update_setting("ANNOUNCEMENT", val)
     get_app_settings(force_refresh=True)
     return redirect(url_for("admin"))
+
 
 @app.route("/delete-used-ip/<ip>")
 @admin_required

@@ -91,6 +91,27 @@ def update_user_api_limit(username, api_limit):
         logger.error(f"Error updating API limit: {e}")
         return False
 
+def update_username(current_username, new_username):
+    if not supabase: return False
+    try:
+        supabase.table('users').update({"username": new_username}).eq("username", current_username).execute()
+        supabase.table('used_proxies').update({"username": new_username}).eq("username", current_username).execute()
+        supabase.table('api_usage').update({"username": new_username}).eq("username", current_username).execute()
+        supabase.table('recent_checks').update({"username": new_username}).eq("username", current_username).execute()
+        return True
+    except Exception as e:
+        logger.error(f"Error updating username: {e}")
+        return False
+
+def update_password(username, new_password):
+    if not supabase: return False
+    try:
+        supabase.table('users').update({"password": new_password}).eq("username", username).execute()
+        return True
+    except Exception as e:
+        logger.error(f"Error updating password: {e}")
+        return False
+
 # --- SETTINGS ---
 
 def get_settings():
@@ -127,6 +148,56 @@ def add_used_ip(ip, proxy, username="Unknown"):
         return True
     except Exception as e:
         logger.error(f"Error adding used IP: {e}")
+        return False
+
+def add_recent_checks(username, checks):
+    if not supabase or not checks: return False
+    try:
+        rows = []
+        for item in checks:
+            proxy = item.get("proxy")
+            ip = item.get("ip")
+            if not proxy or not ip:
+                continue
+            rows.append({
+                "username": username,
+                "proxy": proxy,
+                "ip": ip,
+                "copied": False
+            })
+        if not rows:
+            return False
+        supabase.table('recent_checks').insert(rows).execute()
+        return True
+    except Exception as e:
+        logger.error(f"Error adding recent checks: {e}")
+        return False
+
+def get_pending_checks(username, limit=200):
+    if not supabase: return []
+    try:
+        response = supabase.table('recent_checks').select("id, proxy, ip, created_at").eq("username", username).eq("copied", False).order("created_at", desc=True).limit(limit).execute()
+        rows = response.data or []
+        seen_ips = set()
+        unique_rows = []
+        for row in rows:
+            ip = row.get("ip")
+            if not ip or ip in seen_ips:
+                continue
+            seen_ips.add(ip)
+            unique_rows.append(row)
+        return unique_rows
+    except Exception as e:
+        logger.error(f"Error fetching pending checks: {e}")
+        return []
+
+def mark_recent_check_copied(username, proxy, ip):
+    if not supabase: return False
+    try:
+        supabase.table('recent_checks').update({"copied": True}).eq("username", username).eq("proxy", proxy).eq("ip", ip).execute()
+        return True
+    except Exception as e:
+        logger.error(f"Error marking check copied: {e}")
         return False
 
 def delete_used_ip(ip):
@@ -189,6 +260,15 @@ def clear_all_system_logs():
         supabase.table('system_logs').delete().neq("id", 0).execute() 
         return True
     except Exception: return False
+
+def clear_all_api_usage():
+    if not supabase: return False
+    try:
+        supabase.table('api_usage').delete().neq("id", 0).execute()
+        return True
+    except Exception as e:
+        logger.error(f"Error clearing api usage: {e}")
+        return False
 
 def clear_user_stats(username):
     """Remove API usage stats for a user without deleting the user."""

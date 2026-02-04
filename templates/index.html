@@ -384,6 +384,40 @@
             padding: 4px 8px;
         }
 
+        .event-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.75);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+
+        .event-overlay-content {
+            background: var(--card-bg);
+            color: var(--text-color);
+            border-radius: 12px;
+            padding: 24px;
+            width: min(720px, 95%);
+            position: relative;
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .event-overlay-close {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            border: none;
+            background: #dc3545;
+            color: white;
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            cursor: pointer;
+        }
+
         /* Make the dropdown look like a button */
         select.form-select.btn-outline-secondary {
             background-color: transparent;
@@ -433,6 +467,7 @@
                     <a href="{{ url_for('admin') }}" class="btn btn-outline-primary btn-sm">Admin Panel</a>
                 {% endif %}
                 {% if current_user.is_authenticated %}
+                    <a href="{{ url_for('my_account') }}" class="btn btn-outline-primary btn-sm">My Account</a>
                     <a href="{{ url_for('logout') }}" class="btn btn-outline-secondary btn-sm">Logout ({{ current_user.username }})</a>
                     {% if api_limit %}
                         <div class="text-muted small mt-1">API: {{ api_usage }}/{{ api_limit }}</div>
@@ -440,6 +475,24 @@
                 {% endif %}
             </div>
         </div>
+
+        {% if events_today %}
+        <div class="event-overlay" id="eventOverlay">
+            <div class="event-overlay-content">
+                <button class="event-overlay-close" id="eventOverlayClose">✖</button>
+                <h3 class="mb-3">📅 Event Reminder</h3>
+                {% for event in events_today %}
+                    <div class="mb-3">
+                        <h5 class="mb-1">{{ event.title }}</h5>
+                        <div class="small text-muted">{{ event.date }}</div>
+                        {% if event.message %}
+                        <p class="mt-2">{{ event.message }}</p>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
 
         <div class="content-card">
             {% if announcement %}
@@ -561,6 +614,7 @@
                                     </div>
                                 </div>
                                 <div class="col-md-12 d-flex justify-content-end gap-2 mt-2">
+                                    <a href="{{ url_for('done_checks') }}" class="btn btn-outline-success btn-sm">Done Checks</a>
                                     <button type="button" id="poolBtn" class="btn btn-info btn-sm text-white" onclick="fetchPoolProxies()">
                                         📦SPSCC
                                     </button>
@@ -672,6 +726,11 @@
         function initTheme() {
             const savedTheme = localStorage.getItem('theme') || 'light';
             document.documentElement.setAttribute('data-theme', savedTheme);
+            const accentColor = localStorage.getItem('accentColor');
+            if (accentColor) {
+                document.documentElement.style.setProperty('--btn-primary', accentColor);
+                document.documentElement.style.setProperty('--btn-primary-hover', accentColor);
+            }
         }
 
         function toggleTheme() {
@@ -846,6 +905,20 @@
         document.addEventListener('DOMContentLoaded', () => {
             initTheme();
             document.getElementById('themeToggle').addEventListener('click', toggleTheme);
+            const eventOverlay = document.getElementById('eventOverlay');
+            const eventOverlayClose = document.getElementById('eventOverlayClose');
+            if (eventOverlay && eventOverlayClose) {
+                const eventKey = "dismissedEvent-" + new Date().toISOString().slice(0, 10);
+                if (localStorage.getItem(eventKey) === "true") {
+                    eventOverlay.style.display = "none";
+                } else {
+                    eventOverlay.style.display = "flex";
+                }
+                eventOverlayClose.addEventListener('click', () => {
+                    eventOverlay.style.display = "none";
+                    localStorage.setItem(eventKey, "true");
+                });
+            }
             const textArea = document.getElementById('proxytext');
             if(textArea) updateProxyCounter(textArea);
             {% if results is defined and results is not none %}

@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Done Checks</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="icon" href="{{ url_for('static', filename='img/favicon.ico') }}" type="image/x-icon">
+    <link rel="shortcut icon" href="{{ url_for('static', filename='img/favicon.ico') }}" type="image/x-icon">
+    <style>
+        body { background-color: #f0f2f5; font-family: sans-serif; }
+        .content-wrapper { max-width: 1100px; margin: 0 auto; padding: 30px 16px; }
+    </style>
+</head>
+<body>
+    <div class="content-wrapper">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2>✅ Done Checks</h2>
+            <a href="{{ url_for('index') }}" class="btn btn-outline-secondary btn-sm">Back to Checker</a>
+        </div>
+
+        <div class="card">
+            <div class="card-header bg-secondary text-white">Uncopied Checks</div>
+            <div class="card-body p-0">
+                <table class="table table-sm mb-0" id="doneChecksTable">
+                    <thead class="table-light">
+                        <tr>
+                            <th>IP</th>
+                            <th>Proxy</th>
+                            <th>Date</th>
+                            <th>Copy</th>
+                        </tr>
+                    </thead>
+                    <tbody id="doneChecksBody">
+                        {% for check in checks %}
+                        <tr data-proxy="{{ check.proxy }}" data-ip="{{ check.ip }}">
+                            <td>{{ check.ip }}</td>
+                            <td class="small">{{ check.proxy }}</td>
+                            <td>{{ check.created_at | replace('T', ' ') | truncate(19, True, '') }}</td>
+                            <td><button class="btn btn-sm btn-outline-secondary copy-check-btn">Copy</button></td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="4" class="text-center text-muted">No pending checks.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function refreshChecks() {
+            const response = await fetch('/api/pending-checks');
+            const data = await response.json();
+            if (data.status !== 'success') return;
+            const body = document.getElementById('doneChecksBody');
+            body.innerHTML = '';
+            if (!data.checks.length) {
+                body.innerHTML = '<tr><td colspan="4" class="text-center text-muted">No pending checks.</td></tr>';
+                return;
+            }
+            data.checks.forEach((check) => {
+                const row = document.createElement('tr');
+                row.dataset.proxy = check.proxy;
+                row.dataset.ip = check.ip;
+                row.innerHTML = `
+                    <td>${check.ip}</td>
+                    <td class="small">${check.proxy}</td>
+                    <td>${(check.created_at || '').replace('T', ' ').slice(0, 19)}</td>
+                    <td><button class="btn btn-sm btn-outline-secondary copy-check-btn">Copy</button></td>
+                `;
+                body.appendChild(row);
+            });
+            bindCopyButtons();
+        }
+
+        async function handleCopy(row) {
+            const proxy = row.dataset.proxy;
+            const ip = row.dataset.ip;
+            await navigator.clipboard.writeText(proxy);
+            await fetch('/track-used', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ proxy, ip })
+            });
+            await fetch('/api/mark-check-copied', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ proxy, ip })
+            });
+            row.remove();
+        }
+
+        function bindCopyButtons() {
+            document.querySelectorAll('.copy-check-btn').forEach((btn) => {
+                btn.addEventListener('click', (event) => {
+                    const row = event.target.closest('tr');
+                    handleCopy(row);
+                });
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            bindCopyButtons();
+            setInterval(refreshChecks, 15000);
+        });
+    </script>
+</body>
+</html>
