@@ -159,10 +159,16 @@ def add_recent_checks(username, checks):
             ip = item.get("ip")
             if not proxy or not ip:
                 continue
+            geo = item.get("geo") or {}
             rows.append({
                 "username": username,
                 "proxy": proxy,
                 "ip": ip,
+                "country": geo.get("country_code"),
+                "state": geo.get("state"),
+                "city": geo.get("city"),
+                "postcode": geo.get("postcode"),
+                "score": item.get("score"),
                 "copied": False
             })
         if not rows:
@@ -176,7 +182,7 @@ def add_recent_checks(username, checks):
 def get_pending_checks(username, limit=200):
     if not supabase: return []
     try:
-        response = supabase.table('recent_checks').select("id, proxy, ip, created_at").eq("username", username).eq("copied", False).order("created_at", desc=True).limit(limit).execute()
+        response = supabase.table('recent_checks').select("id, proxy, ip, country, state, city, postcode, score, created_at").eq("username", username).eq("copied", False).order("created_at", desc=True).limit(limit).execute()
         rows = response.data or []
         seen_ips = set()
         unique_rows = []
@@ -325,19 +331,19 @@ def get_user_stats_summary():
 # --- DAILY API USAGE TRACKING ---
 
 def get_daily_api_usage_for_user(username):
-    """Get total API calls for a user today"""
+    """Get total API calls for a user this month"""
     if not supabase: return 0
     try:
-        today = datetime.utcnow().strftime("%Y-%m-%d")
+        month_prefix = datetime.utcnow().strftime("%Y-%m")
         response = supabase.table('api_usage').select("api_calls_count, created_at").eq("username", username).execute()
         total = 0
         for row in response.data:
             created_at = row.get('created_at', '')
-            if created_at.startswith(today):
+            if created_at.startswith(month_prefix):
                 total += int(row.get('api_calls_count', 0))
         return total
     except Exception as e:
-        logger.error(f"Error getting daily API usage: {e}")
+        logger.error(f"Error getting monthly API usage: {e}")
         return 0
 
 # --- API CREDITS MANAGEMENT ---

@@ -45,7 +45,7 @@
     @media (max-width: 768px) { .sidebar { margin-left: -250px; } .sidebar.active { margin-left: 0; } .content-wrapper { margin-left: 0; } }
   </style>
 </head>
-<body>
+<body data-username="{{ current_user.username }}">
 
 <nav class="sidebar" id="sidebar">
     <div class="sidebar-header">
@@ -239,6 +239,22 @@
     document.getElementById('sidebarToggle').addEventListener('click', function() {
         document.getElementById('sidebar').classList.toggle('active');
     });
+
+    (function() {
+        const username = document.body.dataset.username || 'default';
+        const themeKey = `theme:${username}`;
+        const accentKey = `accent:${username}`;
+        const theme = localStorage.getItem(themeKey);
+        if (theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+        }
+        const accent = localStorage.getItem(accentKey);
+        if (accent) {
+            document.documentElement.style.setProperty('--bs-primary', accent);
+            const rgb = accent.replace('#', '').match(/.{1,2}/g).map(c => parseInt(c, 16)).join(',');
+            document.documentElement.style.setProperty('--bs-primary-rgb', rgb);
+        }
+    })();
 
     document.querySelectorAll('.fetch-toggle').forEach((toggle) => {
         toggle.addEventListener('change', async (event) => {

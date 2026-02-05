@@ -202,13 +202,16 @@ def parse_api_credentials(settings):
 
 def apply_performance_settings(settings):
     global REQUEST_TIMEOUT, MIN_DELAY, MAX_DELAY, IP_STABLE_CHECKS, IP_STABLE_ATTEMPTS, IP_STABLE_DELAY_MIN, IP_STABLE_DELAY_MAX
-    REQUEST_TIMEOUT = float(settings.get("REQUEST_TIMEOUT", REQUEST_TIMEOUT))
-    MIN_DELAY = float(settings.get("MIN_DELAY", MIN_DELAY))
-    MAX_DELAY = float(settings.get("MAX_DELAY", MAX_DELAY))
-    IP_STABLE_CHECKS = int(settings.get("IP_STABLE_CHECKS", IP_STABLE_CHECKS))
-    IP_STABLE_ATTEMPTS = int(settings.get("IP_STABLE_ATTEMPTS", IP_STABLE_ATTEMPTS))
-    IP_STABLE_DELAY_MIN = float(settings.get("IP_STABLE_DELAY_MIN", IP_STABLE_DELAY_MIN))
-    IP_STABLE_DELAY_MAX = float(settings.get("IP_STABLE_DELAY_MAX", IP_STABLE_DELAY_MAX))
+    try:
+        REQUEST_TIMEOUT = float(settings.get("REQUEST_TIMEOUT", REQUEST_TIMEOUT))
+        MIN_DELAY = float(settings.get("MIN_DELAY", MIN_DELAY))
+        MAX_DELAY = float(settings.get("MAX_DELAY", MAX_DELAY))
+        IP_STABLE_CHECKS = int(settings.get("IP_STABLE_CHECKS", IP_STABLE_CHECKS))
+        IP_STABLE_ATTEMPTS = int(settings.get("IP_STABLE_ATTEMPTS", IP_STABLE_ATTEMPTS))
+        IP_STABLE_DELAY_MIN = float(settings.get("IP_STABLE_DELAY_MIN", IP_STABLE_DELAY_MIN))
+        IP_STABLE_DELAY_MAX = float(settings.get("IP_STABLE_DELAY_MAX", IP_STABLE_DELAY_MAX))
+    except Exception:
+        pass
 
 def get_events(settings):
     raw_events = settings.get("EVENTS_JSON", "[]")
@@ -221,6 +224,33 @@ def get_events(settings):
 def save_events(settings, events):
     update_setting("EVENTS_JSON", json.dumps(events))
     get_app_settings(force_refresh=True)
+
+def build_done_checks(settings, username, limit=50):
+    apply_performance_settings(settings)
+    fraud_score = int(settings.get("FRAUD_SCORE_LEVEL", 0))
+    checks = get_pending_checks(username, limit=200)
+    filtered = []
+    for check in checks:
+        score = check.get("score")
+        if score is None:
+            continue
+        try:
+            score_int = int(score)
+        except Exception:
+            continue
+        if score_int > fraud_score:
+            continue
+        proxy = check.get("proxy")
+        ip = check.get("ip")
+        if not proxy or not ip:
+            continue
+        current_ip = get_ip_from_proxy(proxy)
+        if not current_ip or current_ip != ip:
+            continue
+        filtered.append(check)
+        if len(filtered) >= limit:
+            break
+    return filtered
 
 def validate_proxy_format(proxy_line):
     try:
@@ -706,7 +736,8 @@ def track_used():
 @app.route("/api/pending-checks")
 @login_required
 def pending_checks():
-    checks = get_pending_checks(current_user.username, limit=200)
+    settings = get_app_settings()
+    checks = build_done_checks(settings, current_user.username, limit=50)
     return jsonify({"status": "success", "checks": checks})
 
 @app.route("/api/mark-check-copied", methods=["POST"])
@@ -724,7 +755,8 @@ def mark_check_copied():
 @app.route("/done-checks")
 @login_required
 def done_checks():
-    checks = get_pending_checks(current_user.username, limit=200)
+    settings = get_app_settings()
+    checks = build_done_checks(settings, current_user.username, limit=50)
     return render_template("done_checks.html", checks=checks)
 
 @app.route("/myaccount", methods=["GET", "POST"])
@@ -790,7 +822,6 @@ def admin():
     try:
         for log in get_all_api_usage_logs(): total_api += int(log.get("api_calls_count", 0))
     except: pass
-    stones_daily_usage = get_daily_api_usage_for_user("STONES")
     stats = {
         "max_paste": settings["MAX_PASTE"],
         "fraud_score_level": settings["FRAUD_SCORE_LEVEL"],
@@ -805,7 +836,7 @@ def admin():
         "sx_generation_url": settings.get("SX_GENERATION_URL"),
         "force_fetch_for_users": settings.get("FORCE_FETCH_FOR_USERS", "FALSE")
     }
-    return render_template("admin.html", stats=stats, used_ips=get_all_used_ips(), announcement=settings.get("ANNOUNCEMENT"), settings=settings, stones_daily_usage=stones_daily_usage)
+    return render_template("admin.html", stats=stats, used_ips=get_all_used_ips(), announcement=settings.get("ANNOUNCEMENT"), settings=settings)
 
 @app.route("/admin/reset-system", methods=["POST"])
 @admin_required

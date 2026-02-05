@@ -14,7 +14,7 @@
         .proxy-list { max-height: 240px; overflow-y: auto; }
     </style>
 </head>
-<body>
+<body data-username="{{ current_user.username }}">
     <div class="content-wrapper">
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h2>👤 My Account</h2>
@@ -39,9 +39,34 @@
             <div class="card-header bg-primary text-white">API Balance</div>
             <div class="card-body">
                 {% if api_limit %}
-                    <p class="mb-0">Today: <strong>{{ api_usage }}</strong> used / <strong>{{ api_limit }}</strong> limit. Remaining: <strong>{{ api_balance }}</strong>.</p>
+                    <p class="mb-0">This month: <strong>{{ api_usage }}</strong> used / <strong>{{ api_limit }}</strong> limit. Remaining: <strong>{{ api_balance }}</strong>.</p>
                 {% else %}
                     <p class="mb-0 text-muted">Unlimited API access for this account.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="card section-card">
+            <div class="card-header bg-light text-dark">Calendar Events</div>
+            <div class="card-body">
+                {% if current_user.is_guest %}
+                    <p class="text-muted mb-0">Calendar events are not available for guest users.</p>
+                {% else %}
+                    <ul class="list-group">
+                        {% for event in events %}
+                        <li class="list-group-item d-flex justify-content-between align-items-start">
+                            <div>
+                                <strong>{{ event.title }}</strong>
+                                <div class="small text-muted">{{ event.date }}</div>
+                                {% if event.message %}
+                                <div class="small">{{ event.message }}</div>
+                                {% endif %}
+                            </div>
+                        </li>
+                        {% else %}
+                        <li class="list-group-item text-muted">No upcoming events.</li>
+                        {% endfor %}
+                    </ul>
                 {% endif %}
             </div>
         </div>
@@ -157,31 +182,6 @@
                 </div>
             </div>
         </div>
-
-        <div class="card section-card">
-            <div class="card-header bg-light text-dark">Calendar Events</div>
-            <div class="card-body">
-                {% if current_user.is_guest %}
-                    <p class="text-muted mb-0">Calendar events are not available for guest users.</p>
-                {% else %}
-                    <ul class="list-group">
-                        {% for event in events %}
-                        <li class="list-group-item d-flex justify-content-between align-items-start">
-                            <div>
-                                <strong>{{ event.title }}</strong>
-                                <div class="small text-muted">{{ event.date }}</div>
-                                {% if event.message %}
-                                <div class="small">{{ event.message }}</div>
-                                {% endif %}
-                            </div>
-                        </li>
-                        {% else %}
-                        <li class="list-group-item text-muted">No upcoming events.</li>
-                        {% endfor %}
-                    </ul>
-                {% endif %}
-            </div>
-        </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -190,18 +190,30 @@
             const themeSelect = document.getElementById('themeSelect');
             const accentColorPicker = document.getElementById('accentColorPicker');
             const applyThemeBtn = document.getElementById('applyThemeBtn');
-            const savedTheme = localStorage.getItem('theme') || 'light';
-            const savedAccent = localStorage.getItem('accentColor') || '#0d6efd';
+            const username = document.body.dataset.username || 'default';
+            const themeKey = `theme:${username}`;
+            const accentKey = `accent:${username}`;
+            const savedTheme = localStorage.getItem(themeKey) || 'light';
+            const savedAccent = localStorage.getItem(accentKey) || '#0d6efd';
 
             themeSelect.value = savedTheme;
             accentColorPicker.value = savedAccent;
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            document.documentElement.style.setProperty('--btn-primary', savedAccent);
+            document.documentElement.style.setProperty('--btn-primary-hover', savedAccent);
+            document.documentElement.style.setProperty('--bs-primary', savedAccent);
+            const rgbSaved = savedAccent.replace('#', '').match(/.{1,2}/g).map(c => parseInt(c, 16)).join(',');
+            document.documentElement.style.setProperty('--bs-primary-rgb', rgbSaved);
 
             applyThemeBtn.addEventListener('click', () => {
-                localStorage.setItem('theme', themeSelect.value);
-                localStorage.setItem('accentColor', accentColorPicker.value);
+                localStorage.setItem(themeKey, themeSelect.value);
+                localStorage.setItem(accentKey, accentColorPicker.value);
                 document.documentElement.setAttribute('data-theme', themeSelect.value);
                 document.documentElement.style.setProperty('--btn-primary', accentColorPicker.value);
                 document.documentElement.style.setProperty('--btn-primary-hover', accentColorPicker.value);
+                document.documentElement.style.setProperty('--bs-primary', accentColorPicker.value);
+                const rgb = accentColorPicker.value.replace('#', '').match(/.{1,2}/g).map(c => parseInt(c, 16)).join(',');
+                document.documentElement.style.setProperty('--bs-primary-rgb', rgb);
             });
 
             document.querySelectorAll('.copy-check-btn').forEach((btn) => {

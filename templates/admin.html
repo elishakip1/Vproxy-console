@@ -49,7 +49,7 @@
     }
   </style>
 </head>
-<body>
+<body data-username="{{ current_user.username }}">
 
 <nav class="sidebar" id="sidebar">
     <div class="sidebar-header">
@@ -117,7 +117,6 @@
                         <li class="list-group-item d-flex justify-content-between"><span>Total Calls Logged</span> <strong>{{ stats.total_api_calls_logged }}</strong></li>
                         <li class="list-group-item d-flex justify-content-between"><span>Credits Used</span> <strong>{{ stats.api_credits_used }}</strong></li>
                         <li class="list-group-item d-flex justify-content-between"><span>Credits Remaining</span> <strong class="text-primary">{{ stats.api_credits_remaining }}</strong></li>
-                        <li class="list-group-item d-flex justify-content-between"><span>STONES Daily Usage</span> <strong>{{ stones_daily_usage }}/150</strong></li>
                     </ul>
                 </div>
             </div>
@@ -167,6 +166,22 @@
     document.getElementById('sidebarToggle').addEventListener('click', function() {
         document.getElementById('sidebar').classList.toggle('active');
     });
+
+    (function() {
+        const username = document.body.dataset.username || 'default';
+        const themeKey = `theme:${username}`;
+        const accentKey = `accent:${username}`;
+        const theme = localStorage.getItem(themeKey);
+        if (theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+        }
+        const accent = localStorage.getItem(accentKey);
+        if (accent) {
+            document.documentElement.style.setProperty('--bs-primary', accent);
+            const rgb = accent.replace('#', '').match(/.{1,2}/g).map(c => parseInt(c, 16)).join(',');
+            document.documentElement.style.setProperty('--bs-primary-rgb', rgb);
+        }
+    })();
 </script>
 </body>
 </html>
