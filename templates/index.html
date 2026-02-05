@@ -37,29 +37,6 @@
             --placeholder-color: #6c757d;
         }
 
-        [data-theme="dark"] {
-            --bg-color: #121212;
-            --card-bg: #1e1e1e;
-            --text-color: #e9ecef;
-            --text-muted: #adb5bd;
-            --border-color: #343a40;
-            --header-bg: #1e1e1e;
-            --table-header-bg: #2d3748;
-            --table-row-hover: #2d3748;
-            --btn-primary: #0d6efd;
-            --btn-primary-hover: #0b5ed7;
-            --btn-secondary: #6c757d;
-            --btn-secondary-hover: #5c636a;
-            --success-color: #198754;
-            --warning-color: #ffc107;
-            --danger-color: #dc3545;
-            --info-color: #0dcaf0;
-            --shadow-color: rgba(0,0,0,0.3);
-            --input-bg: #2d3748;
-            --input-border: #4a5568;
-            --input-color: #e9ecef;
-            --placeholder-color: #a0aec0;
-        }
 
         body {
             background-color: var(--bg-color);
@@ -173,10 +150,6 @@
             backdrop-filter: blur(5px);
         }
 
-        [data-theme="dark"] .proxy-counter {
-            background: rgba(0, 0, 0, 0.2);
-        }
-
         .counter-error { 
             color: var(--danger-color); 
             font-weight: bold; 
@@ -237,40 +210,6 @@
             background-color: var(--table-row-hover);
         }
 
-        /* Theme Toggle Button */
-        .theme-toggle {
-            background-color: var(--btn-secondary);
-            color: white;
-            border: none;
-            border-radius: 6px;
-            padding: 6px 12px;
-            font-size: 14px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 5px;
-            transition: background-color 0.3s ease;
-        }
-
-        .theme-toggle:hover {
-            background-color: var(--btn-secondary-hover);
-        }
-
-        .theme-toggle .sun-icon {
-            display: none;
-        }
-
-        .theme-toggle .moon-icon {
-            display: inline-block;
-        }
-
-        [data-theme="dark"] .theme-toggle .sun-icon {
-            display: inline-block;
-        }
-
-        [data-theme="dark"] .theme-toggle .moon-icon {
-            display: none;
-        }
 
         /* Notepad Widget Styles */
         #notepad-widget { 
@@ -425,10 +364,7 @@
                 </a>
             </div>
             <div class="header-buttons">
-                <button class="theme-toggle" id="themeToggle">
-                    <span class="sun-icon">☀️ Light</span>
-                    <span class="moon-icon">🌙 Dark</span>
-                </button>
+                
                 {% if current_user.is_authenticated and current_user.is_admin %}
                     <a href="{{ url_for('admin') }}" class="btn btn-outline-primary btn-sm">Admin Panel</a>
                 {% endif %}
@@ -687,7 +623,6 @@
         function getThemeKeys() {
             const username = document.body.dataset.username || 'default';
             return {
-                themeKey: `theme:${username}`,
                 accentKey: `accent:${username}`
             };
         }
@@ -703,19 +638,10 @@
 
         function initTheme() {
             const keys = getThemeKeys();
-            const savedTheme = localStorage.getItem(keys.themeKey) || 'light';
-            document.documentElement.setAttribute('data-theme', savedTheme);
             const accentColor = localStorage.getItem(keys.accentKey);
             applyAccentColor(accentColor);
         }
 
-        function toggleTheme() {
-            const currentTheme = document.documentElement.getAttribute('data-theme');
-            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-            document.documentElement.setAttribute('data-theme', newTheme);
-            const keys = getThemeKeys();
-            localStorage.setItem(keys.themeKey, newTheme);
-        }
 
         function updateProxyCounter(textarea) {
             const text = textarea.value;
@@ -881,7 +807,6 @@
 
         document.addEventListener('DOMContentLoaded', () => {
             initTheme();
-            document.getElementById('themeToggle').addEventListener('click', toggleTheme);
             const textArea = document.getElementById('proxytext');
             if(textArea) updateProxyCounter(textArea);
             {% if results is defined and results is not none %}

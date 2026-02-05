@@ -244,7 +244,7 @@ def build_done_checks(settings, username, limit=50):
         ip = check.get("ip")
         if not proxy or not ip:
             continue
-        current_ip = get_ip_from_proxy(proxy)
+        current_ip = verify_ip_stability(proxy)
         if not current_ip or current_ip != ip:
             continue
         filtered.append(check)
@@ -836,7 +836,37 @@ def admin():
         "sx_generation_url": settings.get("SX_GENERATION_URL"),
         "force_fetch_for_users": settings.get("FORCE_FETCH_FOR_USERS", "FALSE")
     }
-    return render_template("admin.html", stats=stats, used_ips=get_all_used_ips(), announcement=settings.get("ANNOUNCEMENT"), settings=settings)
+    reviews = [log for log in get_all_system_logs()[::-1] if "Feedback from" in log.get("Message", "")]
+    page = max(1, int(request.args.get("page", 1)))
+    per_page = 20
+    recent = []
+    cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=24)
+    for row in get_all_used_ips():
+        created_at = row.get("Date")
+        if not created_at:
+            continue
+        try:
+            timestamp = datetime.datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        except Exception:
+            continue
+        if timestamp >= cutoff:
+            recent.append(row)
+    start = (page - 1) * per_page
+    end = start + per_page
+    used_page = recent[start:end]
+    has_prev = page > 1
+    has_next = end < len(recent)
+    return render_template(
+        "admin.html",
+        stats=stats,
+        used_ips=used_page,
+        announcement=settings.get("ANNOUNCEMENT"),
+        settings=settings,
+        page=page,
+        has_prev=has_prev,
+        has_next=has_next,
+        reviews=reviews[:5]
+    )
 
 @app.route("/admin/reset-system", methods=["POST"])
 @admin_required
@@ -952,6 +982,12 @@ def admin_users():
 @admin_required
 def admin_logs():
     return render_template("admin_logs.html", logs=get_all_system_logs()[::-1])
+
+@app.route("/admin/reviews")
+@admin_required
+def admin_reviews():
+    logs = [log for log in get_all_system_logs()[::-1] if "Feedback from" in log.get("Message", "")]
+    return render_template("admin_reviews.html", logs=logs)
 
 @app.route("/admin/clear-logs", methods=["POST"])
 @admin_required

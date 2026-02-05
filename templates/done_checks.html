@@ -59,12 +59,7 @@
     <script>
         (function() {
             const username = document.body.dataset.username || 'default';
-            const themeKey = `theme:${username}`;
             const accentKey = `accent:${username}`;
-            const theme = localStorage.getItem(themeKey);
-            if (theme) {
-                document.documentElement.setAttribute('data-theme', theme);
-            }
             const accent = localStorage.getItem(accentKey);
             if (accent) {
                 document.documentElement.style.setProperty('--bs-primary', accent);
@@ -130,7 +125,7 @@
 
         document.addEventListener('DOMContentLoaded', () => {
             bindCopyButtons();
-            setInterval(refreshChecks, 15000);
+            setInterval(refreshChecks, 10000);
         });
     </script>
 </body>

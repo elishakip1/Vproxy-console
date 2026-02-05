@@ -64,7 +64,8 @@
     <ul class="sidebar-nav">
         <li><a href="{{ url_for('admin') }}" class="nav-link">📊 Dashboard</a></li>
         <li><a href="{{ url_for('admin_pool') }}" class="nav-link">🏭 Proxy Pool</a></li>
-        <li><a href="{{ url_for('admin_users') }}" class="nav-link">👥 User Activity</a></li>
+        <li><a href="{{ url_for('admin_users') }}" class="nav-link">👥 User Management</a></li>
+        <li><a href="{{ url_for('admin_reviews') }}" class="nav-link">🗣️ Reviews</a></li>
         <li><a href="{{ url_for('admin_logs') }}" class="nav-link active-nav">📋 System Logs</a></li>
         <li><a href="{{ url_for('admin_settings') }}" class="nav-link">⚙️ Settings</a></li>
         <li class="mt-5"><a href="/" class="nav-link text-warning">← Back to Checker</a></li>
@@ -146,12 +147,7 @@
 
     (function() {
         const username = document.body.dataset.username || 'default';
-        const themeKey = `theme:${username}`;
         const accentKey = `accent:${username}`;
-        const theme = localStorage.getItem(themeKey);
-        if (theme) {
-            document.documentElement.setAttribute('data-theme', theme);
-        }
         const accent = localStorage.getItem(accentKey);
         if (accent) {
             document.documentElement.style.setProperty('--bs-primary', accent);

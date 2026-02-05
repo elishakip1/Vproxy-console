@@ -99,18 +99,12 @@
             <div class="card-header bg-dark text-white">Theme & Colors</div>
             <div class="card-body row g-3 align-items-center">
                 <div class="col-md-4">
-                    <label class="form-label">Theme</label>
-                    <select class="form-select" id="themeSelect">
-                        <option value="light">Light</option>
-                        <option value="dark">Dark</option>
-                    </select>
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label">Accent Color</label>
+                    <label class="form-label">Theme Color</label>
                     <input type="color" class="form-control form-control-color" id="accentColorPicker" value="#0d6efd">
                 </div>
-                <div class="col-md-4">
-                    <button type="button" class="btn btn-outline-primary mt-4" id="applyThemeBtn">Apply Theme</button>
+                <div class="col-md-4 d-flex gap-2 align-items-end">
+                    <button type="button" class="btn btn-outline-primary" id="applyThemeBtn">Apply</button>
+                    <button type="button" class="btn btn-outline-secondary" id="resetThemeBtn">Reset</button>
                 </div>
             </div>
         </div>
@@ -187,18 +181,14 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            const themeSelect = document.getElementById('themeSelect');
             const accentColorPicker = document.getElementById('accentColorPicker');
             const applyThemeBtn = document.getElementById('applyThemeBtn');
+            const resetThemeBtn = document.getElementById('resetThemeBtn');
             const username = document.body.dataset.username || 'default';
-            const themeKey = `theme:${username}`;
             const accentKey = `accent:${username}`;
-            const savedTheme = localStorage.getItem(themeKey) || 'light';
             const savedAccent = localStorage.getItem(accentKey) || '#0d6efd';
 
-            themeSelect.value = savedTheme;
             accentColorPicker.value = savedAccent;
-            document.documentElement.setAttribute('data-theme', savedTheme);
             document.documentElement.style.setProperty('--btn-primary', savedAccent);
             document.documentElement.style.setProperty('--btn-primary-hover', savedAccent);
             document.documentElement.style.setProperty('--bs-primary', savedAccent);
@@ -206,14 +196,21 @@
             document.documentElement.style.setProperty('--bs-primary-rgb', rgbSaved);
 
             applyThemeBtn.addEventListener('click', () => {
-                localStorage.setItem(themeKey, themeSelect.value);
                 localStorage.setItem(accentKey, accentColorPicker.value);
-                document.documentElement.setAttribute('data-theme', themeSelect.value);
                 document.documentElement.style.setProperty('--btn-primary', accentColorPicker.value);
                 document.documentElement.style.setProperty('--btn-primary-hover', accentColorPicker.value);
                 document.documentElement.style.setProperty('--bs-primary', accentColorPicker.value);
                 const rgb = accentColorPicker.value.replace('#', '').match(/.{1,2}/g).map(c => parseInt(c, 16)).join(',');
                 document.documentElement.style.setProperty('--bs-primary-rgb', rgb);
+            });
+
+            resetThemeBtn.addEventListener('click', () => {
+                localStorage.removeItem(accentKey);
+                accentColorPicker.value = '#0d6efd';
+                document.documentElement.style.setProperty('--btn-primary', '#0d6efd');
+                document.documentElement.style.setProperty('--btn-primary-hover', '#0d6efd');
+                document.documentElement.style.setProperty('--bs-primary', '#0d6efd');
+                document.documentElement.style.setProperty('--bs-primary-rgb', '13,110,253');
             });
 
             document.querySelectorAll('.copy-check-btn').forEach((btn) => {
