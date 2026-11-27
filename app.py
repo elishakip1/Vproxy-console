@@ -1360,7 +1360,7 @@ def api_v1_check():
     body = {
         "status": "success",
         "good": [shape(r) for r in good],
-        "stats": {**stats, "submitted": len(proxies), "checked": checked,
+        "stats": {**stats, "submitted": len(proxies), "checked": len(all_results),
                   "invalid_format": len(invalid), "truncated_to": max_paste},
     }
     if data.get("verbose"):
