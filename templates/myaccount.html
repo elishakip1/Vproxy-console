@@ -47,6 +47,21 @@
         </div>
 
         <div class="card section-card">
+            <div class="card-header bg-success text-white">API Access</div>
+            <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <div>
+                    {% if has_api_key %}
+                        <span class="badge bg-success">Key active</span>
+                        <span class="text-muted small ms-1">Use it to run checks from your own scripts or bots.</span>
+                    {% else %}
+                        <span class="text-muted">No API key yet. Create one to check proxies from your own scripts or bots.</span>
+                    {% endif %}
+                </div>
+                <a href="{{ url_for('api_dashboard') }}" class="btn btn-success btn-sm">{% if has_api_key %}Manage key &amp; docs{% else %}Get API key{% endif %}</a>
+            </div>
+        </div>
+
+        <div class="card section-card">
             <div class="card-header bg-light text-dark">Calendar Events</div>
             <div class="card-body">
                 {% if current_user.is_guest %}

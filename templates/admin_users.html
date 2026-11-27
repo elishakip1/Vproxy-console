@@ -43,6 +43,7 @@
     .nav-link:hover, .nav-link.active-nav { color: #fff; background: rgba(255,255,255,.1); border-left-color: #0d6efd; }
     .content-wrapper { margin-left: 250px; padding: 30px; }
     @media (max-width: 768px) { .sidebar { margin-left: -250px; } .sidebar.active { margin-left: 0; } .content-wrapper { margin-left: 0; } }
+      .alert { word-break: break-all; }
   </style>
 </head>
 <body data-username="{{ current_user.username }}">
@@ -62,6 +63,7 @@
         <li><a href="{{ url_for('admin_reviews') }}" class="nav-link">🗣️ Reviews</a></li>
         <li><a href="{{ url_for('admin_logs') }}" class="nav-link">📋 System Logs</a></li>
         <li><a href="{{ url_for('admin_settings') }}" class="nav-link">⚙️ Settings</a></li>
+        <li><a href="{{ url_for('api_dashboard') }}" class="nav-link">🔑 API</a></li>
         <li class="mt-5"><a href="/" class="nav-link text-warning">← Back to Checker</a></li>
     </ul>
 </nav>
@@ -168,6 +170,15 @@
                                     <input type="hidden" name="action" value="delete">
                                     <input type="hidden" name="username" value="{{ user.username }}">
                                     <button class="btn btn-sm btn-outline-danger" {% if current_user.username == user.username %}disabled{% endif %}>Delete User</button>
+                                </form>
+                                <form method="POST" class="d-inline-flex gap-1 mt-1">
+                                    <input type="hidden" name="username" value="{{ user.username }}">
+                                    <button name="action" value="gen_api_key" class="btn btn-sm btn-outline-success"
+                                        onclick="return confirm('Create a new API key for {{ user.username }}? Any old key stops working.');">
+                                        {% if user.api_key_hash %}New API Key{% else %}Create API Key{% endif %}</button>
+                                    {% if user.api_key_hash %}
+                                    <button name="action" value="revoke_api_key" class="btn btn-sm btn-outline-secondary">Revoke Key</button>
+                                    {% endif %}
                                 </form>
                             </td>
                         </tr>

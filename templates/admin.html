@@ -66,6 +66,7 @@
         <li><a href="{{ url_for('admin_reviews') }}" class="nav-link">🗣️ Reviews</a></li>
         <li><a href="{{ url_for('admin_logs') }}" class="nav-link">📋 System Logs</a></li>
         <li><a href="{{ url_for('admin_settings') }}" class="nav-link">⚙️ Settings</a></li>
+        <li><a href="{{ url_for('api_dashboard') }}" class="nav-link">🔑 API</a></li>
         <li class="mt-5"><a href="/" class="nav-link text-warning">← Back to Checker</a></li>
         <li><a href="{{ url_for('logout') }}" class="nav-link text-danger">Logout</a></li>
     </ul>
@@ -168,7 +169,7 @@
                                 <td class="small">{{ row["Proxy"] }}</td>
                                 <td>{{ row["User"] }}</td>
                                 <td>{{ row["Date"]|string|truncate(16, True, '') }}</td>
-                                <td><a href="{{ url_for('delete_used_ip_route', ip=row['IP']) }}" class="text-danger" onclick="return confirm('Delete this record?')">Delete</a></td>
+                                <td><form method="POST" action="{{ url_for('delete_used_ip_route', ip=row['IP']) }}" class="d-inline" onsubmit="return confirm('Delete this record?')"><button type="submit" class="btn btn-link btn-sm text-danger p-0">Delete</button></form></td>
                             </tr>
                             {% else %}
                             <tr><td colspan="5" class="text-center text-muted">No recent used proxies.</td></tr>

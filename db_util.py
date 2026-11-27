@@ -35,6 +35,47 @@ def get_all_users():
         logger.error(f"Error fetching users: {e}")
         return []
 
+def get_user_by_id(user_id):
+    """Fetch one user by id (used on every request, so don't load the whole table)."""
+    if not supabase: return None
+    try:
+        r = supabase.table('users').select("*").eq("id", user_id).limit(1).execute()
+        return r.data[0] if r.data else None
+    except Exception as e:
+        logger.error(f"Error fetching user {user_id}: {e}")
+        return None
+
+def get_user_by_username(username):
+    if not supabase or not username: return None
+    try:
+        r = supabase.table('users').select("*").eq("username", username).limit(1).execute()
+        return r.data[0] if r.data else None
+    except Exception as e:
+        logger.error(f"Error fetching user {username}: {e}")
+        return None
+
+def get_user_by_api_key(api_key):
+    """Look up one user by API key hash. Returns the row or None."""
+    if not supabase or not api_key: return None
+    try:
+        import hashlib
+        key_hash = hashlib.sha256(api_key.encode()).hexdigest()
+        r = supabase.table('users').select("*").eq("api_key_hash", key_hash).limit(1).execute()
+        return r.data[0] if r.data else None
+    except Exception as e:
+        logger.error(f"Error looking up API key: {e}")
+        return None
+
+def set_user_api_key_hash(username, key_hash):
+    """Store (or clear, with None) the SHA-256 hash of a user's API key."""
+    if not supabase: return False
+    try:
+        supabase.table('users').update({"api_key_hash": key_hash}).eq("username", username).execute()
+        return True
+    except Exception as e:
+        logger.error(f"Error setting API key: {e}")
+        return False
+
 def add_user(username, password, role="user", can_fetch=False, api_limit=None):
     """Add a new user (admin, user, or guest) to the system."""
     if not supabase: return False

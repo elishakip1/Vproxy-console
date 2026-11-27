@@ -1,12 +1,13 @@
 # --- IMPORTS ---
 from flask import (
-    Flask, request, render_template, redirect, url_for,
+    Flask, request, render_template, redirect, url_for, make_response,
     jsonify, send_from_directory, flash, session, abort
 )
 from flask_login import (
     LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 )
 from functools import wraps
+from werkzeug.security import generate_password_hash, check_password_hash
 import os
 import json
 import uuid
@@ -22,6 +23,8 @@ from requests.packages.urllib3.util.retry import Retry
 import logging
 import sys
 import re
+import hashlib
+import secrets
 
 # Import from db_util
 from db_util import (
@@ -36,14 +39,29 @@ from db_util import (
     get_daily_api_usage_for_user, update_api_credits, get_pool_preview,
     get_all_users, add_user, delete_user, update_user_fetch_permission, update_user_role, update_user_api_limit,
     add_recent_checks, get_pending_checks, mark_recent_check_copied,
-    update_username, update_password
+    update_username, update_password,
+    get_user_by_id, get_user_by_username, get_user_by_api_key, set_user_api_key_hash
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', stream=sys.stdout)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", "change-this-super-secret-key-in-production")
+_secret = os.environ.get("FLASK_SECRET_KEY")
+if not _secret:
+    # Never fall back to a key that is visible in the repo. A random key keeps the app
+    # safe but logs everyone out on each cold start, so set FLASK_SECRET_KEY on Vercel.
+    logging.getLogger(__name__).critical("FLASK_SECRET_KEY is not set! Using a random key.")
+    _secret = secrets.token_hex(32)
+app.secret_key = _secret
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_SAMESITE="Lax",   # blocks cross-site POSTs (CSRF) in modern browsers
+    REMEMBER_COOKIE_HTTPONLY=True,
+    REMEMBER_COOKIE_SECURE=True,
+    REMEMBER_COOKIE_SAMESITE="Lax",
+)
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -72,13 +90,12 @@ class User(UserMixin):
 @login_manager.user_loader
 def load_user(user_id):
     """Load user from Supabase database."""
-    db_users = get_all_users()
-    user_data = next((u for u in db_users if str(u['id']) == str(user_id)), None)
+    user_data = get_user_by_id(user_id)
     if user_data:
         return User(
             id=user_data['id'], 
             username=user_data['username'], 
-            password=user_data['password'], 
+            password=None, 
             role=user_data['role'], 
             can_fetch=user_data['can_fetch'],
             api_limit=user_data.get('api_limit')
@@ -94,7 +111,8 @@ def admin_required(f):
     return decorated_function
 
 def get_user_ip():
-    ip = request.headers.get('X-Forwarded-For')
+    # Vercel sets X-Real-IP / X-Forwarded-For itself and overwrites client values.
+    ip = request.headers.get('X-Real-IP') or request.headers.get('X-Forwarded-For')
     if ip:
         return ip.split(',')[0].strip()
     return request.remote_addr or "Unknown"
@@ -112,7 +130,7 @@ DEFAULT_SETTINGS = {
     "CONSECUTIVE_FAILS": 0,
     "SYSTEM_PAUSED": "FALSE",
     "ABC_GENERATION_URL": "",
-    "SX_GENERATION_URL": "https://api.sx.org/port/list/rkocd4za052HM0HkruFuQvE6x37cMNsG.txt?proxy_template_id=3729&all=true&except_id[]=[]",
+    "SX_GENERATION_URL": "",   # stored in Supabase settings
     "PYPROXY_RESET_URL": "",
     "PIAPROXY_RESET_URL": "",
     "PASTE_INPUT_DISABLED": "FALSE",
@@ -122,8 +140,8 @@ DEFAULT_SETTINGS = {
     "SHOW_IPROYAL_BTN": "FALSE",
     "911_HOST": "eu.911proxy.net",
     "911_PORT": "2600",
-    "911_PASS": "Yys4mlDvA4zw3pLj",
-    "911_USER_PREFIX": "big6qogckbui",
+    "911_PASS": "",            # stored in Supabase settings
+    "911_USER_PREFIX": "",     # stored in Supabase settings
     "REQUEST_TIMEOUT": 4,
     "MIN_DELAY": 0.1,
     "MAX_DELAY": 0.3,
@@ -461,19 +479,33 @@ def before_request_func():
     if get_user_ip() in BLOCKED_IPS: abort(404)
     if request.path.startswith(('/static', '/login', '/logout')) or request.path.endswith(('.ico', '.png')): return
 
+def verify_password(user_data, password):
+    """Checks a hashed password. Old plaintext passwords still work once,
+    then get upgraded to a hash in Supabase automatically."""
+    stored = (user_data or {}).get('password') or ''
+    if stored.startswith(('scrypt:', 'pbkdf2:')):
+        return check_password_hash(stored, password or '')
+    if stored and password and secrets.compare_digest(stored, password):
+        update_password(user_data['username'], generate_password_hash(password))
+        return True
+    return False
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if current_user.is_authenticated:
         return redirect(url_for('admin') if current_user.is_admin else url_for('index'))
     error = None
     if request.method == 'POST':
-        db_users = get_all_users()
-        user_data = next((u for u in db_users if u['username'] == request.form.get('username')), None)
-        if user_data and user_data['password'] == request.form.get('password'):
+        import db_util as _db
+        if _db.supabase is None:
+            logger.critical("Login failed: Supabase not connected (SUPABASE_URL / SUPABASE_KEY missing for this environment).")
+            return render_template('login.html', error='Database not connected. Check SUPABASE_URL and SUPABASE_KEY for this deployment.')
+        user_data = get_user_by_username(request.form.get('username', ''))
+        if user_data and verify_password(user_data, request.form.get('password', '')):
             u_obj = User(
                 id=user_data['id'], 
                 username=user_data['username'], 
-                password=user_data['password'], 
+                password=None, 
                 role=user_data['role'], 
                 can_fetch=user_data['can_fetch'],
                 api_limit=user_data.get('api_limit')
@@ -505,6 +537,8 @@ def fetch_911_proxies():
     if not current_user.can_fetch: return jsonify({"status": "error", "message": "Permission denied."}), 403
     settings = get_app_settings()
     TOTAL_PROXIES = int(settings.get("MAX_PASTE", 30))
+    if not settings.get('911_PASS') or not settings.get('911_USER_PREFIX'):
+        return jsonify({"status": "error", "message": "911 credentials not set in Settings."})
     state = request.args.get('state', 'washington').lower()
     
     proxies = []
@@ -777,7 +811,7 @@ def my_account():
             current_password = request.form.get("current_password")
             new_username = request.form.get("new_username", "").strip()
             new_password = request.form.get("new_password", "").strip()
-            if current_password != current_user.password:
+            if not verify_password(get_user_by_username(current_user.username), current_password):
                 flash("Current password is incorrect.", "danger")
             else:
                 if new_username and new_username != current_user.username:
@@ -787,8 +821,7 @@ def my_account():
                     else:
                         flash("Failed to update username.", "danger")
                 if new_password:
-                    if update_password(current_user.username, new_password):
-                        current_user.password = new_password
+                    if update_password(current_user.username, generate_password_hash(new_password)):
                         flash("Password updated.", "success")
                     else:
                         flash("Failed to update password.", "danger")
@@ -804,8 +837,10 @@ def my_account():
     used_proxies = [row for row in get_all_used_ips() if row.get("User") == current_user.username][:200]
     pending_checks = get_pending_checks(current_user.username, limit=200)
     events = [] if current_user.is_guest else get_events(settings)
+    has_api_key = bool((get_user_by_username(current_user.username) or {}).get("api_key_hash"))
     return render_template(
         "myaccount.html",
+        has_api_key=has_api_key,
         api_limit=api_limit,
         api_usage=api_usage,
         api_balance=api_balance,
@@ -915,7 +950,7 @@ def admin_users():
                 return redirect(url_for("admin_users"))
             add_user(
                 username, 
-                request.form.get("password"),
+                generate_password_hash(request.form.get("password", "")),
                 role, 
                 "can_fetch" in request.form,
                 request.form.get("api_limit") or None
@@ -927,6 +962,15 @@ def admin_users():
             else:
                 delete_user(username)
                 flash(f"User {username} removed.", "danger")
+        elif action == "gen_api_key":
+            new_key = "vpx_" + secrets.token_urlsafe(32)
+            if set_user_api_key_hash(username, hashlib.sha256(new_key.encode()).hexdigest()):
+                flash(f"New API key for {username} (shown once, copy it now): {new_key}", "success")
+            else:
+                flash("Could not create API key.", "danger")
+        elif action == "revoke_api_key":
+            set_user_api_key_hash(username, None)
+            flash(f"API key for {username} revoked.", "warning")
         elif action == "toggle_fetch":
             update_user_fetch_permission(username, request.form.get("can_fetch") == "true")
             return jsonify({"status": "success"})
@@ -1051,12 +1095,16 @@ def admin_settings():
             "PYPROXY_RESET_URL": f.get("pyproxy_reset_url", "").strip(),
             "PIAPROXY_RESET_URL": f.get("piaproxy_reset_url", "").strip(),
             "FORCE_FETCH_FOR_USERS": f.get("force_fetch_for_users", "FALSE"),
-            "911_HOST": f.get("911_host", "eu.911proxy.net"),
-            "911_PORT": f.get("911_port", "2600"),
-            "911_PASS": f.get("911_pass", "Yys4mlDvA4zw3pLj"),
-            "911_USER_PREFIX": f.get("911_user_prefix", "big6qogckbui")
+            "911_HOST": f.get("911_host"),
+            "911_PORT": f.get("911_port"),
+            "911_PASS": f.get("911_pass"),
+            "911_USER_PREFIX": f.get("911_user_prefix")
         }
         for k, v in upd.items():
+            if v is None:
+                continue  # field not on the form: keep the value stored in Supabase
+            if k in ("911_PASS", "SCAMALYTICS_API_KEY") and str(v).strip() == "":
+                continue  # blank secret field = keep current secret
             update_setting(k, str(v))
             time.sleep(0.1)
         
@@ -1078,19 +1126,213 @@ def admin_announcement():
     return redirect(url_for("admin"))
 
 
-@app.route("/delete-used-ip/<ip>")
+@app.route("/delete-used-ip/<ip>", methods=["POST"])
 @admin_required
 def delete_used_ip_route(ip):
     delete_used_ip(ip)
     return redirect(url_for("admin"))
 
-# --- INITIAL SETUP ROUTE (VISIT ONCE THEN DELETE) ---
-@app.route('/setup-initial-admin-9988')
-def setup_admin():
-    from db_util import add_user
-    success = add_user("Boss", "ADMIN123", role="admin", can_fetch=True)
-    if success: return "Admin created! DELETE THIS ROUTE."
-    return "Failed to create admin."
+# =====================================================================
+# --- PUBLIC JSON API (v1) --- authenticated with an API key
+# Send the key as header:  X-API-Key: vpx_...
+# (or  Authorization: Bearer vpx_...)
+# =====================================================================
+GUEST_DAILY_LIMIT = 150
+
+def get_daily_limit(user):
+    """Same limits as the web checker: admins unlimited, per-user api_limit, guests 150."""
+    if user.is_admin:
+        return None
+    limits = []
+    if user.api_limit:
+        try: limits.append(int(user.api_limit))
+        except (TypeError, ValueError): pass
+    if user.is_guest:
+        limits.append(GUEST_DAILY_LIMIT)
+    return min(limits) if limits else None
+
+def api_error(message, status=400, code="bad_request"):
+    return jsonify({"status": "error", "code": code, "message": message}), status
+
+def api_key_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        key = request.headers.get("X-API-Key", "").strip()
+        if not key:
+            auth = request.headers.get("Authorization", "")
+            if auth.lower().startswith("bearer "):
+                key = auth[7:].strip()
+        if not key:
+            return api_error("Missing API key.", 401, "unauthorized")
+        user_data = get_user_by_api_key(key)
+        if not user_data:
+            return api_error("Invalid API key.", 401, "unauthorized")
+        request.api_user = User(
+            id=user_data['id'], username=user_data['username'],
+            password=None, role=user_data['role'],
+            can_fetch=user_data.get('can_fetch', False),
+            api_limit=user_data.get('api_limit')
+        )
+        return f(*args, **kwargs)
+    return decorated
+
+def run_proxy_check(proxies_raw, settings, username, daily_limit, target_good=2, strict=True):
+    """Same checking flow as the web form, returned as plain dicts."""
+    api_credentials = parse_api_credentials(settings)
+    fraud_level = settings["FRAUD_SCORE_LEVEL"]
+
+    used_ip_set = {str(r['IP']).strip() for r in get_all_used_ips() if r.get('IP')}
+    bad_ip_set = set()
+    for r in get_bad_proxies_list():
+        if r.get('ip'): bad_ip_set.add(str(r['ip']).strip())
+        elif r.get('proxy'):
+            local_ip = extract_ip_local(r['proxy'])
+            if local_ip: bad_ip_set.add(local_ip)
+
+    apply_performance_settings(settings)
+    if daily_limit:
+        remaining = max(0, daily_limit - get_daily_api_usage_for_user(username))
+        proxies_raw = proxies_raw[:remaining]
+
+    good, all_results = [], []
+    stats = {"used": 0, "bad": 0, "api": 0, "unstable": 0, "error": 0}
+    batch_size = settings["MAX_WORKERS"]
+    with ThreadPoolExecutor(max_workers=batch_size) as executor:
+        for i in range(0, len(proxies_raw), batch_size):
+            if len(good) >= target_good: break
+            batch = proxies_raw[i:i + batch_size]
+            futures = {executor.submit(single_check_proxy_detailed, p, fraud_level, api_credentials,
+                                       used_ip_set, bad_ip_set, is_strict_mode=strict): p for p in batch}
+            for fut in as_completed(futures):
+                res = fut.result()
+                res["input"] = futures[fut]
+                st = res["status"]
+                if st == "used_cache": stats["used"] += 1
+                elif st == "bad_cache": stats["bad"] += 1
+                elif st == "unstable_ip": stats["unstable"] += 1
+                elif st in ("success", "bad_score"): stats["api"] += 1
+                else: stats["error"] += 1
+                all_results.append(res)
+                if res.get("proxy") and res["ip"] not in {g["ip"] for g in good}:
+                    good.append(res)
+
+    try: add_recent_checks(username, good)   # shows up in Done Checks / My Account
+    except Exception: pass
+    try: add_api_usage_log(username, get_user_ip(), len(proxies_raw), stats["api"], len(good))
+    except Exception: pass
+    return good, all_results, stats, len(proxies_raw)
+
+
+# --- API DASHBOARD: each user manages their own key and reads the docs ---
+@app.route("/api-dashboard", methods=["GET", "POST"])
+@login_required
+def api_dashboard():
+    new_key = None
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "generate":
+            new_key = "vpx_" + secrets.token_urlsafe(32)
+            if not set_user_api_key_hash(current_user.username, hashlib.sha256(new_key.encode()).hexdigest()):
+                new_key = None
+                flash("Could not create an API key. Try again.", "danger")
+            else:
+                add_log_entry("INFO", f"API key created by {current_user.username}", ip=get_user_ip())
+        elif action == "revoke":
+            set_user_api_key_hash(current_user.username, None)
+            add_log_entry("INFO", f"API key revoked by {current_user.username}", ip=get_user_ip())
+            flash("Your API key was revoked.", "warning")
+            return redirect(url_for("api_dashboard"))
+
+    user_row = get_user_by_username(current_user.username) or {}
+    settings = get_app_settings()
+    resp = make_response(render_template(
+        "api_dashboard.html",
+        has_key=bool(user_row.get("api_key_hash")),
+        new_key=new_key,
+        usage_today=get_daily_api_usage_for_user(current_user.username),
+        daily_limit=get_daily_limit(current_user),
+        max_paste=settings["MAX_PASTE"],
+        base_url=request.host_url.rstrip("/"),
+    ))
+    resp.headers["Cache-Control"] = "no-store"   # never cache a page showing a key
+    return resp
+
+@app.route("/api/v1/me", methods=["GET"])
+@api_key_required
+def api_v1_me():
+    u = request.api_user
+    used_today = get_daily_api_usage_for_user(u.username)
+    return jsonify({
+        "status": "success",
+        "user": {"username": u.username, "role": u.role},
+        "usage_today": used_today,
+        "daily_limit": get_daily_limit(u)
+    })
+
+@app.route("/api/v1/check", methods=["POST"])
+@api_key_required
+def api_v1_check():
+    """
+    Body (JSON): {"proxies": ["host:port:user:pass", ...],
+                  "target_good": 2,   # optional, stop after this many good (1-20)
+                  "strict": true,     # optional, admin only may set false
+                  "verbose": false}   # optional, include every result
+    """
+    u = request.api_user
+    settings = get_app_settings()
+    if str(settings.get("SYSTEM_PAUSED", "FALSE")).upper() == "TRUE" and not u.is_admin:
+        return api_error("System under maintenance.", 503, "paused")
+
+    data = request.get_json(silent=True) or {}
+    proxies = data.get("proxies")
+    if isinstance(proxies, str):
+        proxies = proxies.splitlines()
+    if not isinstance(proxies, list) or not proxies:
+        return api_error("'proxies' must be a non-empty list of host:port:user:pass strings.")
+
+    max_paste = settings["MAX_PASTE"]
+    cleaned = [str(p).strip() for p in proxies[:max_paste]]
+    valid = [p for p in cleaned if validate_proxy_format(p)]
+    invalid = [p for p in cleaned if not validate_proxy_format(p)]
+    if not valid:
+        return api_error("No valid proxies (format host:port:user:pass).")
+
+    daily_limit = get_daily_limit(u)
+    if daily_limit and get_daily_api_usage_for_user(u.username) >= daily_limit:
+        return api_error("Daily limit reached.", 429, "rate_limited")
+
+    try: target_good = max(1, min(int(data.get("target_good", 2)), 20))
+    except (TypeError, ValueError): target_good = 2
+    strict = True if not u.is_admin else bool(data.get("strict", True))
+
+    good, all_results, stats, checked = run_proxy_check(valid, settings, u.username, daily_limit, target_good, strict)
+
+    def shape(r):
+        return {"proxy": r.get("input"), "ip": r.get("ip"), "status": r.get("status"),
+                "score": r.get("score"), "geo": r.get("geo", {})}
+
+    body = {
+        "status": "success",
+        "good": [shape(r) for r in good],
+        "stats": {**stats, "submitted": len(proxies), "checked": checked,
+                  "invalid_format": len(invalid), "truncated_to": max_paste},
+    }
+    if data.get("verbose"):
+        body["results"] = [shape(r) for r in all_results]
+    return jsonify(body)
+
+@app.route("/api/v1/mark-used", methods=["POST"])
+@api_key_required
+def api_v1_mark_used():
+    """Body (JSON): {"proxy": "host:port:user:pass", "ip": "1.2.3.4"}"""
+    data = request.get_json(silent=True) or {}
+    proxy, ip = data.get("proxy"), data.get("ip")
+    if not proxy or not ip or not validate_proxy_format(proxy):
+        return api_error("'proxy' (host:port:user:pass) and 'ip' are required.")
+    if add_used_ip(ip, proxy, username=request.api_user.username):
+        add_log_entry("INFO", f"Used via API: {ip}", ip=get_user_ip())
+        return jsonify({"status": "success"})
+    return api_error("Could not save.", 500, "server_error")
 
 @app.errorhandler(404)
 def page_not_found(e): return render_template('error.html', error='Page not found.'), 404
