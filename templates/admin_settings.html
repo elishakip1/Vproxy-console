@@ -103,6 +103,11 @@
                                     <input type="number" class="form-control" name="max_paste" value="{{ settings.MAX_PASTE }}">
                                 </div>
                                 <div class="mb-3">
+                                    <label class="form-label">Stop After Good Proxies (cutoff)</label>
+                                    <input type="number" min="0" max="100" class="form-control" name="stop_after_good" value="{{ settings.STOP_AFTER_GOOD if settings.STOP_AFTER_GOOD is not none else 2 }}">
+                                    <div class="form-text">The checker stops once it finds this many good proxies. 0 = check every proxy (slower, uses more Scamalytics credits). Also the API default.</div>
+                                </div>
+                                <div class="mb-3">
                                     <label class="form-label">Max Fraud Score (0-100)</label>
                                     <input type="number" class="form-control" name="fraud_score_level" value="{{ settings.FRAUD_SCORE_LEVEL }}">
                                 </div>
@@ -160,6 +165,7 @@
                                     <div class="col-md-6 mb-3">
                                         <label class="form-label">Request Timeout (seconds)</label>
                                         <input type="number" step="0.1" class="form-control" name="request_timeout" value="{{ settings.REQUEST_TIMEOUT }}">
+                                        <div class="form-text">IP checks use this minus 1 second. 4–5 suits residential proxies.</div>
                                     </div>
                                     <div class="col-md-6 mb-3">
                                         <label class="form-label">Delay Min (seconds)</label>
@@ -172,10 +178,12 @@
                                     <div class="col-md-6 mb-3">
                                         <label class="form-label">IP Stable Checks</label>
                                         <input type="number" class="form-control" name="ip_stable_checks" value="{{ settings.IP_STABLE_CHECKS }}">
+                                        <div class="form-text">How many times the IP must match. Minimum 2 is enforced.</div>
                                     </div>
                                     <div class="col-md-6 mb-3">
                                         <label class="form-label">IP Stable Attempts</label>
                                         <input type="number" class="form-control" name="ip_stable_attempts" value="{{ settings.IP_STABLE_ATTEMPTS }}">
+                                        <div class="form-text">Total tries allowed. Always at least Stable Checks + 1.</div>
                                     </div>
                                     <div class="col-md-6 mb-3">
                                         <label class="form-label">IP Stable Delay Min (seconds)</label>

@@ -153,7 +153,7 @@ Authorization: Bearer vpx_your_key</pre>
                     <thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead>
                     <tbody>
                         <tr><td><code>proxies</code></td><td>array of strings</td><td>Required. Up to {{ max_paste }} are checked; extra are ignored.</td></tr>
-                        <tr><td><code>target_good</code></td><td>int</td><td>Optional, 1–20, default 2.</td></tr>
+                        <tr><td><code>target_good</code></td><td>int</td><td>Optional, 0–100. Stop after this many good proxies. 0 = check every proxy. Default {{ stop_after }}.</td></tr>
                         <tr><td><code>max_score</code></td><td>int</td><td>Optional, 0–100. Reject proxies scoring above this. Defaults to your saved score ({{ my_max_score if my_max_score is not none else default_score }}).</td></tr>
                         <tr><td><code>verbose</code></td><td>bool</td><td>Optional. Also return every checked proxy in <code>results</code>.</td></tr>
                         {% if current_user.is_admin %}<tr><td><code>strict</code></td><td>bool</td><td>Admins only. Default true.</td></tr>{% endif %}

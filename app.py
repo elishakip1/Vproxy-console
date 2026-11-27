@@ -148,7 +148,8 @@ DEFAULT_SETTINGS = {
     "IP_STABLE_ATTEMPTS": 2,
     "IP_STABLE_DELAY_MIN": 0.0,
     "IP_STABLE_DELAY_MAX": 0.1,
-    "EVENTS_JSON": "[]"
+    "EVENTS_JSON": "[]",
+    "STOP_AFTER_GOOD": 2       # web checker stops after this many good proxies; 0 = check every proxy
 }
 
 _SETTINGS_CACHE = None
@@ -436,11 +437,20 @@ class KnownIPs:
             self.cache[ip] = bool(self.lookup(ip))
         return self.cache[ip]
 
+def get_stop_after(settings):
+    """Admin cutoff: stop after N good proxies (0 = check all). Defaults to 2."""
+    try:
+        return max(0, min(int(float(settings.get("STOP_AFTER_GOOD", 2))), 100))
+    except (TypeError, ValueError):
+        return 2
+
 def check_until_good(proxies, settings, fraud_level, credentials, strict=True, target_good=2,
                      bad_log_level=None, require_low_risk=True):
     """Checks proxies in parallel and returns as soon as `target_good` unique good ones are found.
     Unstarted checks are cancelled; in-flight ones skip the Scamalytics call."""
     import threading
+    if not target_good or target_good <= 0:
+        target_good = max(1, len(proxies))   # 0 = no cutoff, check every proxy
     stop = threading.Event()
     # IP checks run fully parallel (free). Scamalytics calls (paid) run a few at a time,
     # so once enough good proxies are found the rest never spend a credit.
@@ -783,7 +793,7 @@ def index():
         
         good_proxy_results = []
         stats = {"used": 0, "bad": 0, "api": 0, "unstable": 0}
-        target_good = 2
+        target_good = get_stop_after(settings)   # admin cutoff (0 = check all)
         
         if current_user.is_guest:
             daily_usage = get_daily_api_usage_for_user(current_user.username)
@@ -1162,6 +1172,7 @@ def admin_settings():
             "MAX_PASTE": f.get("max_paste"),
             "FRAUD_SCORE_LEVEL": f.get("fraud_score_level"),
             "MAX_WORKERS": f.get("max_workers"),
+            "STOP_AFTER_GOOD": f.get("stop_after_good"),
             "REQUEST_TIMEOUT": f.get("request_timeout"),
             "MIN_DELAY": f.get("min_delay"),
             "MAX_DELAY": f.get("max_delay"),
@@ -1347,6 +1358,7 @@ def api_dashboard():
         key_last_used=fmt_api_time(user_row.get("api_key_last_used")),
         my_max_score=parse_max_score(user_row.get("api_max_score")),
         default_score=settings["FRAUD_SCORE_LEVEL"],
+        stop_after=get_stop_after(settings),
         usage_today=get_daily_api_usage_for_user(current_user.username),
         daily_limit=get_daily_limit(current_user),
         max_paste=settings["MAX_PASTE"],
@@ -1374,7 +1386,7 @@ def api_v1_me():
 def api_v1_check():
     """
     Body (JSON): {"proxies": ["host:port:user:pass", ...],
-                  "target_good": 2,   # optional, stop after this many good (1-20)
+                  "target_good": 2,   # optional, stop after this many good (1-100), 0 = check all
                   "strict": true,     # optional, admin only may set false
                   "verbose": false}   # optional, include every result
     """
@@ -1401,8 +1413,9 @@ def api_v1_check():
     if daily_limit and get_daily_api_usage_for_user(u.username) >= daily_limit:
         return api_error("Daily limit reached.", 429, "rate_limited")
 
-    try: target_good = max(1, min(int(data.get("target_good", 2)), 20))
-    except (TypeError, ValueError): target_good = 2
+    # target_good: stop after this many good (1-100), 0 = check every proxy. Default = admin cutoff.
+    try: target_good = max(0, min(int(data.get("target_good", get_stop_after(settings))), 100))
+    except (TypeError, ValueError): target_good = get_stop_after(settings)
     strict = True if not u.is_admin else bool(data.get("strict", True))
 
     # Score limit: this request's max_score, else the user's saved one, else the system default.
