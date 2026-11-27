@@ -826,5 +826,28 @@
         });
     </script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Show "Checking..." and lock the button so a check can't be sent twice.
+        (function () {
+            const form = document.getElementById('proxyFormElement');
+            const btn = document.getElementById('submitBtn');
+            if (!form || !btn) return;
+            const idleHtml = btn.innerHTML;
+            form.addEventListener('submit', function (e) {
+                if (form.dataset.checking === '1') { e.preventDefault(); return; }
+                form.dataset.checking = '1';
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Checking...';
+            });
+            // Reset if the user comes back with the browser's Back button.
+            window.addEventListener('pageshow', function () {
+                form.dataset.checking = '';
+                btn.innerHTML = idleHtml;
+                const ta = document.getElementById('proxytext');
+                if (ta && typeof updateProxyCounter === 'function' && !ta.readOnly) updateProxyCounter(ta);
+                else btn.disabled = false;
+            });
+        })();
+    </script>
 </body>
 </html>
