@@ -55,8 +55,17 @@
                         <button class="btn btn-sm btn-primary" onclick="copyText('newKey', this)">Copy</button>
                     </div>
                 {% elif has_key %}
-                    <p class="mb-3"><span class="badge bg-success">Active</span>
-                    <span class="text-muted small ms-1">Key starts with <code>vpx_</code>. Lost it? Create a new one.</span></p>
+                    <div class="border rounded p-3 mb-3 bg-light">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="key-box">{{ key_hint if key_hint else "vpx_••••••••" }}</span>
+                            <span class="badge bg-success">Active</span>
+                        </div>
+                        <div class="small text-muted">
+                            Created: <strong>{{ key_created if key_created else "before key details were tracked" }}</strong><br>
+                            Last used: <strong>{{ key_last_used if key_last_used else "not used yet" }}</strong>
+                        </div>
+                    </div>
+                    <p class="small text-muted mb-3">The full key is only shown once. Lost it? Create a new one.</p>
                 {% else %}
                     <p class="text-muted">You don't have a key yet.</p>
                 {% endif %}
@@ -83,6 +92,20 @@
                 <hr>
                 <div class="small text-muted">Max proxies per request: <strong>{{ max_paste }}</strong><br>
                 Role: <strong>{{ current_user.role }}</strong></div>
+            </div>
+
+            <div class="card p-4 mb-4">
+                <h6 class="text-muted mb-1">🎯 Your proxy score (API only)</h6>
+                <p class="small text-muted">Proxies with a fraud score above this are rejected. Lower is cleaner. The web checker keeps using the default.</p>
+                <form method="POST" class="d-flex gap-2 align-items-center">
+                    <input type="number" name="max_score" min="0" max="100" step="1" class="form-control form-control-sm" style="max-width:110px"
+                           value="{{ my_max_score if my_max_score is not none else '' }}" placeholder="{{ default_score }}">
+                    <button name="action" value="save_score" class="btn btn-primary btn-sm">Save</button>
+                    {% if my_max_score is not none %}<button name="action" value="reset_score" class="btn btn-outline-secondary btn-sm">Use default</button>{% endif %}
+                </form>
+                <div class="small mt-2">Now using: <strong>{{ my_max_score if my_max_score is not none else default_score }}</strong>
+                    <span class="text-muted">({{ "yours" if my_max_score is not none else "default" }})</span></div>
+                <div class="small text-muted mt-1">You can also send <code>max_score</code> in a single request.</div>
             </div>
 
             <div class="card p-4 toc">
@@ -117,7 +140,9 @@ Authorization: Bearer vpx_your_key</pre>
   "status": "success",
   "user": {"username": "{{ current_user.username }}", "role": "{{ current_user.role }}"},
   "usage_today": {{ usage_today }},
-  "daily_limit": {{ daily_limit if daily_limit else "null" }}
+  "daily_limit": {{ daily_limit if daily_limit else "null" }},
+  "max_score": {{ my_max_score if my_max_score is not none else default_score }},
+  "max_score_source": "{{ "yours" if my_max_score is not none else "default" }}"
 }</pre>
             </div>
 
@@ -129,6 +154,7 @@ Authorization: Bearer vpx_your_key</pre>
                     <tbody>
                         <tr><td><code>proxies</code></td><td>array of strings</td><td>Required. Up to {{ max_paste }} are checked; extra are ignored.</td></tr>
                         <tr><td><code>target_good</code></td><td>int</td><td>Optional, 1–20, default 2.</td></tr>
+                        <tr><td><code>max_score</code></td><td>int</td><td>Optional, 0–100. Reject proxies scoring above this. Defaults to your saved score ({{ my_max_score if my_max_score is not none else default_score }}).</td></tr>
                         <tr><td><code>verbose</code></td><td>bool</td><td>Optional. Also return every checked proxy in <code>results</code>.</td></tr>
                         {% if current_user.is_admin %}<tr><td><code>strict</code></td><td>bool</td><td>Admins only. Default true.</td></tr>{% endif %}
                     </tbody>
@@ -136,7 +162,7 @@ Authorization: Bearer vpx_your_key</pre>
                 <pre><button class="btn btn-sm btn-light copy-btn" onclick="copyPre(this)">Copy</button>curl -X POST {{ base_url }}/api/v1/check \
   -H "X-API-Key: vpx_your_key" \
   -H "Content-Type: application/json" \
-  -d '{"proxies": ["1.2.3.4:8000:user:pass", "5.6.7.8:8000:user:pass"], "target_good": 2}'</pre>
+  -d '{"proxies": ["1.2.3.4:8000:user:pass", "5.6.7.8:8000:user:pass"], "target_good": 2, "max_score": 10}'</pre>
                 <p class="mb-1">Response</p>
                 <pre>{
   "status": "success",
@@ -145,7 +171,8 @@ Authorization: Bearer vpx_your_key</pre>
      "geo": {"country_code": "US", "state": "Washington", "city": "Seattle", "postcode": "98101"}}
   ],
   "stats": {"submitted": 2, "checked": 2, "api": 2, "used": 0, "bad": 0,
-            "unstable": 0, "error": 0, "invalid_format": 0, "truncated_to": {{ max_paste }}}
+            "unstable": 0, "error": 0, "invalid_format": 0, "truncated_to": {{ max_paste }}},
+  "max_score": 10
 }</pre>
                 <p class="small text-muted mb-0">Result statuses: <code>success</code>, <code>bad_score</code>, <code>used_cache</code>, <code>bad_cache</code>, <code>unstable_ip</code>, <code>error</code>. Checks take a few seconds per proxy, so smaller batches return faster.</p>
             </div>

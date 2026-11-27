@@ -66,14 +66,41 @@ def get_user_by_api_key(api_key):
         logger.error(f"Error looking up API key: {e}")
         return None
 
-def set_user_api_key_hash(username, key_hash):
-    """Store (or clear, with None) the SHA-256 hash of a user's API key."""
+def set_user_api_key_hash(username, key_hash, hint=None):
+    """Store (or clear, with None) the SHA-256 hash of a user's API key.
+    Also saves a short hint (vpx_ab12...wxyz) and creation time when those columns exist."""
     if not supabase: return False
+    extra = {"api_key_hint": hint if key_hash else None,
+             "api_key_created_at": datetime.utcnow().isoformat() + "Z" if key_hash else None,
+             "api_key_last_used": None}
+    try:
+        supabase.table('users').update({"api_key_hash": key_hash, **extra}).eq("username", username).execute()
+        return True
+    except Exception as e:
+        logger.warning(f"API key extra columns missing, saving hash only: {e}")
     try:
         supabase.table('users').update({"api_key_hash": key_hash}).eq("username", username).execute()
         return True
     except Exception as e:
         logger.error(f"Error setting API key: {e}")
+        return False
+
+def touch_api_key_last_used(username):
+    """Best effort: record when the key was last used (needs api_key_last_used column)."""
+    if not supabase: return
+    try:
+        supabase.table('users').update({"api_key_last_used": datetime.utcnow().isoformat() + "Z"}).eq("username", username).execute()
+    except Exception:
+        pass
+
+def set_user_api_max_score(username, max_score):
+    """Save the user's preferred max fraud score for API checks (None = system default)."""
+    if not supabase: return False
+    try:
+        supabase.table('users').update({"api_max_score": max_score}).eq("username", username).execute()
+        return True
+    except Exception as e:
+        logger.error(f"Error saving api_max_score (run the SQL?): {e}")
         return False
 
 def add_user(username, password, role="user", can_fetch=False, api_limit=None):

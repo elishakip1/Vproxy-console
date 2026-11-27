@@ -40,7 +40,8 @@ from db_util import (
     get_all_users, add_user, delete_user, update_user_fetch_permission, update_user_role, update_user_api_limit,
     add_recent_checks, get_pending_checks, mark_recent_check_copied,
     update_username, update_password,
-    get_user_by_id, get_user_by_username, get_user_by_api_key, set_user_api_key_hash
+    get_user_by_id, get_user_by_username, get_user_by_api_key, set_user_api_key_hash,
+    touch_api_key_last_used, set_user_api_max_score
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', stream=sys.stdout)
@@ -435,7 +436,8 @@ class KnownIPs:
             self.cache[ip] = bool(self.lookup(ip))
         return self.cache[ip]
 
-def check_until_good(proxies, settings, fraud_level, credentials, strict=True, target_good=2):
+def check_until_good(proxies, settings, fraud_level, credentials, strict=True, target_good=2,
+                     bad_log_level=None, require_low_risk=True):
     """Checks proxies in parallel and returns as soon as `target_good` unique good ones are found.
     Unstarted checks are cancelled; in-flight ones skip the Scamalytics call."""
     import threading
@@ -453,7 +455,8 @@ def check_until_good(proxies, settings, fraud_level, credentials, strict=True, t
     executor = ThreadPoolExecutor(max_workers=workers)
     try:
         futures = {executor.submit(single_check_proxy_detailed, p, fraud_level, credentials,
-                                   used_ips, bad_ips, is_strict_mode=strict, stop_event=stop): p for p in proxies}
+                                   used_ips, bad_ips, is_strict_mode=strict, stop_event=stop,
+                                   bad_log_level=bad_log_level, require_low_risk=require_low_risk): p for p in proxies}
         for fut in as_completed(futures):
             res = fut.result()
             res["input"] = futures[fut]
@@ -476,7 +479,10 @@ def check_until_good(proxies, settings, fraud_level, credentials, strict=True, t
         executor.shutdown(wait=False, cancel_futures=True)
     return good, all_results, stats
 
-def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list, used_ip_set, bad_ip_set, is_strict_mode=False, stop_event=None):
+def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list, used_ip_set, bad_ip_set, is_strict_mode=False, stop_event=None,
+                                bad_log_level=None, require_low_risk=True):
+    # bad_log_level: score above which an IP goes on the shared bad list (system level, not a user's own preference)
+    if bad_log_level is None: bad_log_level = fraud_score_level
     res = {"proxy": None, "ip": None, "credits": {}, "geo": {}, "score": None, 
            "status": "error", "used": False, "cached_bad": False, "unstable": False}
     
@@ -555,7 +561,7 @@ def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list,
                 passed = False
             
             if passed and is_strict_mode:
-                if scam.get("scamalytics_risk") != "low": passed = False
+                if require_low_risk and scam.get("scamalytics_risk") != "low": passed = False
                 if scam.get("is_blacklisted_external") is True: passed = False
                 pf = scam.get("scamalytics_proxy", {})
                 for f in ["is_datacenter", "is_vpn", "is_apple_icloud_private_relay", "is_amazon_aws", "is_google"]:
@@ -570,10 +576,11 @@ def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list,
                         if len(stop_event.good_ips) >= stop_event.target:
                             stop_event.set()   # tell waiting checks to skip Scamalytics right away
             elif score_int > fraud_score_level:
-                try:
-                    log_bad_proxy(proxy_line, ip, score_int)
-                except:
-                    pass
+                if score_int > bad_log_level:
+                    try:
+                        log_bad_proxy(proxy_line, ip, score_int)
+                    except:
+                        pass
                 res["status"] = "bad_score"
         except:
             pass
@@ -1224,6 +1231,15 @@ def get_daily_limit(user):
         limits.append(GUEST_DAILY_LIMIT)
     return min(limits) if limits else None
 
+def parse_max_score(value):
+    """0-100 as int, or None when blank/invalid."""
+    if value is None or str(value).strip() == "": return None
+    try:
+        v = int(float(value))
+    except (TypeError, ValueError):
+        return None
+    return v if 0 <= v <= 100 else None
+
 def api_error(message, status=400, code="bad_request"):
     return jsonify({"status": "error", "code": code, "message": message}), status
 
@@ -1246,13 +1262,17 @@ def api_key_required(f):
             can_fetch=user_data.get('can_fetch', False),
             api_limit=user_data.get('api_limit')
         )
+        request.api_max_score = parse_max_score(user_data.get('api_max_score'))
+        touch_api_key_last_used(user_data['username'])
         return f(*args, **kwargs)
     return decorated
 
-def run_proxy_check(proxies_raw, settings, username, daily_limit, target_good=2, strict=True):
-    """Same checking flow as the web form, returned as plain dicts."""
+def run_proxy_check(proxies_raw, settings, username, daily_limit, target_good=2, strict=True, max_score=None):
+    """Same checking flow as the web form, returned as plain dicts.
+    max_score: the user's own fraud score limit (API only). None = system default."""
     api_credentials = parse_api_credentials(settings)
-    fraud_level = settings["FRAUD_SCORE_LEVEL"]
+    system_level = settings["FRAUD_SCORE_LEVEL"]
+    fraud_level = system_level if max_score is None else max_score
 
     apply_performance_settings(settings)
     if daily_limit:
@@ -1260,7 +1280,8 @@ def run_proxy_check(proxies_raw, settings, username, daily_limit, target_good=2,
         proxies_raw = proxies_raw[:remaining]
 
     good, all_results, stats = check_until_good(
-        proxies_raw, settings, fraud_level, api_credentials, strict=strict, target_good=target_good)
+        proxies_raw, settings, fraud_level, api_credentials, strict=strict, target_good=target_good,
+        bad_log_level=system_level, require_low_risk=(max_score is None))
 
     try: add_recent_checks(username, good)   # shows up in Done Checks / My Account
     except Exception: pass
@@ -1268,6 +1289,17 @@ def run_proxy_check(proxies_raw, settings, username, daily_limit, target_good=2,
     except Exception: pass
     return good, all_results, stats, len(proxies_raw)
 
+
+def fmt_api_time(value):
+    """ISO timestamp -> 'Nov 27, 2026 20:15 EAT'; None stays None."""
+    if not value: return None
+    try:
+        dt = datetime.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if dt.tzinfo is None: dt = dt.replace(tzinfo=datetime.timezone.utc)
+        eat = datetime.timezone(datetime.timedelta(hours=3))
+        return dt.astimezone(eat).strftime("%b %d, %Y %H:%M EAT")
+    except Exception:
+        return None
 
 # --- API DASHBOARD: each user manages their own key and reads the docs ---
 @app.route("/api-dashboard", methods=["GET", "POST"])
@@ -1278,7 +1310,8 @@ def api_dashboard():
         action = request.form.get("action")
         if action == "generate":
             new_key = "vpx_" + secrets.token_urlsafe(32)
-            if not set_user_api_key_hash(current_user.username, hashlib.sha256(new_key.encode()).hexdigest()):
+            hint = new_key[:8] + "…" + new_key[-4:]
+            if not set_user_api_key_hash(current_user.username, hashlib.sha256(new_key.encode()).hexdigest(), hint):
                 new_key = None
                 flash("Could not create an API key. Try again.", "danger")
             else:
@@ -1288,6 +1321,20 @@ def api_dashboard():
             add_log_entry("INFO", f"API key revoked by {current_user.username}", ip=get_user_ip())
             flash("Your API key was revoked.", "warning")
             return redirect(url_for("api_dashboard"))
+        elif action == "save_score":
+            raw = request.form.get("max_score", "")
+            val = parse_max_score(raw)
+            if str(raw).strip() and val is None:
+                flash("Score must be a whole number from 0 to 100.", "danger")
+            elif set_user_api_max_score(current_user.username, val):
+                flash("Saved. API checks now use " + (f"a max score of {val}." if val is not None else "the default score."), "success")
+            else:
+                flash("Could not save the score. Ask the admin to run the latest Supabase SQL.", "danger")
+            return redirect(url_for("api_dashboard"))
+        elif action == "reset_score":
+            set_user_api_max_score(current_user.username, None)
+            flash("API checks now use the default score.", "success")
+            return redirect(url_for("api_dashboard"))
 
     user_row = get_user_by_username(current_user.username) or {}
     settings = get_app_settings()
@@ -1295,6 +1342,11 @@ def api_dashboard():
         "api_dashboard.html",
         has_key=bool(user_row.get("api_key_hash")),
         new_key=new_key,
+        key_hint=user_row.get("api_key_hint"),
+        key_created=fmt_api_time(user_row.get("api_key_created_at")),
+        key_last_used=fmt_api_time(user_row.get("api_key_last_used")),
+        my_max_score=parse_max_score(user_row.get("api_max_score")),
+        default_score=settings["FRAUD_SCORE_LEVEL"],
         usage_today=get_daily_api_usage_for_user(current_user.username),
         daily_limit=get_daily_limit(current_user),
         max_paste=settings["MAX_PASTE"],
@@ -1312,7 +1364,9 @@ def api_v1_me():
         "status": "success",
         "user": {"username": u.username, "role": u.role},
         "usage_today": used_today,
-        "daily_limit": get_daily_limit(u)
+        "daily_limit": get_daily_limit(u),
+        "max_score": request.api_max_score if request.api_max_score is not None else get_app_settings()["FRAUD_SCORE_LEVEL"],
+        "max_score_source": "yours" if request.api_max_score is not None else "default"
     })
 
 @app.route("/api/v1/check", methods=["POST"])
@@ -1351,7 +1405,15 @@ def api_v1_check():
     except (TypeError, ValueError): target_good = 2
     strict = True if not u.is_admin else bool(data.get("strict", True))
 
-    good, all_results, stats, checked = run_proxy_check(valid, settings, u.username, daily_limit, target_good, strict)
+    # Score limit: this request's max_score, else the user's saved one, else the system default.
+    if "max_score" in data and data.get("max_score") is not None:
+        max_score = parse_max_score(data.get("max_score"))
+        if max_score is None:
+            return api_error("'max_score' must be a whole number from 0 to 100.")
+    else:
+        max_score = request.api_max_score
+
+    good, all_results, stats, checked = run_proxy_check(valid, settings, u.username, daily_limit, target_good, strict, max_score)
 
     def shape(r):
         return {"proxy": r.get("input"), "ip": r.get("ip"), "status": r.get("status"),
@@ -1362,6 +1424,7 @@ def api_v1_check():
         "good": [shape(r) for r in good],
         "stats": {**stats, "submitted": len(proxies), "checked": len(all_results),
                   "invalid_format": len(invalid), "truncated_to": max_paste},
+        "max_score": max_score if max_score is not None else settings["FRAUD_SCORE_LEVEL"],
     }
     if data.get("verbose"):
         body["results"] = [shape(r) for r in all_results]
