@@ -424,8 +424,8 @@ def get_random_proxies_from_pool(limit=100):
         return []
 
 def get_pool_stats():
-    if not supabase: return {"total": 0, "pyproxy": 0, "piaproxy": 0}
-    stats = {"total": 0, "pyproxy": 0, "piaproxy": 0}
+    if not supabase: return {"total": 0}
+    stats = {"total": 0}
     def safe_count(query):
         try:
             res = query.limit(1).execute()
@@ -435,15 +435,15 @@ def get_pool_stats():
         except: return 0
     try:
         stats["total"] = safe_count(supabase.table('proxy_pool').select("id", count="exact"))
-        stats["pyproxy"] = safe_count(supabase.table('proxy_pool').select("id", count="exact").eq('provider', 'pyproxy'))
-        stats["piaproxy"] = safe_count(supabase.table('proxy_pool').select("id", count="exact").eq('provider', 'piaproxy'))
     except: pass
     return stats
 
-def get_pool_preview(provider, limit=50):
+def get_pool_preview(provider=None, limit=50):
     if not supabase: return []
     try:
-        res = supabase.table('proxy_pool').select("proxy, created_at").eq('provider', provider).order('created_at', desc=True).limit(limit).execute()
+        q = supabase.table('proxy_pool').select("proxy, created_at")
+        if provider: q = q.eq('provider', provider)
+        res = q.order('created_at', desc=True).limit(limit).execute()
         return res.data
     except: return []
 

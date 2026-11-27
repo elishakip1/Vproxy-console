@@ -80,124 +80,51 @@
       {% endif %}
     {% endwith %}
 
-    <div class="row mb-4 text-center">
+    <div class="row mb-4">
         <div class="col-md-4 mb-3">
-            <div class="card bg-light h-100">
+            <div class="card bg-light h-100 text-center">
                 <div class="card-body">
                     <h1 class="display-5 text-primary fw-bold">{{ counts.total }}</h1>
-                    <p class="text-muted mb-0">Total Proxies</p>
-                    <form method="POST" class="mt-2" onsubmit="return confirm('Clear ALL proxies?');">
+                    <p class="text-muted mb-0">Proxies in Pool</p>
+                    <form method="POST" class="mt-2" onsubmit="return confirm('Clear ALL proxies from the pool?');">
                         <input type="hidden" name="clear_pool" value="1">
-                        <input type="hidden" name="clear_target" value="all">
-                        <button class="btn btn-danger btn-sm w-100">Clear All</button>
+                        <button class="btn btn-danger btn-sm w-100">Clear Pool</button>
                     </form>
                 </div>
             </div>
         </div>
-        
-        <div class="col-md-4 mb-3">
-            <div class="card h-100 border-info">
+        <div class="col-md-8 mb-3">
+            <div class="card h-100">
+                <div class="card-header bg-primary text-white">📥 Add Proxies</div>
                 <div class="card-body">
-                    <h1 class="display-5 text-info fw-bold">{{ counts.pyproxy }}</h1>
-                    <p class="text-muted mb-0">PyProxy Pool</p>
-                    <div class="d-grid gap-2 mt-2">
-                        <button class="btn btn-outline-primary btn-sm" onclick="triggerReset('pyproxy')">Rotate IP</button>
-                        <form method="POST" onsubmit="return confirm('Clear ONLY PyProxies?');">
-                            <input type="hidden" name="clear_pool" value="1">
-                            <input type="hidden" name="clear_target" value="pyproxy">
-                            <button class="btn btn-outline-danger btn-sm w-100">Clear PyProxy</button>
-                        </form>
-                    </div>
+                    <form method="POST">
+                        <label class="form-label">Paste any proxies, one per line</label>
+                        <textarea name="bulk_proxies" class="form-control mb-2" rows="8" placeholder="host:port:user:pass&#10;user:pass@host:port&#10;http://user:pass@host:port"></textarea>
+                        <div class="form-text mb-2">Any provider works. Lines are converted to host:port:user:pass; invalid lines and duplicates are skipped.</div>
+                        <button type="submit" class="btn btn-success w-100">Add to Pool</button>
+                    </form>
                 </div>
             </div>
-        </div>
-
-        <div class="col-md-4 mb-3">
-            <div class="card h-100 border-warning">
-                <div class="card-body">
-                    <h1 class="display-5 text-warning fw-bold">{{ counts.piaproxy }}</h1>
-                    <p class="text-muted mb-0">PiaProxy Pool</p>
-                    <div class="d-grid gap-2 mt-2">
-                        <button class="btn btn-outline-warning btn-sm" onclick="triggerReset('piaproxy')">Rotate IP</button>
-                        <form method="POST" onsubmit="return confirm('Clear ONLY PiaProxies?');">
-                            <input type="hidden" name="clear_pool" value="1">
-                            <input type="hidden" name="clear_target" value="piaproxy">
-                            <button class="btn btn-outline-danger btn-sm w-100">Clear PiaProxy</button>
-                        </form>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="card mb-4">
-        <div class="card-header bg-primary text-white">📥 Upload Bulk Proxies</div>
-        <div class="card-body">
-            <form method="POST">
-                <div class="mb-3">
-                    <label class="form-label">Provider Tag</label>
-                    <select name="provider" class="form-select">
-                        <option value="pyproxy">PyProxy</option>
-                        <option value="piaproxy">PiaProxy</option>
-                        <option value="other">Other</option>
-                    </select>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">Paste List (Format: host:port:user:pass)</label>
-                    <textarea name="bulk_proxies" class="form-control" rows="10" placeholder="1.2.3.4:8000:user:pass..."></textarea>
-                </div>
-                <button type="submit" class="btn btn-success w-100">Add to Pool</button>
-            </form>
         </div>
     </div>
 
     <div class="card">
-        <div class="card-header">
-            <ul class="nav nav-tabs card-header-tabs" id="poolTabs" role="tablist">
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link active" id="py-tab" data-bs-toggle="tab" data-bs-target="#py-content" type="button" role="tab">PyProxy List (Last 50)</button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="pia-tab" data-bs-toggle="tab" data-bs-target="#pia-content" type="button" role="tab">PiaProxy List (Last 50)</button>
-                </li>
-            </ul>
-        </div>
+        <div class="card-header">Latest 50 Added</div>
         <div class="card-body">
-            <div class="tab-content" id="poolTabsContent">
-                <div class="tab-pane fade show active" id="py-content" role="tabpanel">
-                    <div class="table-responsive">
-                        <table class="table table-sm table-striped">
-                            <thead><tr><th>Proxy</th><th>Added At</th></tr></thead>
-                            <tbody>
-                                {% for p in preview_py %}
-                                <tr>
-                                    <td class="proxy-item">{{ p.proxy }}</td>
-                                    <td>{{ p.created_at | replace('T', ' ') | truncate(19, True, '') }}</td>
-                                </tr>
-                                {% else %}
-                                <tr><td colspan="2" class="text-center text-muted">No proxies found for PyProxy.</td></tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-                <div class="tab-pane fade" id="pia-content" role="tabpanel">
-                    <div class="table-responsive">
-                        <table class="table table-sm table-striped">
-                            <thead><tr><th>Proxy</th><th>Added At</th></tr></thead>
-                            <tbody>
-                                {% for p in preview_pia %}
-                                <tr>
-                                    <td class="proxy-item">{{ p.proxy }}</td>
-                                    <td>{{ p.created_at | replace('T', ' ') | truncate(19, True, '') }}</td>
-                                </tr>
-                                {% else %}
-                                <tr><td colspan="2" class="text-center text-muted">No proxies found for PiaProxy.</td></tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-striped">
+                    <thead><tr><th>Proxy</th><th>Added At</th></tr></thead>
+                    <tbody>
+                        {% for p in preview %}
+                        <tr>
+                            <td class="proxy-item">{{ p.proxy }}</td>
+                            <td>{{ (p.created_at or '') | replace('T', ' ') | truncate(19, True, '') }}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="2" class="text-center text-muted">The pool is empty.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
@@ -220,24 +147,6 @@
         }
     })();
 
-    async function triggerReset(provider) {
-        if(!confirm("Trigger IP Rotation for " + provider + "?")) return;
-        try {
-            let btn = event.target;
-            let originalText = btn.innerText;
-            btn.innerText = "Wait...";
-            btn.disabled = true;
-
-            let res = await fetch('/api/trigger-reset/' + provider);
-            let data = await res.json();
-            alert(data.message);
-            
-            btn.innerText = originalText;
-            btn.disabled = false;
-        } catch (e) {
-            alert("Error: " + e);
-        }
-    }
 </script>
 </body>
 </html>

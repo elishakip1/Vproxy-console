@@ -131,8 +131,6 @@ DEFAULT_SETTINGS = {
     "SYSTEM_PAUSED": "FALSE",
     "ABC_GENERATION_URL": "",
     "SX_GENERATION_URL": "",   # stored in Supabase settings
-    "PYPROXY_RESET_URL": "",
-    "PIAPROXY_RESET_URL": "",
     "PASTE_INPUT_DISABLED": "FALSE",
     "FORCE_FETCH_FOR_USERS": "FALSE",
     "SHOW_911_BTN": "TRUE",
@@ -269,6 +267,37 @@ def build_done_checks(settings, username, limit=50):
         if len(filtered) >= limit:
             break
     return filtered
+
+def normalize_proxy(line):
+    """Accepts any common proxy notation and returns host:port:user:pass
+    (or host:port for proxies without auth). Returns None if it doesn't fit.
+      host:port:user:pass | user:pass@host:port | host:port@user:pass
+      http(s)/socks5://user:pass@host:port | host:port
+    """
+    s = (line or "").strip()
+    if not s or " " in s:
+        return None
+    s = re.sub(r"^[a-zA-Z0-9]+://", "", s).rstrip("/")
+    host = port = user = pwd = None
+    if "@" in s:
+        left, right = s.rsplit("@", 1)
+        lp = left.split(":", 1); rp = right.split(":", 1)
+        if len(lp) == 2 and len(rp) == 2:
+            if rp[1].isdigit():          # user:pass@host:port
+                user, pwd, host, port = lp[0], lp[1], rp[0], rp[1]
+            elif lp[1].isdigit():        # host:port@user:pass
+                host, port, user, pwd = lp[0], lp[1], rp[0], rp[1]
+    else:
+        parts = s.split(":")
+        if len(parts) == 4:
+            host, port, user, pwd = parts
+        elif len(parts) == 2:
+            host, port = parts
+    if not host or not port or not port.isdigit() or not (0 < int(port) < 65536):
+        return None
+    if user is not None and (not user or not pwd):
+        return None
+    return f"{host}:{port}:{user}:{pwd}" if user else f"{host}:{port}"
 
 def validate_proxy_format(proxy_line):
     try:
@@ -574,38 +603,31 @@ def admin_pool():
     settings = get_app_settings()
     if request.method == 'POST':
         if 'bulk_proxies' in request.form:
-            provider = request.form.get('provider', 'manual')
-            text = request.form.get('bulk_proxies', '')
-            lines = [l.strip() for l in text.splitlines() if validate_proxy_format(l)]
-            if lines:
-                count = add_bulk_proxies(lines, provider)
-                flash(f"Added {count} proxies to {provider}.", "success")
+            raw = [l for l in request.form.get('bulk_proxies', '').splitlines() if l.strip()]
+            normalized = []
+            seen = set()
+            for l in raw:
+                p = normalize_proxy(l)
+                if p and validate_proxy_format(p) and p not in seen:
+                    seen.add(p); normalized.append(p)
+            skipped = len(raw) - len(normalized)
+            if normalized:
+                count = add_bulk_proxies(normalized, "pool")
+                msg = f"Added {count} proxies to the pool."
+                if skipped: msg += f" Skipped {skipped} line(s) that were invalid, duplicated, or missing user:pass."
+                flash(msg, "success")
             else:
-                flash("No valid proxies.", "warning")
+                flash("No valid proxies. Use host:port:user:pass (user:pass@host:port also works).", "warning")
         elif 'clear_pool' in request.form:
-            target = request.form.get('clear_target', 'all')
-            if clear_proxy_pool(target):
-                flash(f"Pool cleared ({target}).", "success")
+            if clear_proxy_pool('all'):
+                flash("Pool cleared.", "success")
             else:
                 flash("Error clearing pool.", "danger")
         return redirect(url_for('admin_pool'))
     
     counts = get_pool_stats()
-    preview_py = get_pool_preview('pyproxy')
-    preview_pia = get_pool_preview('piaproxy')
-    
-    return render_template('admin_pool.html', counts=counts, settings=settings, preview_py=preview_py, preview_pia=preview_pia)
-
-@app.route('/api/trigger-reset/<provider>')
-@admin_required
-def trigger_reset(provider):
-    settings = get_app_settings()
-    target_url = settings.get("PYPROXY_RESET_URL") if provider == 'pyproxy' else settings.get("PIAPROXY_RESET_URL")
-    if not target_url: return jsonify({"status": "error", "message": "Reset URL not configured."})
-    try:
-        resp = requests.get(target_url, timeout=10)
-        return jsonify({"status": "success", "message": f"Signal Sent. Response: {resp.text}"})
-    except Exception as e: return jsonify({"status": "error", "message": str(e)})
+    preview = get_pool_preview(None)
+    return render_template('admin_pool.html', counts=counts, settings=settings, preview=preview)
 
 @app.route('/api/fetch-pool-proxies')
 @login_required
@@ -1092,8 +1114,6 @@ def admin_settings():
             "SCAMALYTICS_USERNAME": f.get("scamalytics_username", "").strip(),
             "ABC_GENERATION_URL": f.get("abc_generation_url", "").strip(),
             "SX_GENERATION_URL": f.get("sx_generation_url", "").strip(),
-            "PYPROXY_RESET_URL": f.get("pyproxy_reset_url", "").strip(),
-            "PIAPROXY_RESET_URL": f.get("piaproxy_reset_url", "").strip(),
             "FORCE_FETCH_FOR_USERS": f.get("force_fetch_for_users", "FALSE"),
             "911_HOST": f.get("911_host"),
             "911_PORT": f.get("911_port"),
