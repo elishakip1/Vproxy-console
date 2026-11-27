@@ -49,7 +49,7 @@
     }
   </style>
 </head>
-<body>
+<body data-username="{{ current_user.username }}">
 
 <nav class="sidebar" id="sidebar">
     <div class="sidebar-header">
@@ -62,9 +62,11 @@
     <ul class="sidebar-nav">
         <li><a href="{{ url_for('admin') }}" class="nav-link active">📊 Dashboard</a></li>
         <li><a href="{{ url_for('admin_pool') }}" class="nav-link">🏭 Proxy Pool</a></li>
-        <li><a href="{{ url_for('admin_users') }}" class="nav-link">👥 User Activity</a></li>
+        <li><a href="{{ url_for('admin_users') }}" class="nav-link">👥 User Management</a></li>
+        <li><a href="{{ url_for('admin_reviews') }}" class="nav-link">🗣️ Reviews</a></li>
         <li><a href="{{ url_for('admin_logs') }}" class="nav-link">📋 System Logs</a></li>
         <li><a href="{{ url_for('admin_settings') }}" class="nav-link">⚙️ Settings</a></li>
+        <li><a href="{{ url_for('api_dashboard') }}" class="nav-link">🔑 API</a></li>
         <li class="mt-5"><a href="/" class="nav-link text-warning">← Back to Checker</a></li>
         <li><a href="{{ url_for('logout') }}" class="nav-link text-danger">Logout</a></li>
     </ul>
@@ -117,7 +119,6 @@
                         <li class="list-group-item d-flex justify-content-between"><span>Total Calls Logged</span> <strong>{{ stats.total_api_calls_logged }}</strong></li>
                         <li class="list-group-item d-flex justify-content-between"><span>Credits Used</span> <strong>{{ stats.api_credits_used }}</strong></li>
                         <li class="list-group-item d-flex justify-content-between"><span>Credits Remaining</span> <strong class="text-primary">{{ stats.api_credits_remaining }}</strong></li>
-                        <li class="list-group-item d-flex justify-content-between"><span>STONES Daily Usage</span> <strong>{{ stones_daily_usage }}/150</strong></li>
                     </ul>
                 </div>
             </div>
@@ -136,25 +137,50 @@
             </div>
         </div>
 
+        <div class="col-12 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+                    <span>Latest Reviews</span>
+                    <a href="{{ url_for('admin_reviews') }}" class="btn btn-sm btn-light">View All</a>
+                </div>
+                <div class="card-body">
+                    {% for log in reviews %}
+                    <div class="mb-2">
+                        <div class="small text-muted">{{ log.Timestamp | replace('T', ' ') | truncate(19, True, '') }}</div>
+                        <div>{{ log.Message }}</div>
+                    </div>
+                    {% else %}
+                    <div class="text-muted">No feedback yet.</div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
         <div class="col-12">
             <div class="card">
-                <div class="card-header">Recent Used Proxies (Last 1000)</div>
+                <div class="card-header">Recent Used Proxies (Last 24h)</div>
                 <div class="table-responsive">
                     <table class="table table-sm table-hover mb-0">
-                        <thead><tr><th>IP</th><th>User</th><th>Date</th><th>Action</th></tr></thead>
+                        <thead><tr><th>IP</th><th>Proxy</th><th>User</th><th>Date</th><th>Action</th></tr></thead>
                         <tbody>
-                            {% for row in used_ips[:1000] %}
+                            {% for row in used_ips %}
                             <tr>
                                 <td>{{ row["IP"] }}</td>
+                                <td class="small">{{ row["Proxy"] }}</td>
                                 <td>{{ row["User"] }}</td>
                                 <td>{{ row["Date"]|string|truncate(16, True, '') }}</td>
-                                <td><a href="{{ url_for('delete_used_ip_route', ip=row['IP']) }}" class="text-danger" onclick="return confirm('Delete this record?')">Delete</a></td>
+                                <td><form method="POST" action="{{ url_for('delete_used_ip_route', ip=row['IP']) }}" class="d-inline" onsubmit="return confirm('Delete this record?')"><button type="submit" class="btn btn-link btn-sm text-danger p-0">Delete</button></form></td>
                             </tr>
                             {% else %}
-                            <tr><td colspan="4" class="text-center text-muted">No recent used proxies.</td></tr>
+                            <tr><td colspan="5" class="text-center text-muted">No recent used proxies.</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>
+                </div>
+                <div class="card-footer d-flex justify-content-between">
+                    <a class="btn btn-sm btn-outline-secondary {% if not has_prev %}disabled{% endif %}" href="{{ url_for('admin', page=page-1) }}">Previous</a>
+                    <span class="small text-muted">Page {{ page }}</span>
+                    <a class="btn btn-sm btn-outline-secondary {% if not has_next %}disabled{% endif %}" href="{{ url_for('admin', page=page+1) }}">Next</a>
                 </div>
             </div>
         </div>
@@ -166,6 +192,17 @@
     document.getElementById('sidebarToggle').addEventListener('click', function() {
         document.getElementById('sidebar').classList.toggle('active');
     });
+
+    (function() {
+        const username = document.body.dataset.username || 'default';
+        const accentKey = `accent:${username}`;
+        const accent = localStorage.getItem(accentKey);
+        if (accent) {
+            document.documentElement.style.setProperty('--bs-primary', accent);
+            const rgb = accent.replace('#', '').match(/.{1,2}/g).map(c => parseInt(c, 16)).join(',');
+            document.documentElement.style.setProperty('--bs-primary-rgb', rgb);
+        }
+    })();
 </script>
 </body>
 </html>

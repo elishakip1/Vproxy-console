@@ -35,7 +35,48 @@ def get_all_users():
         logger.error(f"Error fetching users: {e}")
         return []
 
-def add_user(username, password, role="user", can_fetch=False):
+def get_user_by_id(user_id):
+    """Fetch one user by id (used on every request, so don't load the whole table)."""
+    if not supabase: return None
+    try:
+        r = supabase.table('users').select("*").eq("id", user_id).limit(1).execute()
+        return r.data[0] if r.data else None
+    except Exception as e:
+        logger.error(f"Error fetching user {user_id}: {e}")
+        return None
+
+def get_user_by_username(username):
+    if not supabase or not username: return None
+    try:
+        r = supabase.table('users').select("*").eq("username", username).limit(1).execute()
+        return r.data[0] if r.data else None
+    except Exception as e:
+        logger.error(f"Error fetching user {username}: {e}")
+        return None
+
+def get_user_by_api_key(api_key):
+    """Look up one user by API key hash. Returns the row or None."""
+    if not supabase or not api_key: return None
+    try:
+        import hashlib
+        key_hash = hashlib.sha256(api_key.encode()).hexdigest()
+        r = supabase.table('users').select("*").eq("api_key_hash", key_hash).limit(1).execute()
+        return r.data[0] if r.data else None
+    except Exception as e:
+        logger.error(f"Error looking up API key: {e}")
+        return None
+
+def set_user_api_key_hash(username, key_hash):
+    """Store (or clear, with None) the SHA-256 hash of a user's API key."""
+    if not supabase: return False
+    try:
+        supabase.table('users').update({"api_key_hash": key_hash}).eq("username", username).execute()
+        return True
+    except Exception as e:
+        logger.error(f"Error setting API key: {e}")
+        return False
+
+def add_user(username, password, role="user", can_fetch=False, api_limit=None):
     """Add a new user (admin, user, or guest) to the system."""
     if not supabase: return False
     try:
@@ -43,7 +84,8 @@ def add_user(username, password, role="user", can_fetch=False):
             "username": username,
             "password": password,
             "role": role,
-            "can_fetch": can_fetch
+            "can_fetch": can_fetch,
+            "api_limit": api_limit
         }).execute()
         return True
     except Exception as e:
@@ -68,6 +110,47 @@ def update_user_fetch_permission(username, can_fetch):
         return True
     except Exception as e:
         logger.error(f"Error updating fetch permission: {e}")
+        return False
+
+def update_user_role(username, role):
+    """Update a user's role (admin, user, or guest)."""
+    if not supabase: return False
+    try:
+        supabase.table('users').update({"role": role}).eq("username", username).execute()
+        return True
+    except Exception as e:
+        logger.error(f"Error updating role: {e}")
+        return False
+
+def update_user_api_limit(username, api_limit):
+    """Update a user's daily API limit."""
+    if not supabase: return False
+    try:
+        supabase.table('users').update({"api_limit": api_limit}).eq("username", username).execute()
+        return True
+    except Exception as e:
+        logger.error(f"Error updating API limit: {e}")
+        return False
+
+def update_username(current_username, new_username):
+    if not supabase: return False
+    try:
+        supabase.table('users').update({"username": new_username}).eq("username", current_username).execute()
+        supabase.table('used_proxies').update({"username": new_username}).eq("username", current_username).execute()
+        supabase.table('api_usage').update({"username": new_username}).eq("username", current_username).execute()
+        supabase.table('recent_checks').update({"username": new_username}).eq("username", current_username).execute()
+        return True
+    except Exception as e:
+        logger.error(f"Error updating username: {e}")
+        return False
+
+def update_password(username, new_password):
+    if not supabase: return False
+    try:
+        supabase.table('users').update({"password": new_password}).eq("username", username).execute()
+        return True
+    except Exception as e:
+        logger.error(f"Error updating password: {e}")
         return False
 
 # --- SETTINGS ---
@@ -108,6 +191,62 @@ def add_used_ip(ip, proxy, username="Unknown"):
         logger.error(f"Error adding used IP: {e}")
         return False
 
+def add_recent_checks(username, checks):
+    if not supabase or not checks: return False
+    try:
+        rows = []
+        for item in checks:
+            proxy = item.get("proxy")
+            ip = item.get("ip")
+            if not proxy or not ip:
+                continue
+            geo = item.get("geo") or {}
+            rows.append({
+                "username": username,
+                "proxy": proxy,
+                "ip": ip,
+                "country": geo.get("country_code"),
+                "state": geo.get("state"),
+                "city": geo.get("city"),
+                "postcode": geo.get("postcode"),
+                "score": item.get("score"),
+                "copied": False
+            })
+        if not rows:
+            return False
+        supabase.table('recent_checks').insert(rows).execute()
+        return True
+    except Exception as e:
+        logger.error(f"Error adding recent checks: {e}")
+        return False
+
+def get_pending_checks(username, limit=200):
+    if not supabase: return []
+    try:
+        response = supabase.table('recent_checks').select("id, proxy, ip, country, state, city, postcode, score, created_at").eq("username", username).eq("copied", False).order("created_at", desc=True).limit(limit).execute()
+        rows = response.data or []
+        seen_ips = set()
+        unique_rows = []
+        for row in rows:
+            ip = row.get("ip")
+            if not ip or ip in seen_ips:
+                continue
+            seen_ips.add(ip)
+            unique_rows.append(row)
+        return unique_rows
+    except Exception as e:
+        logger.error(f"Error fetching pending checks: {e}")
+        return []
+
+def mark_recent_check_copied(username, proxy, ip):
+    if not supabase: return False
+    try:
+        supabase.table('recent_checks').update({"copied": True}).eq("username", username).eq("proxy", proxy).eq("ip", ip).execute()
+        return True
+    except Exception as e:
+        logger.error(f"Error marking check copied: {e}")
+        return False
+
 def delete_used_ip(ip):
     if not supabase: return False
     try:
@@ -137,6 +276,21 @@ def log_bad_proxy(proxy, ip, score):
 
         supabase.table('bad_proxies').insert({"proxy": proxy, "ip": ip, "score": score}).execute()
         return True
+    except Exception: return False
+
+def is_ip_used(ip):
+    """Single-row lookup (fast, and not capped at 1000 rows like a full-table load)."""
+    if not supabase or not ip: return False
+    try:
+        r = supabase.table('used_proxies').select("ip").eq("ip", str(ip).strip()).limit(1).execute()
+        return bool(r.data)
+    except Exception: return False
+
+def is_ip_bad(ip):
+    if not supabase or not ip: return False
+    try:
+        r = supabase.table('bad_proxies').select("ip").eq("ip", str(ip).strip()).limit(1).execute()
+        return bool(r.data)
     except Exception: return False
 
 def get_bad_proxies_list():
@@ -169,6 +323,25 @@ def clear_all_system_logs():
         return True
     except Exception: return False
 
+def clear_all_api_usage():
+    if not supabase: return False
+    try:
+        supabase.table('api_usage').delete().neq("id", 0).execute()
+        return True
+    except Exception as e:
+        logger.error(f"Error clearing api usage: {e}")
+        return False
+
+def clear_user_stats(username):
+    """Remove API usage stats for a user without deleting the user."""
+    if not supabase: return False
+    try:
+        supabase.table('api_usage').delete().eq("username", username).execute()
+        return True
+    except Exception as e:
+        logger.error(f"Error clearing stats for {username}: {e}")
+        return False
+
 # --- API USAGE & STATS ---
 
 def add_api_usage_log(username, ip, submitted_count, api_calls_count, good_proxies_count):
@@ -189,8 +362,17 @@ def add_api_usage_log(username, ip, submitted_count, api_calls_count, good_proxi
 def get_all_api_usage_logs():
     if not supabase: return []
     try:
-        response = supabase.table('api_usage').select("*").execute()
-        return response.data
+        all_rows = []
+        page_size = 1000
+        start = 0
+        while True:
+            response = supabase.table('api_usage').select("*").range(start, start + page_size - 1).execute()
+            data = response.data or []
+            all_rows.extend(data)
+            if len(data) < page_size:
+                break
+            start += page_size
+        return all_rows
     except Exception: return []
 
 def get_user_stats_summary():
@@ -205,19 +387,19 @@ def get_user_stats_summary():
 # --- DAILY API USAGE TRACKING ---
 
 def get_daily_api_usage_for_user(username):
-    """Get total API calls for a user today"""
+    """Get total API calls for a user this month"""
     if not supabase: return 0
     try:
-        today = datetime.utcnow().strftime("%Y-%m-%d")
+        month_prefix = datetime.utcnow().strftime("%Y-%m")
         response = supabase.table('api_usage').select("api_calls_count, created_at").eq("username", username).execute()
         total = 0
         for row in response.data:
             created_at = row.get('created_at', '')
-            if created_at.startswith(today):
+            if created_at.startswith(month_prefix):
                 total += int(row.get('api_calls_count', 0))
         return total
     except Exception as e:
-        logger.error(f"Error getting daily API usage: {e}")
+        logger.error(f"Error getting monthly API usage: {e}")
         return 0
 
 # --- API CREDITS MANAGEMENT ---
@@ -257,8 +439,8 @@ def get_random_proxies_from_pool(limit=100):
         return []
 
 def get_pool_stats():
-    if not supabase: return {"total": 0, "pyproxy": 0, "piaproxy": 0}
-    stats = {"total": 0, "pyproxy": 0, "piaproxy": 0}
+    if not supabase: return {"total": 0}
+    stats = {"total": 0}
     def safe_count(query):
         try:
             res = query.limit(1).execute()
@@ -268,15 +450,15 @@ def get_pool_stats():
         except: return 0
     try:
         stats["total"] = safe_count(supabase.table('proxy_pool').select("id", count="exact"))
-        stats["pyproxy"] = safe_count(supabase.table('proxy_pool').select("id", count="exact").eq('provider', 'pyproxy'))
-        stats["piaproxy"] = safe_count(supabase.table('proxy_pool').select("id", count="exact").eq('provider', 'piaproxy'))
     except: pass
     return stats
 
-def get_pool_preview(provider, limit=50):
+def get_pool_preview(provider=None, limit=50):
     if not supabase: return []
     try:
-        res = supabase.table('proxy_pool').select("proxy, created_at").eq('provider', provider).order('created_at', desc=True).limit(limit).execute()
+        q = supabase.table('proxy_pool').select("proxy, created_at")
+        if provider: q = q.eq('provider', provider)
+        res = q.order('created_at', desc=True).limit(limit).execute()
         return res.data
     except: return []
 

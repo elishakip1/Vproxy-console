@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API · Vproxy Console</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="icon" href="{{ url_for('static', filename='img/favicon.ico') }}" type="image/x-icon">
+    <style>
+        body { background: #f0f2f5; }
+        .card { border: none; box-shadow: 0 1px 3px rgba(0,0,0,.08); border-radius: 12px; }
+        pre { background: #0f172a; color: #e2e8f0; padding: 14px 16px; border-radius: 8px; font-size: .85rem; position: relative; white-space: pre-wrap; word-break: break-all; }
+        code.inline { background: #eef1f5; padding: 1px 6px; border-radius: 4px; color: #b02a37; }
+        .method { font-weight: 700; font-size: .75rem; padding: 3px 8px; border-radius: 4px; color: #fff; margin-right: 8px; }
+        .get { background: #198754; } .post { background: #0d6efd; }
+        .copy-btn { position: absolute; top: 8px; right: 8px; }
+        .key-box { font-family: monospace; font-size: 1rem; word-break: break-all; }
+        .toc a { text-decoration: none; display: block; padding: 4px 0; color: #495057; }
+        .toc a:hover { color: #0d6efd; }
+        .stat { font-size: 1.6rem; font-weight: 700; }
+    </style>
+</head>
+<body>
+<nav class="navbar bg-white border-bottom mb-4">
+    <div class="container">
+        <a class="navbar-brand fw-bold" href="{{ url_for('index') }}">
+            <img src="{{ url_for('static', filename='img/logo.png') }}" alt="" height="28" class="me-2" onerror="this.remove()">Vproxy API
+        </a>
+        <div class="d-flex gap-2">
+            <a href="{{ url_for('index') }}" class="btn btn-outline-primary btn-sm">← Checker</a>
+            <a href="{{ url_for('my_account') }}" class="btn btn-outline-primary btn-sm">My Account</a>
+            {% if current_user.is_admin %}<a href="{{ url_for('admin') }}" class="btn btn-outline-secondary btn-sm">Admin</a>{% endif %}
+            <a href="{{ url_for('logout') }}" class="btn btn-outline-secondary btn-sm">Logout ({{ current_user.username }})</a>
+        </div>
+    </div>
+</nav>
+
+<div class="container pb-5">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for cat, msg in messages %}<div class="alert alert-{{ cat }}">{{ msg }}</div>{% endfor %}
+    {% endwith %}
+
+    <div class="row g-4">
+        <!-- LEFT: key + usage -->
+        <div class="col-lg-4">
+            <div class="card p-4 mb-4">
+                <h5 class="mb-3">🔑 Your API key</h5>
+
+                {% if new_key %}
+                    <div class="alert alert-success mb-3">
+                        <strong>Copy it now.</strong> For your security it won't be shown again.
+                    </div>
+                    <div class="d-flex gap-2 align-items-start mb-3">
+                        <div class="key-box flex-grow-1 p-2 bg-light border rounded" id="newKey">{{ new_key }}</div>
+                        <button class="btn btn-sm btn-primary" onclick="copyText('newKey', this)">Copy</button>
+                    </div>
+                {% elif has_key %}
+                    <p class="mb-3"><span class="badge bg-success">Active</span>
+                    <span class="text-muted small ms-1">Key starts with <code>vpx_</code>. Lost it? Create a new one.</span></p>
+                {% else %}
+                    <p class="text-muted">You don't have a key yet.</p>
+                {% endif %}
+
+                <form method="POST" class="d-flex gap-2">
+                    <button name="action" value="generate" class="btn btn-success btn-sm"
+                        {% if has_key %}onclick="return confirm('Create a new key? Your current key stops working right away.')"{% endif %}>
+                        {% if has_key %}Create new key{% else %}Create API key{% endif %}
+                    </button>
+                    {% if has_key %}
+                    <button name="action" value="revoke" class="btn btn-outline-danger btn-sm"
+                        onclick="return confirm('Revoke your key? Apps using it will stop working.')">Revoke</button>
+                    {% endif %}
+                </form>
+                <p class="small text-muted mt-3 mb-0">Keep your key private. Anyone with it can use your account's checks.</p>
+            </div>
+
+            <div class="card p-4 mb-4">
+                <h6 class="text-muted mb-3">Today</h6>
+                <div class="d-flex justify-content-between">
+                    <div><div class="stat">{{ usage_today }}</div><div class="small text-muted">checks used</div></div>
+                    <div class="text-end"><div class="stat">{{ daily_limit if daily_limit else "∞" }}</div><div class="small text-muted">daily limit</div></div>
+                </div>
+                <hr>
+                <div class="small text-muted">Max proxies per request: <strong>{{ max_paste }}</strong><br>
+                Role: <strong>{{ current_user.role }}</strong></div>
+            </div>
+
+            <div class="card p-4 toc">
+                <h6 class="text-muted mb-2">Docs</h6>
+                <a href="#auth">Authentication</a>
+                <a href="#me">GET /api/v1/me</a>
+                <a href="#check">POST /api/v1/check</a>
+                <a href="#used">POST /api/v1/mark-used</a>
+                <a href="#errors">Errors</a>
+                <a href="#examples">Python example</a>
+            </div>
+        </div>
+
+        <!-- RIGHT: documentation -->
+        <div class="col-lg-8">
+            <div class="card p-4 mb-4" id="auth">
+                <h4>Authentication</h4>
+                <p>Base URL:</p>
+                <pre><button class="btn btn-sm btn-light copy-btn" onclick="copyPre(this)">Copy</button>{{ base_url }}</pre>
+                <p>Send your key in every request with either header:</p>
+                <pre>X-API-Key: vpx_your_key
+Authorization: Bearer vpx_your_key</pre>
+                <p class="mb-0">Proxies use the format <code class="inline">host:port:user:pass</code>.</p>
+            </div>
+
+            <div class="card p-4 mb-4" id="me">
+                <h5><span class="method get">GET</span>/api/v1/me</h5>
+                <p>Your account and today's usage.</p>
+                <pre><button class="btn btn-sm btn-light copy-btn" onclick="copyPre(this)">Copy</button>curl {{ base_url }}/api/v1/me -H "X-API-Key: vpx_your_key"</pre>
+                <p class="mb-1">Response</p>
+                <pre>{
+  "status": "success",
+  "user": {"username": "{{ current_user.username }}", "role": "{{ current_user.role }}"},
+  "usage_today": {{ usage_today }},
+  "daily_limit": {{ daily_limit if daily_limit else "null" }}
+}</pre>
+            </div>
+
+            <div class="card p-4 mb-4" id="check">
+                <h5><span class="method post">POST</span>/api/v1/check</h5>
+                <p>Checks proxies the same way as the web checker (IP stability, fraud score, used and bad caches) and returns the good ones. It stops as soon as it finds <code class="inline">target_good</code> good proxies.</p>
+                <table class="table table-sm">
+                    <thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>proxies</code></td><td>array of strings</td><td>Required. Up to {{ max_paste }} are checked; extra are ignored.</td></tr>
+                        <tr><td><code>target_good</code></td><td>int</td><td>Optional, 1–20, default 2.</td></tr>
+                        <tr><td><code>verbose</code></td><td>bool</td><td>Optional. Also return every checked proxy in <code>results</code>.</td></tr>
+                        {% if current_user.is_admin %}<tr><td><code>strict</code></td><td>bool</td><td>Admins only. Default true.</td></tr>{% endif %}
+                    </tbody>
+                </table>
+                <pre><button class="btn btn-sm btn-light copy-btn" onclick="copyPre(this)">Copy</button>curl -X POST {{ base_url }}/api/v1/check \
+  -H "X-API-Key: vpx_your_key" \
+  -H "Content-Type: application/json" \
+  -d '{"proxies": ["1.2.3.4:8000:user:pass", "5.6.7.8:8000:user:pass"], "target_good": 2}'</pre>
+                <p class="mb-1">Response</p>
+                <pre>{
+  "status": "success",
+  "good": [
+    {"proxy": "1.2.3.4:8000:user:pass", "ip": "203.0.113.7", "status": "success", "score": 0,
+     "geo": {"country_code": "US", "state": "Washington", "city": "Seattle", "postcode": "98101"}}
+  ],
+  "stats": {"submitted": 2, "checked": 2, "api": 2, "used": 0, "bad": 0,
+            "unstable": 0, "error": 0, "invalid_format": 0, "truncated_to": {{ max_paste }}}
+}</pre>
+                <p class="small text-muted mb-0">Result statuses: <code>success</code>, <code>bad_score</code>, <code>used_cache</code>, <code>bad_cache</code>, <code>unstable_ip</code>, <code>error</code>. Checks take a few seconds per proxy, so smaller batches return faster.</p>
+            </div>
+
+            <div class="card p-4 mb-4" id="used">
+                <h5><span class="method post">POST</span>/api/v1/mark-used</h5>
+                <p>Marks a proxy as used so it won't be returned again.</p>
+                <pre><button class="btn btn-sm btn-light copy-btn" onclick="copyPre(this)">Copy</button>curl -X POST {{ base_url }}/api/v1/mark-used \
+  -H "X-API-Key: vpx_your_key" \
+  -H "Content-Type: application/json" \
+  -d '{"proxy": "1.2.3.4:8000:user:pass", "ip": "203.0.113.7"}'</pre>
+                <pre>{"status": "success"}</pre>
+            </div>
+
+            <div class="card p-4 mb-4" id="errors">
+                <h5>Errors</h5>
+                <pre>{"status": "error", "code": "unauthorized", "message": "Invalid API key."}</pre>
+                <table class="table table-sm mb-0">
+                    <tbody>
+                        <tr><td>400</td><td><code>bad_request</code></td><td>Missing or badly formatted input</td></tr>
+                        <tr><td>401</td><td><code>unauthorized</code></td><td>Missing or invalid key</td></tr>
+                        <tr><td>429</td><td><code>rate_limited</code></td><td>Daily limit reached</td></tr>
+                        <tr><td>503</td><td><code>paused</code></td><td>System under maintenance</td></tr>
+                        <tr><td>500</td><td><code>server_error</code></td><td>Something failed on our side</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="card p-4" id="examples">
+                <h5>Python example</h5>
+                <pre><button class="btn btn-sm btn-light copy-btn" onclick="copyPre(this)">Copy</button>import requests
+
+API = "{{ base_url }}/api/v1"
+HEADERS = {"X-API-Key": "vpx_your_key"}
+
+proxies = open("proxies.txt").read().splitlines()
+r = requests.post(f"{API}/check", json={"proxies": proxies, "target_good": 2},
+                  headers=HEADERS, timeout=120)
+data = r.json()
+
+for p in data.get("good", []):
+    print(p["proxy"], p["ip"], p["score"], p["geo"].get("country_code"))
+    requests.post(f"{API}/mark-used", json={"proxy": p["proxy"], "ip": p["ip"]}, headers=HEADERS)</pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function copyText(id, btn) {
+    navigator.clipboard.writeText(document.getElementById(id).innerText.trim());
+    btn.innerText = "Copied"; setTimeout(() => btn.innerText = "Copy", 1500);
+}
+function copyPre(btn) {
+    const pre = btn.parentElement.cloneNode(true);
+    pre.querySelector("button").remove();
+    navigator.clipboard.writeText(pre.innerText.trim());
+    btn.innerText = "Copied"; setTimeout(() => btn.innerText = "Copy", 1500);
+}
+</script>
+</body>
+</html>

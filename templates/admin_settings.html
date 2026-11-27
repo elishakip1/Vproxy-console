@@ -44,7 +44,7 @@
     @media (max-width: 768px) { .sidebar { margin-left: -250px; } .sidebar.active { margin-left: 0; } .content-wrapper { margin-left: 0; } }
   </style>
 </head>
-<body>
+<body data-username="{{ current_user.username }}">
 
 <nav class="sidebar" id="sidebar">
     <div class="sidebar-header">
@@ -57,9 +57,11 @@
     <ul class="sidebar-nav">
         <li><a href="{{ url_for('admin') }}" class="nav-link">📊 Dashboard</a></li>
         <li><a href="{{ url_for('admin_pool') }}" class="nav-link">🏭 Proxy Pool</a></li>
-        <li><a href="{{ url_for('admin_users') }}" class="nav-link">👥 User Activity</a></li>
+        <li><a href="{{ url_for('admin_users') }}" class="nav-link">👥 User Management</a></li>
+        <li><a href="{{ url_for('admin_reviews') }}" class="nav-link">🗣️ Reviews</a></li>
         <li><a href="{{ url_for('admin_logs') }}" class="nav-link">📋 System Logs</a></li>
         <li><a href="{{ url_for('admin_settings') }}" class="nav-link active-nav">⚙️ Settings</a></li>
+        <li><a href="{{ url_for('api_dashboard') }}" class="nav-link">🔑 API</a></li>
         <li class="mt-5"><a href="/" class="nav-link text-warning">← Back to Checker</a></li>
     </ul>
 </nav>
@@ -85,6 +87,8 @@
                     <a class="list-group-item list-group-item-action active" id="list-general-list" data-bs-toggle="list" href="#list-general" role="tab">General</a>
                     <a class="list-group-item list-group-item-action" id="list-api-list" data-bs-toggle="list" href="#list-api" role="tab">API Configuration</a>
                     <a class="list-group-item list-group-item-action" id="list-proxies-list" data-bs-toggle="list" href="#list-proxies" role="tab">Proxy Providers</a>
+                    <a class="list-group-item list-group-item-action" id="list-performance-list" data-bs-toggle="list" href="#list-performance" role="tab">Performance</a>
+                    <a class="list-group-item list-group-item-action" id="list-events-list" data-bs-toggle="list" href="#list-events" role="tab">Calendar Events</a>
                 </div>
             </div>
             <div class="col-md-9">
@@ -147,18 +151,102 @@
                             </div>
                         </div>
                         
-                        <div class="card mb-3 border-warning">
-                            <div class="card-header bg-warning text-dark">Pool Reset URLs</div>
+
+                    <div class="tab-pane fade" id="list-performance" role="tabpanel">
+                        <div class="card mb-3 border-primary">
+                            <div class="card-header bg-primary text-white">Performance Tuning</div>
                             <div class="card-body">
-                                <div class="mb-3">
-                                    <label class="form-label">PyProxy Reset URL</label>
-                                    <input type="text" class="form-control" name="pyproxy_reset_url" value="{{ settings.PYPROXY_RESET_URL }}">
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">Request Timeout (seconds)</label>
+                                        <input type="number" step="0.1" class="form-control" name="request_timeout" value="{{ settings.REQUEST_TIMEOUT }}">
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">Delay Min (seconds)</label>
+                                        <input type="number" step="0.1" class="form-control" name="min_delay" value="{{ settings.MIN_DELAY }}">
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">Delay Max (seconds)</label>
+                                        <input type="number" step="0.1" class="form-control" name="max_delay" value="{{ settings.MAX_DELAY }}">
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">IP Stable Checks</label>
+                                        <input type="number" class="form-control" name="ip_stable_checks" value="{{ settings.IP_STABLE_CHECKS }}">
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">IP Stable Attempts</label>
+                                        <input type="number" class="form-control" name="ip_stable_attempts" value="{{ settings.IP_STABLE_ATTEMPTS }}">
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">IP Stable Delay Min (seconds)</label>
+                                        <input type="number" step="0.1" class="form-control" name="ip_stable_delay_min" value="{{ settings.IP_STABLE_DELAY_MIN }}">
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">IP Stable Delay Max (seconds)</label>
+                                        <input type="number" step="0.1" class="form-control" name="ip_stable_delay_max" value="{{ settings.IP_STABLE_DELAY_MAX }}">
+                                    </div>
                                 </div>
-                                <div class="mb-3">
-                                    <label class="form-label">PiaProxy Reset URL</label>
-                                    <input type="text" class="form-control" name="piaproxy_reset_url" value="{{ settings.PIAPROXY_RESET_URL }}">
+                                <div class="mt-3">
+                                    <button type="submit" class="btn btn-success">Save Performance Settings</button>
                                 </div>
                             </div>
+                        </div>
+                        <div class="card border-danger">
+                            <div class="card-header bg-danger text-white">API Usage Management</div>
+                            <div class="card-body">
+                                <button type="submit" name="action" value="reset_api_usage" class="btn btn-outline-light" onclick="return confirm('Reset API usage for all users?');">Reset API Usage Logs</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tab-pane fade" id="list-events" role="tabpanel">
+                        <div class="card mb-3 border-warning">
+                            <div class="card-header bg-warning text-dark">Create Event Reminder</div>
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <label class="form-label">Event Title</label>
+                                    <input type="text" class="form-control" name="event_title">
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Event Date</label>
+                                    <input type="date" class="form-control" name="event_date">
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Message</label>
+                                    <textarea class="form-control" name="event_message" rows="3"></textarea>
+                                </div>
+                                <button type="submit" name="action" value="add_event" class="btn btn-dark">Add Event</button>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header bg-secondary text-white">Scheduled Events</div>
+                            <div class="card-body p-0">
+                                <table class="table table-sm mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Title</th>
+                                            <th>Date</th>
+                                            <th>Message</th>
+                                            <th>Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for event in events %}
+                                        <tr>
+                                            <td>{{ event.title }}</td>
+                                            <td>{{ event.date }}</td>
+                                            <td>{{ event.message }}</td>
+                                            <td>
+                                                <button class="btn btn-sm btn-outline-danger" type="submit" name="action" value="delete_event" onclick="document.getElementById('event_id_input').value='{{ event.id }}';">Remove</button>
+                                            </td>
+                                        </tr>
+                                        {% else %}
+                                        <tr><td colspan="4" class="text-center text-muted">No events scheduled.</td></tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <input type="hidden" name="event_id" id="event_id_input" value="">
                         </div>
                     </div>
 
@@ -176,6 +264,17 @@
     document.getElementById('sidebarToggle').addEventListener('click', function() {
         document.getElementById('sidebar').classList.toggle('active');
     });
+
+    (function() {
+        const username = document.body.dataset.username || 'default';
+        const accentKey = `accent:${username}`;
+        const accent = localStorage.getItem(accentKey);
+        if (accent) {
+            document.documentElement.style.setProperty('--bs-primary', accent);
+            const rgb = accent.replace('#', '').match(/.{1,2}/g).map(c => parseInt(c, 16)).join(',');
+            document.documentElement.style.setProperty('--bs-primary-rgb', rgb);
+        }
+    })();
 </script>
 </body>
 </html>

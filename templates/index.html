@@ -37,29 +37,6 @@
             --placeholder-color: #6c757d;
         }
 
-        [data-theme="dark"] {
-            --bg-color: #121212;
-            --card-bg: #1e1e1e;
-            --text-color: #e9ecef;
-            --text-muted: #adb5bd;
-            --border-color: #343a40;
-            --header-bg: #1e1e1e;
-            --table-header-bg: #2d3748;
-            --table-row-hover: #2d3748;
-            --btn-primary: #0d6efd;
-            --btn-primary-hover: #0b5ed7;
-            --btn-secondary: #6c757d;
-            --btn-secondary-hover: #5c636a;
-            --success-color: #198754;
-            --warning-color: #ffc107;
-            --danger-color: #dc3545;
-            --info-color: #0dcaf0;
-            --shadow-color: rgba(0,0,0,0.3);
-            --input-bg: #2d3748;
-            --input-border: #4a5568;
-            --input-color: #e9ecef;
-            --placeholder-color: #a0aec0;
-        }
 
         body {
             background-color: var(--bg-color);
@@ -173,10 +150,6 @@
             backdrop-filter: blur(5px);
         }
 
-        [data-theme="dark"] .proxy-counter {
-            background: rgba(0, 0, 0, 0.2);
-        }
-
         .counter-error { 
             color: var(--danger-color); 
             font-weight: bold; 
@@ -237,40 +210,6 @@
             background-color: var(--table-row-hover);
         }
 
-        /* Theme Toggle Button */
-        .theme-toggle {
-            background-color: var(--btn-secondary);
-            color: white;
-            border: none;
-            border-radius: 6px;
-            padding: 6px 12px;
-            font-size: 14px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 5px;
-            transition: background-color 0.3s ease;
-        }
-
-        .theme-toggle:hover {
-            background-color: var(--btn-secondary-hover);
-        }
-
-        .theme-toggle .sun-icon {
-            display: none;
-        }
-
-        .theme-toggle .moon-icon {
-            display: inline-block;
-        }
-
-        [data-theme="dark"] .theme-toggle .sun-icon {
-            display: inline-block;
-        }
-
-        [data-theme="dark"] .theme-toggle .moon-icon {
-            display: none;
-        }
 
         /* Notepad Widget Styles */
         #notepad-widget { 
@@ -414,7 +353,7 @@
         }
     </style>
 </head>
-<body>
+<body data-username="{{ current_user.username }}">
     <div class="main-container">
         <div class="header-container">
             <div class="header-title-container">
@@ -425,15 +364,17 @@
                 </a>
             </div>
             <div class="header-buttons">
-                <button class="theme-toggle" id="themeToggle">
-                    <span class="sun-icon">☀️ Light</span>
-                    <span class="moon-icon">🌙 Dark</span>
-                </button>
+                
                 {% if current_user.is_authenticated and current_user.is_admin %}
                     <a href="{{ url_for('admin') }}" class="btn btn-outline-primary btn-sm">Admin Panel</a>
                 {% endif %}
                 {% if current_user.is_authenticated %}
+                    <a href="{{ url_for('my_account') }}" class="btn btn-outline-primary btn-sm">My Account</a>
+                    <a href="{{ url_for('api_dashboard') }}" class="btn btn-outline-success btn-sm">API</a>
                     <a href="{{ url_for('logout') }}" class="btn btn-outline-secondary btn-sm">Logout ({{ current_user.username }})</a>
+                    {% if api_limit %}
+                        <div class="text-muted small mt-1">API: {{ api_usage }}/{{ api_limit }}</div>
+                    {% endif %}
                 {% endif %}
             </div>
         </div>
@@ -443,6 +384,19 @@
             <div class="alert alert-primary alert-dismissible fade show" role="alert">
                 <strong>Notice:</strong> {{ announcement }}
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+            {% endif %}
+            {% if events_today %}
+            <div class="alert alert-danger">
+                <strong>📅 Event Reminder:</strong>
+                <ul class="mb-0 mt-2">
+                    {% for event in events_today %}
+                    <li>
+                        <strong>{{ event.title }}</strong> ({{ event.date }})
+                        {% if event.message %}- {{ event.message }}{% endif %}
+                    </li>
+                    {% endfor %}
+                </ul>
             </div>
             {% endif %}
 
@@ -558,6 +512,7 @@
                                     </div>
                                 </div>
                                 <div class="col-md-12 d-flex justify-content-end gap-2 mt-2">
+                                    <a href="{{ url_for('done_checks') }}" class="btn btn-outline-success btn-sm">Done Checks</a>
                                     <button type="button" id="poolBtn" class="btn btn-info btn-sm text-white" onclick="fetchPoolProxies()">
                                         📦SPSCC
                                     </button>
@@ -666,17 +621,28 @@
         const MAX_LINES = {{ max_paste }};
 
         // Theme functionality
-        function initTheme() {
-            const savedTheme = localStorage.getItem('theme') || 'light';
-            document.documentElement.setAttribute('data-theme', savedTheme);
+        function getThemeKeys() {
+            const username = document.body.dataset.username || 'default';
+            return {
+                accentKey: `accent:${username}`
+            };
         }
 
-        function toggleTheme() {
-            const currentTheme = document.documentElement.getAttribute('data-theme');
-            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-            document.documentElement.setAttribute('data-theme', newTheme);
-            localStorage.setItem('theme', newTheme);
+        function applyAccentColor(color) {
+            if (!color) return;
+            document.documentElement.style.setProperty('--btn-primary', color);
+            document.documentElement.style.setProperty('--btn-primary-hover', color);
+            document.documentElement.style.setProperty('--bs-primary', color);
+            const rgb = color.replace('#', '').match(/.{1,2}/g).map(c => parseInt(c, 16)).join(',');
+            document.documentElement.style.setProperty('--bs-primary-rgb', rgb);
         }
+
+        function initTheme() {
+            const keys = getThemeKeys();
+            const accentColor = localStorage.getItem(keys.accentKey);
+            applyAccentColor(accentColor);
+        }
+
 
         function updateProxyCounter(textarea) {
             const text = textarea.value;
@@ -730,7 +696,7 @@
             }
 
             try {
-                const response = await fetch(`/api/fetch-abc-proxies?state=${state}`);
+                const response = await fetch(`/api/fetch-911-proxies?state=${state}`);
                 const data = await response.json();
 
                 if (data.status === 'success') {
@@ -842,7 +808,6 @@
 
         document.addEventListener('DOMContentLoaded', () => {
             initTheme();
-            document.getElementById('themeToggle').addEventListener('click', toggleTheme);
             const textArea = document.getElementById('proxytext');
             if(textArea) updateProxyCounter(textArea);
             {% if results is defined and results is not none %}
@@ -861,5 +826,28 @@
         });
     </script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Show "Checking..." and lock the button so a check can't be sent twice.
+        (function () {
+            const form = document.getElementById('proxyFormElement');
+            const btn = document.getElementById('submitBtn');
+            if (!form || !btn) return;
+            const idleHtml = btn.innerHTML;
+            form.addEventListener('submit', function (e) {
+                if (form.dataset.checking === '1') { e.preventDefault(); return; }
+                form.dataset.checking = '1';
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Checking...';
+            });
+            // Reset if the user comes back with the browser's Back button.
+            window.addEventListener('pageshow', function () {
+                form.dataset.checking = '';
+                btn.innerHTML = idleHtml;
+                const ta = document.getElementById('proxytext');
+                if (ta && typeof updateProxyCounter === 'function' && !ta.readOnly) updateProxyCounter(ta);
+                else btn.disabled = false;
+            });
+        })();
+    </script>
 </body>
 </html>

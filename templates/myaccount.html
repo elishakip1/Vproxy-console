@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>My Account</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="icon" href="{{ url_for('static', filename='img/favicon.ico') }}" type="image/x-icon">
+    <link rel="shortcut icon" href="{{ url_for('static', filename='img/favicon.ico') }}" type="image/x-icon">
+    <style>
+        body { background-color: #f0f2f5; font-family: sans-serif; }
+        .content-wrapper { max-width: 1100px; margin: 0 auto; padding: 30px 16px; }
+        .section-card { margin-bottom: 24px; }
+        .proxy-list { max-height: 240px; overflow-y: auto; }
+    </style>
+</head>
+<body data-username="{{ current_user.username }}">
+    <div class="content-wrapper">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2>👤 My Account</h2>
+            <div class="d-flex gap-2">
+                <a href="{{ url_for('index') }}" class="btn btn-outline-secondary btn-sm">Back to Checker</a>
+                <a href="{{ url_for('logout') }}" class="btn btn-outline-danger btn-sm">Logout</a>
+            </div>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="card section-card">
+            <div class="card-header bg-primary text-white">API Balance</div>
+            <div class="card-body">
+                {% if api_limit %}
+                    <p class="mb-0">This month: <strong>{{ api_usage }}</strong> used / <strong>{{ api_limit }}</strong> limit. Remaining: <strong>{{ api_balance }}</strong>.</p>
+                {% else %}
+                    <p class="mb-0 text-muted">Unlimited API access for this account.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="card section-card">
+            <div class="card-header bg-success text-white">API Access</div>
+            <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <div>
+                    {% if has_api_key %}
+                        <span class="badge bg-success">Key active</span>
+                        <span class="text-muted small ms-1">Use it to run checks from your own scripts or bots.</span>
+                    {% else %}
+                        <span class="text-muted">No API key yet. Create one to check proxies from your own scripts or bots.</span>
+                    {% endif %}
+                </div>
+                <a href="{{ url_for('api_dashboard') }}" class="btn btn-success btn-sm">{% if has_api_key %}Manage key &amp; docs{% else %}Get API key{% endif %}</a>
+            </div>
+        </div>
+
+        <div class="card section-card">
+            <div class="card-header bg-light text-dark">Calendar Events</div>
+            <div class="card-body">
+                {% if current_user.is_guest %}
+                    <p class="text-muted mb-0">Calendar events are not available for guest users.</p>
+                {% else %}
+                    <ul class="list-group">
+                        {% for event in events %}
+                        <li class="list-group-item d-flex justify-content-between align-items-start">
+                            <div>
+                                <strong>{{ event.title }}</strong>
+                                <div class="small text-muted">{{ event.date }}</div>
+                                {% if event.message %}
+                                <div class="small">{{ event.message }}</div>
+                                {% endif %}
+                            </div>
+                        </li>
+                        {% else %}
+                        <li class="list-group-item text-muted">No upcoming events.</li>
+                        {% endfor %}
+                    </ul>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="card section-card">
+            <div class="card-header bg-secondary text-white">Account Settings</div>
+            <div class="card-body">
+                <form method="POST" class="row g-3">
+                    <input type="hidden" name="action" value="update_account">
+                    <div class="col-md-4">
+                        <label class="form-label">Current Password</label>
+                        <input type="password" class="form-control" name="current_password" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">New Username</label>
+                        <input type="text" class="form-control" name="new_username" placeholder="Leave blank to keep">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">New Password</label>
+                        <input type="password" class="form-control" name="new_password" placeholder="Leave blank to keep">
+                    </div>
+                    <div class="col-12">
+                        <button class="btn btn-primary">Update Account</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card section-card">
+            <div class="card-header bg-dark text-white">Theme & Colors</div>
+            <div class="card-body row g-3 align-items-center">
+                <div class="col-md-4">
+                    <label class="form-label">Theme Color</label>
+                    <input type="color" class="form-control form-control-color" id="accentColorPicker" value="#0d6efd">
+                </div>
+                <div class="col-md-4 d-flex gap-2 align-items-end">
+                    <button type="button" class="btn btn-outline-primary" id="applyThemeBtn">Apply</button>
+                    <button type="button" class="btn btn-outline-secondary" id="resetThemeBtn">Reset</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="card section-card">
+            <div class="card-header bg-info text-white">Feedback</div>
+            <div class="card-body">
+                <form method="POST">
+                    <input type="hidden" name="action" value="feedback">
+                    <textarea class="form-control mb-3" name="feedback" rows="3" placeholder="Send feedback to admin..."></textarea>
+                    <button class="btn btn-info text-white">Send Feedback</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card section-card">
+            <div class="card-header bg-success text-white">Recent Checks (Not Copied)</div>
+            <div class="card-body p-0 proxy-list">
+                <table class="table table-sm mb-0" id="usedProxiesTable">
+                    <thead class="table-light">
+                        <tr>
+                            <th>IP</th>
+                            <th>Proxy</th>
+                            <th>Date</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pendingChecksBody">
+                        {% for check in pending_checks %}
+                        <tr data-proxy="{{ check.proxy }}" data-ip="{{ check.ip }}">
+                            <td>{{ check.ip }}</td>
+                            <td class="small">{{ check.proxy }}</td>
+                            <td>{{ check.created_at | replace('T', ' ') | truncate(19, True, '') }}</td>
+                            <td><button class="btn btn-sm btn-outline-secondary copy-check-btn">Copy</button></td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="4" class="text-center text-muted">No pending checks.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card section-card">
+            <div class="card-header bg-warning text-dark">Used Proxies</div>
+            <div class="card-body p-0 proxy-list">
+                <table class="table table-sm mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>IP</th>
+                            <th>Proxy</th>
+                            <th>Date</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in used_proxies %}
+                        <tr>
+                            <td>{{ row.IP }}</td>
+                            <td class="small">{{ row.Proxy }}</td>
+                            <td>{{ row.Date | string | truncate(19, True, '') }}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="3" class="text-center text-muted">No used proxies yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <div class="p-3">
+                    <button class="btn btn-outline-secondary btn-sm" id="exportProxiesBtn">Export Used Proxies</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const accentColorPicker = document.getElementById('accentColorPicker');
+            const applyThemeBtn = document.getElementById('applyThemeBtn');
+            const resetThemeBtn = document.getElementById('resetThemeBtn');
+            const username = document.body.dataset.username || 'default';
+            const accentKey = `accent:${username}`;
+            const savedAccent = localStorage.getItem(accentKey) || '#0d6efd';
+
+            accentColorPicker.value = savedAccent;
+            document.documentElement.style.setProperty('--btn-primary', savedAccent);
+            document.documentElement.style.setProperty('--btn-primary-hover', savedAccent);
+            document.documentElement.style.setProperty('--bs-primary', savedAccent);
+            const rgbSaved = savedAccent.replace('#', '').match(/.{1,2}/g).map(c => parseInt(c, 16)).join(',');
+            document.documentElement.style.setProperty('--bs-primary-rgb', rgbSaved);
+
+            applyThemeBtn.addEventListener('click', () => {
+                localStorage.setItem(accentKey, accentColorPicker.value);
+                document.documentElement.style.setProperty('--btn-primary', accentColorPicker.value);
+                document.documentElement.style.setProperty('--btn-primary-hover', accentColorPicker.value);
+                document.documentElement.style.setProperty('--bs-primary', accentColorPicker.value);
+                const rgb = accentColorPicker.value.replace('#', '').match(/.{1,2}/g).map(c => parseInt(c, 16)).join(',');
+                document.documentElement.style.setProperty('--bs-primary-rgb', rgb);
+            });
+
+            resetThemeBtn.addEventListener('click', () => {
+                localStorage.removeItem(accentKey);
+                accentColorPicker.value = '#0d6efd';
+                document.documentElement.style.setProperty('--btn-primary', '#0d6efd');
+                document.documentElement.style.setProperty('--btn-primary-hover', '#0d6efd');
+                document.documentElement.style.setProperty('--bs-primary', '#0d6efd');
+                document.documentElement.style.setProperty('--bs-primary-rgb', '13,110,253');
+            });
+
+            document.querySelectorAll('.copy-check-btn').forEach((btn) => {
+                btn.addEventListener('click', async (event) => {
+                    const row = event.target.closest('tr');
+                    const proxy = row.dataset.proxy;
+                    const ip = row.dataset.ip;
+                    await navigator.clipboard.writeText(proxy);
+                    await fetch('/track-used', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ proxy, ip })
+                    });
+                    await fetch('/api/mark-check-copied', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ proxy, ip })
+                    });
+                    row.remove();
+                });
+            });
+
+            const exportBtn = document.getElementById('exportProxiesBtn');
+            if (exportBtn) {
+                exportBtn.addEventListener('click', () => {
+                    const rows = Array.from(document.querySelectorAll('#usedProxiesTable tbody tr'));
+                    const proxies = rows.map(row => row.querySelector('td:nth-child(2)')?.textContent?.trim()).filter(Boolean);
+                    const blob = new Blob([proxies.join('\\n')], { type: 'text/plain' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'used-proxies.txt';
+                    a.click();
+                    URL.revokeObjectURL(url);
+                });
+            }
+        });
+    </script>
+</body>
+</html>

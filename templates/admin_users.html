@@ -2,7 +2,6 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>User Activity</title>
   <title>User Management</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -29,10 +28,25 @@
       height: 70px;
       width: 70px;
       border-radius: 50%;
-@@ -46,51 +46,146 @@
+      object-fit: cover;
+      transition: opacity 0.2s ease;
+      display: block;
+    }
+    
+    .logo-link:hover img {
+      opacity: 0.9;
+    }
+    
+    .sidebar-nav { list-style: none; padding: 0; margin-top: 20px; }
+    .sidebar-nav li { width: 100%; }
+    .nav-link { display: block; padding: 15px 20px; color: rgba(255,255,255,.75); text-decoration: none; border-left: 4px solid transparent; }
+    .nav-link:hover, .nav-link.active-nav { color: #fff; background: rgba(255,255,255,.1); border-left-color: #0d6efd; }
+    .content-wrapper { margin-left: 250px; padding: 30px; }
+    @media (max-width: 768px) { .sidebar { margin-left: -250px; } .sidebar.active { margin-left: 0; } .content-wrapper { margin-left: 0; } }
+      .alert { word-break: break-all; }
   </style>
 </head>
-<body>
+<body data-username="{{ current_user.username }}">
 
 <nav class="sidebar" id="sidebar">
     <div class="sidebar-header">
@@ -45,9 +59,11 @@
     <ul class="sidebar-nav">
         <li><a href="{{ url_for('admin') }}" class="nav-link">📊 Dashboard</a></li>
         <li><a href="{{ url_for('admin_pool') }}" class="nav-link">🏭 Proxy Pool</a></li>
-        <li><a href="{{ url_for('admin_users') }}" class="nav-link active-nav">👥 User Activity</a></li>
+        <li><a href="{{ url_for('admin_users') }}" class="nav-link active-nav">👥 User Management</a></li>
+        <li><a href="{{ url_for('admin_reviews') }}" class="nav-link">🗣️ Reviews</a></li>
         <li><a href="{{ url_for('admin_logs') }}" class="nav-link">📋 System Logs</a></li>
         <li><a href="{{ url_for('admin_settings') }}" class="nav-link">⚙️ Settings</a></li>
+        <li><a href="{{ url_for('api_dashboard') }}" class="nav-link">🔑 API</a></li>
         <li class="mt-5"><a href="/" class="nav-link text-warning">← Back to Checker</a></li>
     </ul>
 </nav>
@@ -55,7 +71,6 @@
 <div class="content-wrapper">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <button class="btn btn-dark d-md-none" id="sidebarToggle">☰ Menu</button>
-        <h2>👥 User Activity Monitor</h2>
         <h2>👥 User Management</h2>
     </div>
 
@@ -82,13 +97,17 @@
                     <label class="form-label">Password</label>
                     <input type="text" name="password" class="form-control" required>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-2">
                     <label class="form-label">Role</label>
                     <select name="role" class="form-select">
                         <option value="user" selected>User</option>
                         <option value="guest">Guest</option>
                         <option value="admin">Admin</option>
                     </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">API Limit</label>
+                    <input type="number" name="api_limit" class="form-control" min="0" placeholder="Unlimited">
                 </div>
                 <div class="col-md-1 d-flex align-items-end">
                     <div class="form-check">
@@ -113,6 +132,7 @@
                             <th>Username</th>
                             <th>Role</th>
                             <th>Can Fetch</th>
+                            <th>API Limit</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -138,15 +158,32 @@
                                 </div>
                             </td>
                             <td>
-                                <form method="POST" onsubmit="return confirm('Remove user {{ user.username }}?');">
+                                <form method="POST" class="d-flex gap-2 align-items-center">
+                                    <input type="hidden" name="action" value="update_limit">
+                                    <input type="hidden" name="username" value="{{ user.username }}">
+                                    <input type="number" name="api_limit" class="form-control form-control-sm" min="0" placeholder="Unlimited" value="{{ user.api_limit or '' }}">
+                                    <button class="btn btn-sm btn-outline-primary">Update</button>
+                                </form>
+                            </td>
+                            <td>
+                                <form method="POST" onsubmit="return confirm('Delete user {{ user.username }}?');">
                                     <input type="hidden" name="action" value="delete">
                                     <input type="hidden" name="username" value="{{ user.username }}">
-                                    <button class="btn btn-sm btn-outline-danger" {% if current_user.username == user.username %}disabled{% endif %}>Remove</button>
+                                    <button class="btn btn-sm btn-outline-danger" {% if current_user.username == user.username %}disabled{% endif %}>Delete User</button>
+                                </form>
+                                <form method="POST" class="d-inline-flex gap-1 mt-1">
+                                    <input type="hidden" name="username" value="{{ user.username }}">
+                                    <button name="action" value="gen_api_key" class="btn btn-sm btn-outline-success"
+                                        onclick="return confirm('Create a new API key for {{ user.username }}? Any old key stops working.');">
+                                        {% if user.api_key_hash %}New API Key{% else %}Create API Key{% endif %}</button>
+                                    {% if user.api_key_hash %}
+                                    <button name="action" value="revoke_api_key" class="btn btn-sm btn-outline-secondary">Revoke Key</button>
+                                    {% endif %}
                                 </form>
                             </td>
                         </tr>
                         {% else %}
-                        <tr><td colspan="4" class="text-center">No users found.</td></tr>
+                        <tr><td colspan="5" class="text-center">No users found.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -168,6 +205,8 @@
                             <th>API Checks</th>
                             <th>Good Proxies</th>
                             <th>Last Known IP</th>
+                            <th>API Balance</th>
+                            <th>Action</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -177,7 +216,8 @@
                             <td>
                                 {% if user.status == 'Active' %}
                                     <span class="badge bg-success">Active</span>
-@@ -99,28 +194,51 @@
+                                {% elif user.status == 'Offline' %}
+                                    <span class="badge bg-warning text-dark">Offline (>24h)</span>
                                 {% else %}
                                     <span class="badge bg-secondary">Inactive (>7d)</span>
                                 {% endif %}
@@ -187,9 +227,17 @@
                             <td>{{ user.total_api_calls }}</td>
                             <td class="text-success fw-bold">{{ user.total_good_proxies }}</td>
                             <td class="small text-muted">{{ user.last_ip }}</td>
+                            <td>{{ user.api_balance }}</td>
+                            <td>
+                                <form method="POST" onsubmit="return confirm('Clear stats for {{ user.username }}?');">
+                                    <input type="hidden" name="action" value="clear_stats">
+                                    <input type="hidden" name="username" value="{{ user.username }}">
+                                    <button class="btn btn-sm btn-outline-danger">Clear Stats</button>
+                                </form>
+                            </td>
                         </tr>
                         {% else %}
-                        <tr><td colspan="7" class="text-center">No activity logs found yet.</td></tr>
+                        <tr><td colspan="9" class="text-center">No activity logs found yet.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -203,6 +251,17 @@
     document.getElementById('sidebarToggle').addEventListener('click', function() {
         document.getElementById('sidebar').classList.toggle('active');
     });
+
+    (function() {
+        const username = document.body.dataset.username || 'default';
+        const accentKey = `accent:${username}`;
+        const accent = localStorage.getItem(accentKey);
+        if (accent) {
+            document.documentElement.style.setProperty('--bs-primary', accent);
+            const rgb = accent.replace('#', '').match(/.{1,2}/g).map(c => parseInt(c, 16)).join(',');
+            document.documentElement.style.setProperty('--bs-primary-rgb', rgb);
+        }
+    })();
 
     document.querySelectorAll('.fetch-toggle').forEach((toggle) => {
         toggle.addEventListener('change', async (event) => {

@@ -51,7 +51,7 @@
     .bg-info { background-color: #cff4fc !important; }
   </style>
 </head>
-<body>
+<body data-username="{{ current_user.username }}">
 
 <nav class="sidebar" id="sidebar">
     <div class="sidebar-header">
@@ -64,9 +64,11 @@
     <ul class="sidebar-nav">
         <li><a href="{{ url_for('admin') }}" class="nav-link">📊 Dashboard</a></li>
         <li><a href="{{ url_for('admin_pool') }}" class="nav-link">🏭 Proxy Pool</a></li>
-        <li><a href="{{ url_for('admin_users') }}" class="nav-link">👥 User Activity</a></li>
+        <li><a href="{{ url_for('admin_users') }}" class="nav-link">👥 User Management</a></li>
+        <li><a href="{{ url_for('admin_reviews') }}" class="nav-link">🗣️ Reviews</a></li>
         <li><a href="{{ url_for('admin_logs') }}" class="nav-link active-nav">📋 System Logs</a></li>
         <li><a href="{{ url_for('admin_settings') }}" class="nav-link">⚙️ Settings</a></li>
+        <li><a href="{{ url_for('api_dashboard') }}" class="nav-link">🔑 API</a></li>
         <li class="mt-5"><a href="/" class="nav-link text-warning">← Back to Checker</a></li>
     </ul>
 </nav>
@@ -143,6 +145,17 @@
     document.getElementById('sidebarToggle').addEventListener('click', function() {
         document.getElementById('sidebar').classList.toggle('active');
     });
+
+    (function() {
+        const username = document.body.dataset.username || 'default';
+        const accentKey = `accent:${username}`;
+        const accent = localStorage.getItem(accentKey);
+        if (accent) {
+            document.documentElement.style.setProperty('--bs-primary', accent);
+            const rgb = accent.replace('#', '').match(/.{1,2}/g).map(c => parseInt(c, 16)).join(',');
+            document.documentElement.style.setProperty('--bs-primary-rgb', rgb);
+        }
+    })();
 </script>
 </body>
 </html>

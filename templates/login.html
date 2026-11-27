@@ -158,6 +158,10 @@
                     <input type="password" class="form-control" id="password" name="password" required>
                 </div>
                 <div class="mb-3 form-check">
+                    <input type="checkbox" class="form-check-input" id="showPassword">
+                    <label class="form-check-label" for="showPassword">Show password</label>
+                </div>
+                <div class="mb-3 form-check">
                     <input type="checkbox" class="form-check-input" id="remember" name="remember">
                     <label class="form-check-label" for="remember">Remember Me</label>
                 </div>
@@ -185,12 +189,19 @@
 
     <script>
       document.addEventListener('DOMContentLoaded', () => {
+          const passwordInput = document.getElementById('password');
+          const showPassword = document.getElementById('showPassword');
           const toggleBtn = document.getElementById('notepad-toggle-btn');
           const notepad = document.getElementById('notepad-container');
           const closeBtn = document.getElementById('notepad-close-btn');
           const textarea = document.getElementById('notepad-textarea');
           const storageKey = 'userNotepadContent';
 
+          if (showPassword && passwordInput) {
+              showPassword.addEventListener('change', () => {
+                  passwordInput.type = showPassword.checked ? 'text' : 'password';
+              });
+          }
           if (textarea) { textarea.value = localStorage.getItem(storageKey) || ''; }
           if (textarea) { textarea.addEventListener('input', () => { localStorage.setItem(storageKey, textarea.value); }); }
           if (toggleBtn && notepad) { toggleBtn.addEventListener('click', () => { notepad.classList.toggle('hidden'); }); }
