@@ -278,6 +278,21 @@ def log_bad_proxy(proxy, ip, score):
         return True
     except Exception: return False
 
+def is_ip_used(ip):
+    """Single-row lookup (fast, and not capped at 1000 rows like a full-table load)."""
+    if not supabase or not ip: return False
+    try:
+        r = supabase.table('used_proxies').select("ip").eq("ip", str(ip).strip()).limit(1).execute()
+        return bool(r.data)
+    except Exception: return False
+
+def is_ip_bad(ip):
+    if not supabase or not ip: return False
+    try:
+        r = supabase.table('bad_proxies').select("ip").eq("ip", str(ip).strip()).limit(1).execute()
+        return bool(r.data)
+    except Exception: return False
+
 def get_bad_proxies_list():
     if not supabase: return []
     try:
