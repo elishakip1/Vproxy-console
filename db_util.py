@@ -95,12 +95,16 @@ def touch_api_key_last_used(username):
 
 def set_user_api_max_score(username, max_score):
     """Save the user's preferred max fraud score for API checks (None = system default)."""
+    return set_user_api_prefs(username, {"api_max_score": max_score})
+
+def set_user_api_prefs(username, prefs):
+    """Save the user's own API settings, e.g. {"api_max_score": 10, "api_stop_after": 5}. None = default."""
     if not supabase: return False
     try:
-        supabase.table('users').update({"api_max_score": max_score}).eq("username", username).execute()
+        supabase.table('users').update(prefs).eq("username", username).execute()
         return True
     except Exception as e:
-        logger.error(f"Error saving api_max_score (run the SQL?): {e}")
+        logger.error(f"Error saving API prefs (run the SQL?): {e}")
         return False
 
 def add_user(username, password, role="user", can_fetch=False, api_limit=None):

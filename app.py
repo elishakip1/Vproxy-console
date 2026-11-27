@@ -41,7 +41,7 @@ from db_util import (
     add_recent_checks, get_pending_checks, mark_recent_check_copied,
     update_username, update_password,
     get_user_by_id, get_user_by_username, get_user_by_api_key, set_user_api_key_hash,
-    touch_api_key_last_used, set_user_api_max_score
+    touch_api_key_last_used, set_user_api_max_score, set_user_api_prefs
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', stream=sys.stdout)
@@ -1274,6 +1274,7 @@ def api_key_required(f):
             api_limit=user_data.get('api_limit')
         )
         request.api_max_score = parse_max_score(user_data.get('api_max_score'))
+        request.api_stop_after = parse_max_score(user_data.get('api_stop_after'))   # same 0-100 rule
         touch_api_key_last_used(user_data['username'])
         return f(*args, **kwargs)
     return decorated
@@ -1333,18 +1334,20 @@ def api_dashboard():
             flash("Your API key was revoked.", "warning")
             return redirect(url_for("api_dashboard"))
         elif action == "save_score":
-            raw = request.form.get("max_score", "")
-            val = parse_max_score(raw)
-            if str(raw).strip() and val is None:
+            raw_s, raw_c = request.form.get("max_score", ""), request.form.get("stop_after", "")
+            score, cutoff = parse_max_score(raw_s), parse_max_score(raw_c)
+            if str(raw_s).strip() and score is None:
                 flash("Score must be a whole number from 0 to 100.", "danger")
-            elif set_user_api_max_score(current_user.username, val):
-                flash("Saved. API checks now use " + (f"a max score of {val}." if val is not None else "the default score."), "success")
+            elif str(raw_c).strip() and cutoff is None:
+                flash("Cutoff must be a whole number from 0 to 100 (0 = check all).", "danger")
+            elif set_user_api_prefs(current_user.username, {"api_max_score": score, "api_stop_after": cutoff}):
+                flash("Saved your API settings.", "success")
             else:
-                flash("Could not save the score. Ask the admin to run the latest Supabase SQL.", "danger")
+                flash("Could not save. Ask the admin to run the latest Supabase SQL.", "danger")
             return redirect(url_for("api_dashboard"))
         elif action == "reset_score":
-            set_user_api_max_score(current_user.username, None)
-            flash("API checks now use the default score.", "success")
+            set_user_api_prefs(current_user.username, {"api_max_score": None, "api_stop_after": None})
+            flash("API checks now use the defaults.", "success")
             return redirect(url_for("api_dashboard"))
 
     user_row = get_user_by_username(current_user.username) or {}
@@ -1359,6 +1362,7 @@ def api_dashboard():
         my_max_score=parse_max_score(user_row.get("api_max_score")),
         default_score=settings["FRAUD_SCORE_LEVEL"],
         stop_after=get_stop_after(settings),
+        my_stop_after=parse_max_score(user_row.get("api_stop_after")),
         usage_today=get_daily_api_usage_for_user(current_user.username),
         daily_limit=get_daily_limit(current_user),
         max_paste=settings["MAX_PASTE"],
@@ -1378,7 +1382,9 @@ def api_v1_me():
         "usage_today": used_today,
         "daily_limit": get_daily_limit(u),
         "max_score": request.api_max_score if request.api_max_score is not None else get_app_settings()["FRAUD_SCORE_LEVEL"],
-        "max_score_source": "yours" if request.api_max_score is not None else "default"
+        "max_score_source": "yours" if request.api_max_score is not None else "default",
+        "stop_after": request.api_stop_after if request.api_stop_after is not None else get_stop_after(get_app_settings()),
+        "stop_after_source": "yours" if request.api_stop_after is not None else "default"
     })
 
 @app.route("/api/v1/check", methods=["POST"])
@@ -1413,9 +1419,11 @@ def api_v1_check():
     if daily_limit and get_daily_api_usage_for_user(u.username) >= daily_limit:
         return api_error("Daily limit reached.", 429, "rate_limited")
 
-    # target_good: stop after this many good (1-100), 0 = check every proxy. Default = admin cutoff.
-    try: target_good = max(0, min(int(data.get("target_good", get_stop_after(settings))), 100))
-    except (TypeError, ValueError): target_good = get_stop_after(settings)
+    # target_good: stop after this many good (1-100), 0 = check every proxy.
+    # Default = the user's saved cutoff, else the admin cutoff.
+    default_cut = request.api_stop_after if request.api_stop_after is not None else get_stop_after(settings)
+    try: target_good = max(0, min(int(data.get("target_good", default_cut)), 100))
+    except (TypeError, ValueError): target_good = default_cut
     strict = True if not u.is_admin else bool(data.get("strict", True))
 
     # Score limit: this request's max_score, else the user's saved one, else the system default.
@@ -1438,6 +1446,7 @@ def api_v1_check():
         "stats": {**stats, "submitted": len(proxies), "checked": len(all_results),
                   "invalid_format": len(invalid), "truncated_to": max_paste},
         "max_score": max_score if max_score is not None else settings["FRAUD_SCORE_LEVEL"],
+        "stop_after": target_good,
     }
     if data.get("verbose"):
         body["results"] = [shape(r) for r in all_results]

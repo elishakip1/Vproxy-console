@@ -95,17 +95,27 @@
             </div>
 
             <div class="card p-4 mb-4">
-                <h6 class="text-muted mb-1">🎯 Your proxy score (API only)</h6>
-                <p class="small text-muted">Proxies with a fraud score above this are rejected. Lower is cleaner. The web checker keeps using the default.</p>
-                <form method="POST" class="d-flex gap-2 align-items-center">
-                    <input type="number" name="max_score" min="0" max="100" step="1" class="form-control form-control-sm" style="max-width:110px"
-                           value="{{ my_max_score if my_max_score is not none else '' }}" placeholder="{{ default_score }}">
-                    <button name="action" value="save_score" class="btn btn-primary btn-sm">Save</button>
-                    {% if my_max_score is not none %}<button name="action" value="reset_score" class="btn btn-outline-secondary btn-sm">Use default</button>{% endif %}
+                <h6 class="text-muted mb-1">🎯 Your API settings</h6>
+                <p class="small text-muted">Only for API checks. The web checker keeps the admin defaults. Leave a box empty to use the default.</p>
+                <form method="POST">
+                    <label class="form-label small mb-1">Max fraud score (0–100)</label>
+                    <input type="number" name="max_score" min="0" max="100" step="1" class="form-control form-control-sm mb-1"
+                           value="{{ my_max_score if my_max_score is not none else '' }}" placeholder="Default: {{ default_score }}">
+                    <div class="form-text mb-2">Proxies scoring above this are rejected. Lower is cleaner.</div>
+                    <label class="form-label small mb-1">Cutoff: stop after good proxies (0 = check all)</label>
+                    <input type="number" name="stop_after" min="0" max="100" step="1" class="form-control form-control-sm mb-1"
+                           value="{{ my_stop_after if my_stop_after is not none else '' }}" placeholder="Default: {{ stop_after }}">
+                    <div class="form-text mb-3">The check ends once this many good proxies are found.</div>
+                    <div class="d-flex gap-2">
+                        <button name="action" value="save_score" class="btn btn-primary btn-sm">Save</button>
+                        {% if my_max_score is not none or my_stop_after is not none %}<button name="action" value="reset_score" class="btn btn-outline-secondary btn-sm">Use defaults</button>{% endif %}
+                    </div>
                 </form>
-                <div class="small mt-2">Now using: <strong>{{ my_max_score if my_max_score is not none else default_score }}</strong>
-                    <span class="text-muted">({{ "yours" if my_max_score is not none else "default" }})</span></div>
-                <div class="small text-muted mt-1">You can also send <code>max_score</code> in a single request.</div>
+                <div class="small mt-3">Now using: score <strong>{{ my_max_score if my_max_score is not none else default_score }}</strong>
+                    <span class="text-muted">({{ "yours" if my_max_score is not none else "default" }})</span>,
+                    cutoff <strong>{{ (my_stop_after if my_stop_after is not none else stop_after) or "check all" }}</strong>
+                    <span class="text-muted">({{ "yours" if my_stop_after is not none else "default" }})</span></div>
+                <div class="small text-muted mt-1">A single request can still send <code>max_score</code> or <code>target_good</code>.</div>
             </div>
 
             <div class="card p-4 toc">
@@ -153,7 +163,7 @@ Authorization: Bearer vpx_your_key</pre>
                     <thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead>
                     <tbody>
                         <tr><td><code>proxies</code></td><td>array of strings</td><td>Required. Up to {{ max_paste }} are checked; extra are ignored.</td></tr>
-                        <tr><td><code>target_good</code></td><td>int</td><td>Optional, 0–100. Stop after this many good proxies. 0 = check every proxy. Default {{ stop_after }}.</td></tr>
+                        <tr><td><code>target_good</code></td><td>int</td><td>Optional, 0–100. Stop after this many good proxies. 0 = check every proxy. Defaults to your saved cutoff ({{ (my_stop_after if my_stop_after is not none else stop_after) }}).</td></tr>
                         <tr><td><code>max_score</code></td><td>int</td><td>Optional, 0–100. Reject proxies scoring above this. Defaults to your saved score ({{ my_max_score if my_max_score is not none else default_score }}).</td></tr>
                         <tr><td><code>verbose</code></td><td>bool</td><td>Optional. Also return every checked proxy in <code>results</code>.</td></tr>
                         {% if current_user.is_admin %}<tr><td><code>strict</code></td><td>bool</td><td>Admins only. Default true.</td></tr>{% endif %}
