@@ -446,8 +446,9 @@ def get_stop_after(settings):
 
 def check_until_good(proxies, settings, fraud_level, credentials, strict=True, target_good=2,
                      bad_log_level=None, require_low_risk=True):
-    """Checks proxies in parallel and returns as soon as `target_good` unique good ones are found.
-    Unstarted checks are cancelled; in-flight ones skip the Scamalytics call."""
+    """Checks proxies in parallel and stops once `target_good` unique good ones are found.
+    Unstarted checks are cancelled; checks still on the IP step skip the Scamalytics call;
+    fraud-score calls already running are collected. Returns the lowest-score good proxies first."""
     import threading
     if not target_good or target_good <= 0:
         target_good = max(1, len(proxies))   # 0 = no cutoff, check every proxy
@@ -463,31 +464,49 @@ def check_until_good(proxies, settings, fraud_level, credentials, strict=True, t
     good, all_results, seen = [], [], set()
     stats = {"used": 0, "bad": 0, "api": 0, "unstable": 0, "error": 0}
     executor = ThreadPoolExecutor(max_workers=workers)
+
+    def take(fut):
+        res = fut.result()
+        res["input"] = futures[fut]
+        st = res["status"]
+        if st == "skipped": return
+        if st == "used_cache": stats["used"] += 1
+        elif st == "bad_cache": stats["bad"] += 1
+        elif st == "unstable_ip": stats["unstable"] += 1
+        elif st in ("success", "bad_score"): stats["api"] += 1
+        else: stats["error"] += 1
+        all_results.append(res)
+        if res.get("proxy") and res["ip"] not in seen:
+            seen.add(res["ip"])
+            good.append(res)
+
+    futures, done = {}, set()
     try:
         futures = {executor.submit(single_check_proxy_detailed, p, fraud_level, credentials,
                                    used_ips, bad_ips, is_strict_mode=strict, stop_event=stop,
                                    bad_log_level=bad_log_level, require_low_risk=require_low_risk): p for p in proxies}
         for fut in as_completed(futures):
-            res = fut.result()
-            res["input"] = futures[fut]
-            st = res["status"]
-            if st == "skipped": continue
-            if st == "used_cache": stats["used"] += 1
-            elif st == "bad_cache": stats["bad"] += 1
-            elif st == "unstable_ip": stats["unstable"] += 1
-            elif st in ("success", "bad_score"): stats["api"] += 1
-            else: stats["error"] += 1
-            all_results.append(res)
-            if res.get("proxy") and res["ip"] not in seen:
-                seen.add(res["ip"])
-                good.append(res)
-                if len(good) >= target_good:
-                    stop.set()
-                    break
+            done.add(fut)
+            take(fut)
+            if len(good) >= target_good:
+                stop.set()
+                break
     finally:
         stop.set()
         executor.shutdown(wait=False, cancel_futures=True)
-    return good, all_results, stats
+
+    # Cutoff reached: fraud-score calls already in flight are paid for anyway, so wait briefly
+    # for them and keep the cleanest (lowest score) proxies out of everything checked.
+    rest = [f for f in futures if f not in done and not f.cancelled()]
+    if rest:
+        try:
+            for fut in as_completed(rest, timeout=float(settings.get("REQUEST_TIMEOUT", 5)) + 2):
+                try: take(fut)
+                except Exception: pass
+        except Exception:
+            pass   # timed out: return what we have
+    good.sort(key=lambda r: r.get("score") if isinstance(r.get("score"), int) else 999)
+    return good[:target_good], all_results, stats
 
 def single_check_proxy_detailed(proxy_line, fraud_score_level, credentials_list, used_ip_set, bad_ip_set, is_strict_mode=False, stop_event=None,
                                 bad_log_level=None, require_low_risk=True):
